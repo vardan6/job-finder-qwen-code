@@ -85,22 +85,28 @@ async def chat(
         
         # Call the LLM
         from litellm import completion
-        
+
         # Build model identifier with proper provider prefix
+        # NVIDIA NIM requires "nvidia_nim/" prefix (not "nvidia/")
         provider_prefixes = {
             "ollama": "ollama/",
-            "nvidia": "nvidia/",
+            "nvidia": "nvidia_nim/",  # LiteLLM requires nvidia_nim/ prefix
+            "nvidia_nim": "nvidia_nim/",
             "openrouter": "openrouter/",
             "anthropic": "anthropic/",
             "openai": "openai/",
         }
-        
+
         prefix = provider_prefixes.get(provider.name, "")
-        
+
         # For Ollama, use host + model
         if provider.name == "ollama":
             model_name = f"ollama/{model.model_name}"
             api_base = provider.api_url or "http://localhost:11434"
+        elif provider.name in ["nvidia", "nvidia_nim"]:
+            # NVIDIA NIM: model stored as "meta/llama3-70b-instruct", prefix with "nvidia_nim/"
+            model_name = f"nvidia_nim/{model.model_name}"
+            api_base = None  # Use default NVIDIA NIM endpoint
         else:
             # For other providers, add prefix if not already in model name
             if not model.model_name.startswith(prefix):
