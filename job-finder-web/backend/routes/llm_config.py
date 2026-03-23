@@ -42,27 +42,42 @@ DEFAULT_PROVIDERS = {
         "api_url": "https://integrate.api.nvidia.com/v1",
         "is_active": False,
         "models": [
-            "meta/llama-3.1-405b-instruct",
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
+            # Free tier models (tested & working)
             "meta/llama3-70b-instruct",
             "meta/llama3-8b-instruct",
+            # Llama 3.1 series
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.1-405b-instruct",  # Requires credits
+            # Qwen models (Continue.dev - tested & working)
+            "qwen/qwen3-coder-480b-a35b-instruct",
+            "qwen/qwen2.5-coder-32b-instruct",
+            "qwen/qwen-2-7b-instruct",
+            # OpenAI models via NVIDIA (Continue.dev style - use nvidia_nim/ prefix)
+            "openai/gpt-oss-120b",
+            # Mistral models
             "mistralai/mistral-large",
             "mistralai/mixtral-8x22b-instruct",
+            "mistralai/mistral-7b-instruct",
+            "mistralai/mistral-8x7b-instruct",
+            # Google models
             "google/gemma-7b",
             "google/gemma-2b",
             "google/codegemma-7b",
             "google/recurrentgemma-2b",
-            "nvidia/nemotron-4-340b-instruct",
+            # NVIDIA models
+            "nvidia/nemotron-4-340b-instruct",  # Requires credits
             "nvidia/nemotron-4-340b-reward",
             "nvidia/usdcode-llama3-70b-instruct",
             "nvidia/nv-rerankqa-mistral-4b-v3",
             "nvidia/nv-embedqa-e5-v5",
             "nvidia/nv-embedqa-mistral-7b-v2",
+            # Microsoft Phi-3 models
             "microsoft/phi-3-mini-128k-instruct",
             "microsoft/phi-3-mini-4k-instruct",
             "microsoft/phi-3-medium-128k-instruct",
             "microsoft/phi-3-medium-4k-instruct",
+            # Other models
             "deepseek-ai/deepseek-coder-6.7b-instruct",
             "snowflake/arctic",
             "upstage/solar-10.7b-instruct"
@@ -385,7 +400,7 @@ async def test_llm_provider(
 ):
     """Test an LLM provider connection"""
     start_time = time.time()
-    
+
     import logging
     logger = logging.getLogger(__name__)
 
@@ -394,41 +409,76 @@ async def test_llm_provider(
         import os
         from litellm import completion
 
-        # Extract provider name from model (e.g., "nvidia/..." -> "nvidia" OR "meta/llama3-70b-instruct" -> need to find provider)
-        # Frontend sends: "meta/llama3-70b-instruct" for NVIDIA (without provider prefix)
-        # So we need to detect NVIDIA models by checking if model contains known NVIDIA patterns
+        # Extract provider name from model
+        # Model can come in formats:
+        # - "nvidia_nim/meta/llama3-70b-instruct" (LiteLLM prefix format from frontend)
+        # - "openai/gpt-oss-120b" (OpenAI provider with NVIDIA base)
+        # - "meta/llama3-70b-instruct" (raw model name, need to detect provider)
         
-        provider_name = model.split("/")[0] if "/" in model else model
+        # First check if model has a provider prefix
+        parts = model.split("/", 1) if "/" in model else [model, ""]
+        potential_provider = parts[0]
+        model_suffix = parts[1] if len(parts) > 1 else ""
         
-        # Special handling: if model looks like a NVIDIA model (contains meta/, mistralai/, nvidia/, google/)
-        # but doesn't have a provider prefix, assume it's NVIDIA since that's what the frontend sends
-        nvidia_prefixes = ["meta/", "mistralai/", "nvidia/", "google/", "codellama/", "deepseek/"]
-        is_nvidia_model = any(model.startswith(p) or f"nvidia_nim/{model}".startswith("nvidia_nim/" + p.split('/')[0]) for p in nvidia_prefixes)
+        # Known LiteLLM provider prefixes
+        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim"]
         
-        # If the model looks like a NVIDIA model but has no provider prefix, treat it as NVIDIA
-        if is_nvidia_model and provider_name not in ["ollama", "openrouter", "anthropic", "openai"]:
-            provider_name = "nvidia"
+        provider_name = None
+        raw_model_name = model
+        
+        if potential_provider in litellm_providers:
+            # Model has explicit provider prefix
+            provider_name = potential_provider
+            raw_model_name = model_suffix  # e.g., "meta/llama3-70b-instruct"
+            logger.info(f"Detected provider prefix: {provider_name}, model: {raw_model_name}")
+        else:
+            # No provider prefix - try to detect from model name
+            nvidia_prefixes = ["meta/", "mistralai/", "nvidia/", "google/", "codellama/", "deepseek/", "qwen/"]
+            if any(model.startswith(p) for p in nvidia_prefixes):
+                provider_name = "nvidia"
+                raw_model_name = model
+                logger.info(f"Detected NVIDIA model by prefix: {model}")
+            else:
+                provider_name = potential_provider
+                raw_model_name = model
+        
+        # Map nvidia_nim to nvidia for database lookup
+        db_provider_name = "nvidia" if provider_name == "nvidia_nim" else provider_name
+        
+        # Detect if this is a NVIDIA model being sent via OpenAI provider (Continue.dev style)
+        is_nvidia_via_openai = False
+        if provider_name == "openai" and raw_model_name:
+            nvidia_prefixes = ["meta/", "mistralai/", "nvidia/", "google/", "codellama/", "deepseek/", "qwen/"]
+            if any(raw_model_name.startswith(p) for p in nvidia_prefixes):
+                is_nvidia_via_openai = True
+                db_provider_name = "nvidia"
+                logger.info(f"Detected NVIDIA model via OpenAI: {model}")
 
-        logger.info(f"Testing model: {model}, detected provider: {provider_name}")
+        logger.info(f"Testing model: {model}, provider: {provider_name}, db_provider: {db_provider_name}, nvidia_via_openai: {is_nvidia_via_openai}")
 
         # Get provider from database
-        provider = db.query(LLMProvider).filter(LLMProvider.name == provider_name).first()
+        provider = db.query(LLMProvider).filter(LLMProvider.name == db_provider_name).first()
 
         if provider:
-            logger.info(f"Found provider in DB: {provider_name}")
+            logger.info(f"Found provider in DB: {db_provider_name}")
             # Decrypt API key if exists
             api_key = None
             if provider.api_key_encrypted:
                 try:
                     api_key = decrypt_data(provider.api_key_encrypted)
-                    logger.info(f"API key decrypted for {provider_name}")
+                    logger.info(f"API key decrypted for {db_provider_name}")
                 except Exception as e:
-                    logger.warning(f"Failed to decrypt API key for {provider_name}: {e}")
+                    logger.warning(f"Failed to decrypt API key for {db_provider_name}: {e}")
                     api_key = None
 
             # Set API key in environment for LiteLLM BEFORE calling completion
             if api_key:
-                if provider_name == "openrouter":
+                if is_nvidia_via_openai:
+                    # NVIDIA via OpenAI provider (Continue.dev style)
+                    os.environ["OPENAI_API_KEY"] = api_key
+                    os.environ["OPENAI_API_BASE"] = provider.api_url or "https://integrate.api.nvidia.com/v1/"
+                    logger.info(f"Set OPENAI_API_KEY and OPENAI_API_BASE={os.environ['OPENAI_API_BASE']}")
+                elif provider_name == "openrouter":
                     os.environ["OPENROUTER_API_KEY"] = api_key
                     logger.info("Set OPENROUTER_API_KEY")
                 elif provider_name == "anthropic":
@@ -437,15 +487,18 @@ async def test_llm_provider(
                 elif provider_name == "openai":
                     os.environ["OPENAI_API_KEY"] = api_key
                     logger.info("Set OPENAI_API_KEY")
-                elif provider_name == "nvidia":
+                elif provider_name == "nvidia" or provider_name == "nvidia_nim":
                     os.environ["NVIDIA_NIM_API_KEY"] = api_key
-                    # Set NVIDIA API base URL
-                    os.environ["NVIDIA_NIM_API_BASE"] = provider.api_url or "https://integrate.api.nvidia.com/v1"
+                    # Set NVIDIA API base URL - ensure trailing slash for consistency
+                    api_base = provider.api_url or "https://integrate.api.nvidia.com/v1/"
+                    # Normalize: ensure exactly one trailing slash
+                    api_base = api_base.rstrip('/') + '/'
+                    os.environ["NVIDIA_NIM_API_BASE"] = api_base
                     logger.info(f"Set NVIDIA_NIM_API_KEY and NVIDIA_NIM_API_BASE={os.environ['NVIDIA_NIM_API_BASE']}")
-            elif provider_name != "ollama":
-                logger.warning(f"No API key found for {provider_name}")
+            elif provider_name not in ["ollama", "nvidia", "nvidia_nim"]:
+                logger.warning(f"No API key found for {db_provider_name}")
         else:
-            logger.warning(f"Provider {provider_name} not found in database, trying without API key")
+            logger.warning(f"Provider {db_provider_name} not found in database, trying without API key")
 
         # Check if using Ollama
         if model.startswith("ollama/"):
@@ -462,15 +515,10 @@ async def test_llm_provider(
                     "time_ms": 0
                 })
 
-        # Format model name for LiteLLM with proper prefix
+        # For nvidia_nim prefix, use the model as-is (LiteLLM handles it)
+        # The frontend already sends "nvidia_nim/meta/llama3-70b-instruct"
         litellm_model = model
-
-        if provider_name == "nvidia":
-            # NVIDIA requires nvidia_nim/ prefix for LiteLLM
-            # Model comes without prefix from frontend (e.g., meta/llama3-70b-instruct)
-            litellm_model = f"nvidia_nim/{model}"
-            logger.info(f"Using LiteLLM model with nvidia_nim prefix: {litellm_model}")
-
+        
         logger.info(f"Calling completion API with model: {litellm_model}")
 
         response = completion(

@@ -34,16 +34,33 @@ async def test_llm(
 
     try:
         # Extract provider name from model
-        provider_name = model.split("/")[0] if "/" in model else model
+        # Model can come in formats:
+        # - "nvidia_nim/meta/llama3-70b-instruct" (LiteLLM prefix format from frontend)
+        # - "openai/gpt-oss-120b" (OpenAI provider with NVIDIA base)
+        # - "meta/llama3-70b-instruct" (raw model name, need to detect provider)
         
-        # Detect NVIDIA models (frontend sends without provider prefix)
-        nvidia_prefixes = ["meta/", "mistralai/", "nvidia/", "google/", "codellama/", "deepseek/"]
-        is_nvidia_model = any(model.startswith(p) for p in nvidia_prefixes)
+        # First check if model has a provider prefix
+        parts = model.split("/", 1) if "/" in model else [model, ""]
+        potential_provider = parts[0]
+        model_suffix = parts[1] if len(parts) > 1 else ""
         
-        if is_nvidia_model and provider_name not in ["ollama", "openrouter", "anthropic", "openai"]:
-            provider_name = "nvidia"
-
-        logger.info(f"Testing model: {model}, detected provider: {provider_name}")
+        # Known LiteLLM provider prefixes
+        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim"]
+        
+        provider_name = None
+        raw_model_name = model
+        
+        if potential_provider in litellm_providers:
+            # Model has explicit provider prefix - use as-is
+            provider_name = potential_provider
+            raw_model_name = model_suffix
+            logger.info(f"Detected provider prefix: {provider_name}, model: {raw_model_name}")
+        else:
+            # No provider prefix - use as potential provider
+            provider_name = potential_provider
+            raw_model_name = model
+        
+        logger.info(f"Testing model: {model}, provider: {provider_name}")
 
         # Check if using Ollama
         if model.startswith("ollama/"):
@@ -58,12 +75,10 @@ async def test_llm(
                     "hint": "Run 'ollama serve' in another terminal"
                 }
 
-        # Format model name for LiteLLM
+        # For models with explicit provider prefix (like nvidia_nim/), use as-is
+        # LiteLLM will handle the routing correctly
         litellm_model = model
-        if provider_name == "nvidia":
-            # NVIDIA requires nvidia_nim/ prefix for LiteLLM
-            litellm_model = f"nvidia_nim/{model}"
-            logger.info(f"Using LiteLLM model: {litellm_model}")
+        logger.info(f"Using LiteLLM model: {litellm_model}")
 
         # Call LLM
         response = completion(

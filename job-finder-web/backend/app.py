@@ -134,6 +134,11 @@ def get_llm_functions_router():
     return llm_functions.router
 
 
+def get_chat_router():
+    from backend.routes import chat
+    return chat.router
+
+
 # Register routes
 app.include_router(get_candidate_router(), prefix="/candidates", tags=["Candidates"])
 app.include_router(get_health_router(), prefix="/api", tags=["Health"])
@@ -141,6 +146,7 @@ app.include_router(get_llm_router(), prefix="/api/llm", tags=["LLM Test"])
 app.include_router(get_llm_config_router(), prefix="/settings", tags=["LLM Config"])
 app.include_router(get_documents_router(), tags=["Documents"])
 app.include_router(get_llm_functions_router(), tags=["LLM Functions"])
+app.include_router(get_chat_router(), tags=["AI Chat"])
 
 
 if __name__ == "__main__":

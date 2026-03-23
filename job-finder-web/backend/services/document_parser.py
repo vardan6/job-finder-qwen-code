@@ -43,10 +43,22 @@ def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
             model_name = f"ollama/{model.model_name}"
             api_base = provider.api_url or "http://localhost:11434"
         else:
-            # For other providers, use the model_name directly
-            # litellm handles provider prefixes
-            model_name = model.model_name
-            api_base = None
+            # For other providers, add proper prefix for LiteLLM
+            provider_prefixes = {
+                "nvidia": "nvidia/",
+                "openrouter": "openrouter/",
+                "anthropic": "anthropic/",
+                "openai": "openai/",
+            }
+            prefix = provider_prefixes.get(provider.name, "")
+            if prefix and not model.model_name.startswith(prefix):
+                model_name = prefix + model.model_name
+            else:
+                model_name = model.model_name
+            # Use provider API URL, but strip trailing /v1 if present (LiteLLM adds it)
+            api_base = provider.api_url
+            if api_base and api_base.endswith('/v1'):
+                api_base = api_base[:-3]  # Remove /v1, LiteLLM will add it
         
         # Prepare completion kwargs
         kwargs = {
@@ -59,8 +71,8 @@ def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
         
         # Add API key if present (for non-Ollama providers)
         if provider.api_key_encrypted and provider.name != "ollama":
-            from backend.security import decrypt_token
-            api_key = decrypt_token(provider.api_key_encrypted)
+            from backend.security import decrypt_data
+            api_key = decrypt_data(provider.api_key_encrypted)
             if api_key:
                 kwargs["api_key"] = api_key
         

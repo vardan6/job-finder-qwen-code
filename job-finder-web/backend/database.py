@@ -258,6 +258,7 @@ def populate_default_function_mappings():
             {"function_name": "job_title_parser", "display_name": "Job Title Parser"},
             {"function_name": "job_scorer", "display_name": "Job Scorer (AI)"},
             {"function_name": "resume_matcher", "display_name": "Resume-Job Matcher"},
+            {"function_name": "ai_chat", "display_name": "AI Chat Assistant"},
         ]
 
         # Get the default Ollama model for all functions

@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}AI Chat - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1200px;">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 bg-primary text-white">
+                <div class="card-body py-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="mb-1">
+                                <i class="bi bi-chat-dots-fill me-2"></i>
+                                AI Chat Assistant
+                            </h2>
+                            <p class="mb-0 opacity-75">
+                                Chat with any configured LLM model
+                            </p>
+                        </div>
+                        <div class="text-end">
+                            <select id="modelSelect" class="form-select form-select-lg" style="min-width: 300px;">
+                                <option value="">-- Select a Model --</option>
+                                {% for provider in providers %}
+                                    {% if provider.models %}
+                                    <optgroup label="{{ provider.name|title }}{% if provider.api_url %} ({{ provider.api_url }}){% endif %}">
+                                        {% for model in provider.models %}
+                                            {% if model.is_active %}
+                                            <option value="{{ model.id }}"
+                                                    {% if default_model_id and model.id == default_model_id %}selected{% endif %}>
+                                                [{{ provider.name|upper }}] {{ model.display_name or model.model_name }}
+                                            </option>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </optgroup>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            <small class="text-white-50"><i class="bi bi-info-circle"></i> Select model above</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Window -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm border-0" style="height: calc(100vh - 280px); min-height: 400px;">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-message-square"></i>
+                        Conversation
+                    </h5>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearConversation()">
+                        <i class="bi bi-trash"></i> Clear Chat
+                    </button>
+                </div>
+                <div class="card-body p-0" style="overflow-y: auto; height: calc(100vh - 340px);">
+                    <div id="chatMessages" class="p-4">
+                        <!-- Welcome message -->
+                        <div class="alert alert-info border-0">
+                            <i class="bi bi-robot me-2"></i>
+                            <strong>Welcome to AI Chat!</strong>
+                            <p class="mb-0 mt-2 small">
+                                Select a model from the dropdown above and start chatting. 
+                                Your conversation history is maintained during this session.
+                            </p>
+                        </div>
+                        
+                        <!-- Messages will be added here -->
+                        <div id="messagesContainer"></div>
+                        
+                        <!-- Loading indicator -->
+                        <div id="loadingIndicator" class="text-center py-4" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="text-muted mt-2">AI is thinking...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-3">
+                    <form id="chatForm" onsubmit="sendMessage(event)">
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <textarea 
+                                    id="messageInput" 
+                                    class="form-control" 
+                                    rows="3" 
+                                    placeholder="Type your message here..."
+                                    style="resize: none;"
+                                ></textarea>
+                            </div>
+                            <div class="col-12 text-end">
+                                <button type="submit" class="btn btn-primary btn-lg" id="sendBtn">
+                                    <i class="bi bi-send-fill me-2"></i>Send Message
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearConversation()">
+                                    <i class="bi bi-eraser"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Conversation history
+let conversationHistory = [];
+
+// Auto-resize textarea
+const textarea = document.getElementById('messageInput');
+textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+});
+
+// Send message on Ctrl+Enter
+textarea.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') {
+        sendMessage(e);
+    }
+});
+
+async function sendMessage(event) {
+    event.preventDefault();
+    
+    const messageInput = document.getElementById('messageInput');
+    const modelSelect = document.getElementById('modelSelect');
+    const messagesContainer = document.getElementById('messagesContainer');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const sendBtn = document.getElementById('sendBtn');
+    
+    const message = messageInput.value.trim();
+    const modelId = modelSelect.value;
+    
+    if (!message) {
+        alert('Please enter a message');
+        return;
+    }
+    
+    if (!modelId) {
+        alert('Please select a model first');
+        modelSelect.focus();
+        return;
+    }
+    
+    // Disable input while processing
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+    loadingIndicator.style.display = 'block';
+    
+    // Add user message to chat
+    addMessageToChat('user', message);
+    
+    // Clear input
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('model_id', modelId);
+    formData.append('message', message);
+    formData.append('conversation_history', JSON.stringify(conversationHistory));
+    
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Add AI response to chat
+            addMessageToChat('assistant', data.message);
+            
+            // Update conversation history
+            conversationHistory = data.conversation || [];
+        } else {
+            addMessageToChat('error', data.message || 'Error sending message');
+        }
+    } catch (error) {
+        addMessageToChat('error', 'Network error: ' + error.message);
+    } finally {
+        // Re-enable input
+        messageInput.disabled = false;
+        sendBtn.disabled = false;
+        loadingIndicator.style.display = 'none';
+        messageInput.focus();
+    }
+}
+
+function addMessageToChat(role, content) {
+    const messagesContainer = document.getElementById('messagesContainer');
+    const modelSelect = document.getElementById('modelSelect');
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `mb-3 ${role === 'user' ? 'text-end' : ''}`;
+
+    let bgColor, icon, title;
+    if (role === 'user') {
+        bgColor = 'bg-primary text-white';
+        icon = 'bi-person-circle';
+        title = 'You';
+    } else if (role === 'assistant') {
+        bgColor = 'bg-light border';
+        icon = 'bi-robot';
+        // Get selected model name for display
+        const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+        const modelInfo = selectedOption ? selectedOption.text : 'AI';
+        title = modelInfo;
+    } else {
+        bgColor = 'bg-danger text-white';
+        icon = 'bi-exclamation-triangle';
+        title = 'Error';
+    }
+    
+    messageDiv.innerHTML = `
+        <div class="d-inline-block" style="max-width: 80%;">
+            <div class="d-flex align-items-center mb-1 ${role === 'user' ? 'justify-content-end' : ''}">
+                <i class="bi ${icon} me-1"></i>
+                <small class="text-muted">${title}</small>
+                <small class="text-muted ms-2">${new Date().toLocaleTimeString()}</small>
+            </div>
+            <div class="${bgColor} rounded p-3 text-start">
+                <div style="white-space: pre-wrap;">${escapeHtml(content)}</div>
+            </div>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    const chatBody = document.querySelector('.card-body');
+    chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function clearConversation() {
+    if (!confirm('Clear the conversation history?')) {
+        return;
+    }
+    
+    conversationHistory = [];
+    document.getElementById('messagesContainer').innerHTML = '';
+    
+    // Show welcome message again
+    const messagesContainer = document.getElementById('messagesContainer');
+    messagesContainer.innerHTML = `
+        <div class="alert alert-info border-0">
+            <i class="bi bi-robot me-2"></i>
+            <strong>Conversation cleared!</strong>
+            <p class="mb-0 mt-2 small">Start a new conversation.</p>
+        </div>
+    `;
+}
+
+// Focus on input on page load
+window.addEventListener('load', function() {
+    document.getElementById('messageInput').focus();
+});
+</script>
+{% endblock %}

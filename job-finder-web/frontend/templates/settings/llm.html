@@ -330,8 +330,9 @@
                                         </div>
                                         {% elif provider.name == 'nvidia' %}
                                         <div class="form-text mt-2">
-                                            <i class="bi bi-lightbulb"></i> Popular: <code>meta/llama-3.1-405b-instruct</code>,
-                                            <code>meta/llama-3.1-70b-instruct</code>, <code>nvidia/nemotron-4-340b-instruct</code>
+                                            <i class="bi bi-lightbulb"></i> Free: <code>meta/llama3-70b-instruct</code>, <code>meta/llama3-8b-instruct</code><br>
+                                            <i class="bi bi-code-slash"></i> Continue.dev: <code>qwen/qwen3-coder-480b-a35b-instruct</code><br>
+                                            <i class="bi bi-info-circle text-muted"></i> <small>405B/Nemotron require API credits. Get credits at <a href="https://build.nvidia.com/" target="_blank">build.nvidia.com</a></small>
                                         </div>
                                         {% elif provider.name == 'openrouter' %}
                                         <div class="form-text mt-2">
@@ -430,6 +431,7 @@ function testProvider(name, model) {
         fullName = 'ollama/' + (model || 'llama3');
     } else if (name === 'nvidia') {
         // For NVIDIA, add nvidia_nim/ prefix for LiteLLM
+        // Default to llama3-70b (free tier) or use qwen model from Continue.dev config
         fullName = 'nvidia_nim/' + (model || 'meta/llama3-70b-instruct');
     } else if (name === 'openrouter') {
         fullName = 'openrouter/' + (model || 'meta-llama/llama-3-70b-instruct');

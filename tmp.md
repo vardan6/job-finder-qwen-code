@@ -37,3 +37,5 @@ As a first step we need to create several documents containing initial informati
     Phase 1 is complete and ready for testing! 🎉
 
     Recommendation: 📝 Leave as-is, continue tomorrow from PROJECT_PLAN.md
+
+please save whatever is needed for next time properly continue in this project because I am going to close this cli
