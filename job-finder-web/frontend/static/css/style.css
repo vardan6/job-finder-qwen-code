@@ -1,0 +1,99 @@
+/* Job Finder Web App - Custom Styles */
+
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --warning-color: #ffc107;
+    --info-color: #0dcaf0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Card hover effects */
+.card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Table styles */
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Button icons */
+.btn i {
+    margin-right: 4px;
+}
+
+/* Flash messages */
+.alert {
+    border-radius: 8px;
+}
+
+/* Navbar brand */
+.navbar-brand {
+    font-weight: 600;
+    font-size: 1.25rem;
+}
+
+/* Footer */
+footer {
+    font-size: 0.875rem;
+}
+
+/* Loading states */
+.htmx-request {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+/* Score badges */
+.score-badge {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.score-excellent {
+    background-color: #198754;
+    color: white;
+}
+
+.score-good {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.score-fair {
+    background-color: #ffc107;
+    color: black;
+}
+
+.score-poor {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Candidate card */
+.candidate-card {
+    border-left: 4px solid var(--primary-color);
+}
+
+/* Job status colors */
+.status-active { color: var(--success-color); }
+.status-expired { color: var(--warning-color); }
+.status-applied { color: var(--info-color); }
+.status-rejected { color: var(--danger-color); }

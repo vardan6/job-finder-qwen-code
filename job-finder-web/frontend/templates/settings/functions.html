@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Function Mappings{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="bi bi-cpu-fill text-primary me-2"></i>
+                        LLM Function Mappings
+                    </h2>
+                    <p class="text-muted mb-0">
+                        Map each AI functionality to a specific LLM model
+                    </p>
+                </div>
+                <a href="/settings/llm" class="btn btn-outline-primary">
+                    <i class="bi bi-gear me-1"></i> Provider Settings
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Alert -->
+    <div class="alert alert-info border-0 shadow-sm">
+        <div class="d-flex align-items-start">
+            <i class="bi bi-info-circle-fill me-3 fs-5"></i>
+            <div>
+                <strong>Why map functions to models?</strong>
+                <p class="mb-0 small mt-1">
+                    Different tasks may benefit from different models. For example:
+                    - Use <strong>Ollama (local)</strong> for fast, free parsing tasks
+                    - Use <strong>Claude/GPT-4</strong> for complex job matching
+                    - Each function can use its own optimized model
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Function Mappings -->
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-diagram-3 me-2"></i>
+                        Function-to-Model Mappings
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for mapping in mappings %}
+                        <div class="list-group-item p-4">
+                            <div class="row align-items-center">
+                                <div class="col-md-6">
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-lightning-charge-fill text-warning me-2"></i>
+                                        {{ mapping.display_name or mapping.function_name }}
+                                    </h6>
+                                    <small class="text-muted">Function: <code>{{ mapping.function_name }}</code></small>
+                                </div>
+                                <div class="col-md-6">
+                                    <form hx-post="{{ url_for('save_function_mapping') }}"
+                                          hx-trigger="change"
+                                          hx-swap="none"
+                                          hx-on::after-request="window.location.reload()">
+                                        <input type="hidden" name="function_name" value="{{ mapping.function_name }}">
+                                        
+                                        <label class="form-label small text-muted mb-1">Select Model:</label>
+                                        <div class="input-group">
+                                            <select name="model_id" class="form-select form-select-sm">
+                                                <option value="">-- No Model Selected --</option>
+                                                {% for provider in providers %}
+                                                    {% if provider.models %}
+                                                    <optgroup label="{{ provider.name|title }} ({{ provider.api_url or 'Cloud' }})">
+                                                        {% for model in provider.models %}
+                                                            {% if model.is_active %}
+                                                            <option value="{{ model.id }}"
+                                                                    {% if mapping.model_id == model.id %}selected{% endif %}>
+                                                                {{ model.display_name or model.model_name }}
+                                                                {% if mapping.model_id == model.id and provider.name == 'ollama' %} ✓{% endif %}
+                                                            </option>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </optgroup>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </select>
+                                            
+                                            <button type="button" 
+                                                    class="btn btn-outline-secondary btn-sm"
+                                                    hx-post="{{ url_for('reset_function_mapping') }}"
+                                                    hx-vals='{"function_name": "{{ mapping.function_name }}"}'
+                                                    hx-swap="none"
+                                                    hx-on::after-request="window.location.reload()"
+                                                    title="Reset to default (Ollama)">
+                                                <i class="bi bi-arrow-counterclockwise"></i>
+                                            </button>
+                                        </div>
+                                        
+                                        <div class="form-text small">
+                                            {% if mapping.model_id %}
+                                                <span class="text-success">
+                                                    <i class="bi bi-check-circle"></i> Configured
+                                                </span>
+                                            {% else %}
+                                                <span class="text-warning">
+                                                    <i class="bi bi-exclamation-triangle"></i> Will use default Ollama model
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="list-group-item p-4 text-center text-muted">
+                            <i class="bi bi-inbox fs-1"></i>
+                            <p class="mb-0">No function mappings configured yet</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Usage -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-check"></i>
+                        Function Descriptions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="accordion accordion-flush" id="functionDescriptions">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" 
+                                        data-bs-toggle="collapse" data-bs-target="#desc1">
+                                    <strong>Job Title Parser</strong>
+                                </button>
+                            </h2>
+                            <div id="desc1" class="accordion-collapse collapse" 
+                                 data-bs-parent="#functionDescriptions">
+                                <div class="accordion-body small">
+                                    Extracts job titles from uploaded markdown documents (resume, profile, etc.). 
+                                    Used when you upload files to auto-populate candidate's preferred job titles.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" 
+                                        data-bs-toggle="collapse" data-bs-target="#desc2">
+                                    <strong>Job Scorer (AI)</strong>
+                                </button>
+                            </h2>
+                            <div id="desc2" class="accordion-collapse collapse" 
+                                 data-bs-parent="#functionDescriptions">
+                                <div class="accordion-body small">
+                                    Analyzes job postings and scores them (0-100) for remote-work compatibility. 
+                                    Used during job search to prioritize high-quality matches.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" 
+                                        data-bs-toggle="collapse" data-bs-target="#desc3">
+                                    <strong>Resume-Job Matcher</strong>
+                                </button>
+                            </h2>
+                            <div id="desc3" class="accordion-collapse collapse" 
+                                 data-bs-parent="#functionDescriptions">
+                                <div class="accordion-body small">
+                                    Compares candidate profile against job descriptions to calculate match percentage. 
+                                    Used to rank jobs by how well they fit the candidate's skills and experience.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

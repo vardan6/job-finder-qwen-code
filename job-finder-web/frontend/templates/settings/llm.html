@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Configuration - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="mb-1"><i class="bi bi-robot"></i> LLM Provider Configuration</h1>
+                    <p class="text-muted mb-0">Configure AI providers and manage multiple models per provider</p>
+                </div>
+                <a href="/" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if request.query_params.get('success') == 'saved' %}
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill"></i> <strong>Success!</strong> Provider settings saved successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('success') == 'deleted' %}
+    <div class="alert alert-warning alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle-fill"></i> Provider deleted.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('success') == 'model_added' %}
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill"></i> Model added successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('success') == 'model_removed' %}
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill"></i> Model removed successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('success') == 'default_set' %}
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill"></i> Default model updated!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('error') %}
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-x-circle-fill"></i> {{ request.query_params.get('error') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Current Default Provider Banner -->
+    {% if default_provider %}
+    <div class="alert alert-info mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <i class="bi bi-star-fill text-warning"></i>
+                <strong>Default Provider:</strong> {{ default_provider.name | title }}
+                {% if default_provider.model_name %}
+                <span class="text-muted">— Model: <code>{{ default_provider.model_name }}</code></span>
+                {% endif %}
+            </div>
+            <small class="text-muted">
+                <i class="bi bi-info-circle"></i> This provider will be used for AI job analysis
+            </small>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Provider List -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> Available Providers</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if providers %}
+                    <div class="list-group list-group-flush">
+                        {% for provider in providers %}
+                        <div class="list-group-item">
+                            <div class="row align-items-center">
+                                <div class="col-md-8">
+                                    <div class="d-flex align-items-center mb-2">
+                                        {% if provider.name == 'ollama' %}
+                                            <i class="bi bi-house-door-fill text-success fs-4 me-2"></i>
+                                        {% elif provider.is_global_default %}
+                                            <i class="bi bi-star-fill text-warning fs-4 me-2"></i>
+                                        {% else %}
+                                            <i class="bi bi-cloud-fill text-primary fs-4 me-2"></i>
+                                        {% endif %}
+                                        <h6 class="mb-0">{{ provider.name | title }}
+                                            {% if provider.name == 'ollama' %}
+                                                <span class="badge bg-success ms-2">Local</span>
+                                            {% endif %}
+                                            {% if provider.is_global_default %}
+                                                <span class="badge bg-warning ms-2">Default</span>
+                                            {% endif %}
+                                        </h6>
+                                    </div>
+                                    <div class="small text-muted ms-5">
+                                        <div class="mb-1">
+                                            <i class="bi bi-link-45deg"></i> {{ provider.api_url or 'N/A' }}
+                                        </div>
+                                        <div>
+                                            <i class="bi bi-shield-check"></i> Status:
+                                            {% if provider.name == 'ollama' %}
+                                                <span class="text-success"><strong>Ready</strong></span>
+                                            {% elif provider.api_key_encrypted %}
+                                                <span class="text-success"><strong>API Key Configured</strong></span>
+                                            {% else %}
+                                                <span class="text-warning"><strong>API Key Required</strong></span>
+                                            {% endif %}
+                                        </div>
+                                        {% if provider.models %}
+                                        <div class="mt-2">
+                                            <i class="bi bi-cpu"></i> <strong>Models ({{ provider.models|length }}):</strong>
+                                            {% for model in provider.models %}
+                                                {% if model.is_active %}
+                                                    <span class="badge bg-secondary me-1">
+                                                        {% if model.is_default_for_provider %}
+                                                            <i class="bi bi-star-fill text-warning"></i>
+                                                        {% endif %}
+                                                        {{ model.model_name }}
+                                                    </span>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="col-md-4 text-md-end mt-2 mt-md-0">
+                                    <div class="btn-group" role="group">
+                                        {% if provider.is_global_default %}
+                                        <span class="badge bg-warning me-2" title="Current Default Provider">
+                                            <i class="bi bi-star-fill"></i> Default
+                                        </span>
+                                        {% endif %}
+                                        <button class="btn btn-outline-primary btn-sm"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#config-{{ provider.name }}"
+                                                title="Configure">
+                                            <i class="bi bi-gear"></i>
+                                        </button>
+                                        <button class="btn btn-outline-info btn-sm"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#models-{{ provider.name }}"
+                                                title="Manage Models">
+                                            <i class="bi bi-collection"></i>
+                                        </button>
+                                        <button class="btn btn-outline-success btn-sm"
+                                                onclick="testProvider('{{ provider.name }}', '{{ (provider.models|selectattr('is_default_for_provider')|first).model_name if provider.models and (provider.models|selectattr('is_default_for_provider')|first) else 'default' }}')"
+                                                title="Test Connection">
+                                            <i class="bi bi-play-circle"></i>
+                                        </button>
+                                        {% if not provider.is_global_default %}
+                                        <form method="POST" action="/settings/set-default" class="d-inline">
+                                            <input type="hidden" name="name" value="{{ provider.name }}">
+                                            <button type="submit" class="btn btn-outline-warning btn-sm"
+                                                    title="Set as Default Provider"
+                                                    onclick="return confirm('Set {{ provider.name }} as the default provider?')">
+                                                <i class="bi bi-star"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                        {% if provider.name != 'ollama' %}
+                                        <form method="POST" action="/settings/delete" class="d-inline">
+                                            <input type="hidden" name="name" value="{{ provider.name }}">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm"
+                                                    onclick="return confirm('Delete this provider?')"
+                                                    title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Configuration Form (Collapsed) -->
+                            <div id="config-{{ provider.name }}" class="collapse mt-3">
+                                <form method="POST" action="/settings/" class="bg-light rounded p-3 border">
+                                    <input type="hidden" name="name" value="{{ provider.name }}">
+
+                                    <h6 class="mb-3"><i class="bi bi-sliders"></i> Configure {{ provider.name | title }}</h6>
+
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">
+                                            <i class="bi bi-key"></i> API Key
+                                        </label>
+                                        <input type="password" class="form-control"
+                                               name="api_key" placeholder="Leave blank to keep current">
+                                        {% if provider.name == 'nvidia' %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle"></i> Get your API key from
+                                            <a href="https://build.nvidia.com/" target="_blank">build.nvidia.com</a>
+                                        </div>
+                                        {% elif provider.name == 'openrouter' %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle"></i> Get your API key from
+                                            <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
+                                        </div>
+                                        {% elif provider.name == 'anthropic' %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle"></i> Get your API key from
+                                            <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>
+                                        </div>
+                                        {% elif provider.name == 'openai' %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle"></i> Get your API key from
+                                            <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">
+                                            <i class="bi bi-link-45deg"></i> API URL
+                                        </label>
+                                        <input type="text" class="form-control"
+                                               name="api_url" value="{{ provider.api_url or '' }}">
+                                    </div>
+
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" class="form-check-input"
+                                               name="is_global_default" value="on"
+                                               {% if provider.is_global_default %}checked{% endif %}>
+                                        <label class="form-check-label">
+                                            Set as default provider
+                                        </label>
+                                    </div>
+
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                        <button type="button" class="btn btn-secondary btn-sm"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#config-{{ provider.name }}">
+                                            <i class="bi bi-x-circle"></i> Cancel
+                                        </button>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="bi bi-check-circle"></i> Save Changes
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <!-- Models Management (Collapsed) -->
+                            <div id="models-{{ provider.name }}" class="collapse mt-3">
+                                <div class="bg-light rounded p-3 border">
+                                    <h6 class="mb-3"><i class="bi bi-collection"></i> Manage Models for {{ provider.name | title }}</h6>
+                                    
+                                    <!-- Current Models -->
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Current Models</label>
+                                        {% if provider.models %}
+                                        <div class="list-group">
+                                            {% for model in provider.models %}
+                                            {% if model.is_active %}
+                                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    {% if model.is_default_for_provider %}
+                                                    <i class="bi bi-star-fill text-warning" title="Default model"></i>
+                                                    {% else %}
+                                                    <i class="bi bi-star text-muted" title="Not default"></i>
+                                                    {% endif %}
+                                                    <strong>{{ model.model_name }}</strong>
+                                                    {% if model.display_name and model.display_name != model.model_name %}
+                                                    <span class="text-muted">({{ model.display_name }})</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="btn-group btn-group-sm">
+                                                    {% if not model.is_default_for_provider %}
+                                                    <form method="POST" action="/settings/model/set_default" class="d-inline">
+                                                        <input type="hidden" name="model_id" value="{{ model.id }}">
+                                                        <button type="submit" class="btn btn-outline-warning" title="Set as default">
+                                                            <i class="bi bi-star-fill"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                    {% if provider.models|length > 1 %}
+                                                    <form method="POST" action="/settings/model/remove" class="d-inline">
+                                                        <input type="hidden" name="model_id" value="{{ model.id }}">
+                                                        <button type="submit" class="btn btn-outline-danger"
+                                                                onclick="return confirm('Remove this model?')"
+                                                                title="Remove">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                        {% else %}
+                                        <p class="text-muted">No models configured for this provider.</p>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- Add New Model -->
+                                    <form method="POST" action="/settings/model/add" class="mt-3">
+                                        <input type="hidden" name="provider_id" value="{{ provider.id }}">
+                                        <div class="row g-2">
+                                            <div class="col">
+                                                <input type="text" class="form-control" name="model_name"
+                                                       placeholder="Model name (e.g., llama3)" required>
+                                            </div>
+                                            <div class="col-auto">
+                                                <button type="submit" class="btn btn-success">
+                                                    <i class="bi bi-plus-circle"></i> Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {% if provider.name == 'ollama' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Popular: <code>llama3</code>, <code>llama3.1</code>, 
+                                            <code>mistral</code>, <code>gemma</code>, <code>codellama</code>, <code>phi3</code>
+                                        </div>
+                                        {% elif provider.name == 'nvidia' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Popular: <code>meta/llama-3.1-405b-instruct</code>,
+                                            <code>meta/llama-3.1-70b-instruct</code>, <code>nvidia/nemotron-4-340b-instruct</code>
+                                        </div>
+                                        {% elif provider.name == 'openrouter' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Free: <code>qwen/qwen-2.5-coder-32b-instruct:free</code>, 
+                                            <code>meta-llama/llama-3-8b-instruct:free</code>
+                                        </div>
+                                        {% elif provider.name == 'anthropic' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Popular: <code>claude-3-opus-20240229</code>, 
+                                            <code>claude-3-sonnet-20240229</code>, <code>claude-3-haiku-20240307</code>
+                                        </div>
+                                        {% elif provider.name == 'openai' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Popular: <code>gpt-4-turbo</code>, 
+                                            <code>gpt-4</code>, <code>gpt-3.5-turbo</code>
+                                        </div>
+                                        {% endif %}
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-inbox display-4"></i>
+                        <p class="mt-3">No providers configured yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Results & Info -->
+        <div class="col-lg-5">
+            <!-- Test Results -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-activity"></i> Test Results</h5>
+                </div>
+                <div class="card-body" id="test-results">
+                    <div id="test-result-placeholder" class="text-center text-muted py-4">
+                        <i class="bi bi-robot display-4"></i>
+                        <p class="mt-3 mb-0">Click <strong>"Test"</strong> on a provider to verify connection</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Provider Information</h5>
+                </div>
+                <div class="card-body">
+                    <h6 class="fw-semibold mb-2">Available Providers</h6>
+                    <ul class="small mb-3">
+                        <li class="mb-2">
+                            <strong class="text-success"><i class="bi bi-house-door"></i> Ollama</strong><br>
+                            <span class="text-muted">Free, local LLM runner. Install from <a href="https://ollama.com" target="_blank">ollama.com</a></span>
+                        </li>
+                        <li class="mb-2">
+                            <strong class="text-primary"><i class="bi bi-cloud"></i> NVIDIA</strong><br>
+                            <span class="text-muted">NVIDIA NIM models. Get API key from <a href="https://build.nvidia.com/" target="_blank">build.nvidia.com</a></span>
+                        </li>
+                        <li class="mb-2">
+                            <strong class="text-primary"><i class="bi bi-cloud"></i> OpenRouter</strong><br>
+                            <span class="text-muted">Access to 100+ models. <a href="https://openrouter.ai/" target="_blank">openrouter.ai</a></span>
+                        </li>
+                        <li class="mb-2">
+                            <strong class="text-primary"><i class="bi bi-cloud"></i> Anthropic</strong><br>
+                            <span class="text-muted">Claude models. <a href="https://anthropic.com" target="_blank">anthropic.com</a></span>
+                        </li>
+                        <li class="mb-2">
+                            <strong class="text-primary"><i class="bi bi-cloud"></i> OpenAI</strong><br>
+                            <span class="text-muted">GPT models. <a href="https://openai.com" target="_blank">openai.com</a></span>
+                        </li>
+                    </ul>
+                    <div class="alert alert-light border mb-0">
+                        <i class="bi bi-lightbulb text-warning"></i>
+                        <strong>Recommendation:</strong><br>
+                        Start with <strong>Ollama</strong> (free) using the llama3 model.
+                        Install from <a href="https://ollama.com" target="_blank">ollama.com</a> and run
+                        <code>ollama pull llama3</code>.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function testProvider(name, model) {
+    // Format model name correctly for each provider
+    let fullName;
+    if (name === 'ollama') {
+        fullName = 'ollama/' + (model || 'llama3');
+    } else if (name === 'nvidia') {
+        // For NVIDIA, add nvidia_nim/ prefix for LiteLLM
+        fullName = 'nvidia_nim/' + (model || 'meta/llama3-70b-instruct');
+    } else if (name === 'openrouter') {
+        fullName = 'openrouter/' + (model || 'meta-llama/llama-3-70b-instruct');
+    } else if (name === 'anthropic') {
+        fullName = 'anthropic/' + (model || 'claude-3-sonnet-20240229');
+    } else if (name === 'openai') {
+        fullName = 'openai/' + (model || 'gpt-3.5-turbo');
+    } else {
+        fullName = name + '/' + (model || 'default');
+    }
+
+    // Show loading
+    document.getElementById('test-results').innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 mb-0"><strong>Testing ${fullName}...</strong></p>
+            <small class="text-muted">This may take a few seconds</small>
+        </div>
+    `;
+
+    // Send test request
+    const formData = new FormData();
+    formData.append('model', fullName);
+    formData.append('prompt', 'Hello! Please respond with OK if you can read this.');
+
+    fetch('/settings/test', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.text())
+    .then(html => {
+        document.getElementById('test-results').innerHTML = html;
+    })
+    .catch(error => {
+        document.getElementById('test-results').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle-fill"></i>
+                <strong>Test Failed:</strong> ${error.message}
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

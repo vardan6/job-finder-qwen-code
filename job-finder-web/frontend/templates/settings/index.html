@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1><i class="bi bi-gear"></i> Settings</h1>
+    <p class="lead">Configure your job finder application</p>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-robot"></i> LLM Configuration
+                </div>
+                <div class="card-body">
+                    <p>Configure AI providers (Ollama, OpenRouter, etc.) for job analysis</p>
+                    <a href="/settings/llm" class="btn btn-primary">
+                        <i class="bi bi-gear"></i> Configure LLM
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-shield-lock"></i> Security
+                </div>
+                <div class="card-body">
+                    <p>Manage encryption keys and security settings</p>
+                    <button class="btn btn-outline-secondary" disabled>Coming Soon</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <a href="/" class="btn btn-secondary mt-3">
+        <i class="bi bi-arrow-left"></i> Back to Dashboard
+    </a>
+</div>
+{% endblock %}

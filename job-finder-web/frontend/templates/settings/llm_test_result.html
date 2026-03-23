@@ -1,0 +1,30 @@
+{% if success %}
+<div class="alert alert-success">
+    <h6><i class="bi bi-check-circle"></i> Test Successful!</h6>
+    <p class="mb-1"><strong>Model:</strong> {{ model }}</p>
+    <p class="mb-1"><strong>Response:</strong></p>
+    <div class="border rounded p-2 bg-white">{{ response }}</div>
+    <hr class="my-2">
+    <p class="small text-muted mb-0">
+        <i class="bi bi-clock"></i> {{ time_ms }}ms | 
+        <i class="bi bi-cpu"></i> {{ tokens_used or 'N/A' }} tokens
+    </p>
+</div>
+{% else %}
+<div class="alert alert-danger">
+    <h6><i class="bi bi-x-circle"></i> Test Failed</h6>
+    <p class="mb-1"><strong>Model:</strong> {{ model }}</p>
+    <p class="mb-1"><strong>Error:</strong></p>
+    <div class="border rounded p-2 bg-white small">{{ error }}</div>
+    {% if hint %}
+    <hr class="my-2">
+    <p class="small text-muted mb-0">
+        <i class="bi bi-lightbulb"></i> <strong>Hint:</strong> {{ hint }}
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+<button class="btn btn-outline-secondary btn-sm mt-2" onclick="document.getElementById('test-results').innerHTML = document.getElementById('test-result-placeholder').innerHTML">
+    <i class="bi bi-arrow-repeat"></i> Clear
+</button>

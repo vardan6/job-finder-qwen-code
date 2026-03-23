@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Welcome Banner -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h1 class="card-title"><i class="bi bi-speedometer2"></i> Dashboard</h1>
+                    <p class="card-text">Welcome to Job Finder Web App</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <a href="/candidates" class="text-decoration-none">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h2 class="text-primary">{{ candidate_count or 0 }}</h2>
+                        <p class="text-muted">Candidates</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h2 class="text-success">{{ job_count or 0 }}</h2>
+                    <p class="text-muted">Jobs Found</p>
+                    <small class="text-muted">(Coming in Phase 3)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h2 class="text-warning">{{ priority_jobs or 0 }}</h2>
+                    <p class="text-muted">Priority Jobs</p>
+                    <small class="text-muted">(Coming in Phase 3)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h2 class="text-info">{{ application_count or 0 }}</h2>
+                    <p class="text-muted">Applications</p>
+                    <small class="text-muted">(Coming in Phase 4)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-lightning-charge"></i> Quick Actions
+                </div>
+                <div class="card-body">
+                    <a href="/candidates/new" class="btn btn-primary me-2">
+                        <i class="bi bi-person-plus"></i> Add Candidate
+                    </a>
+                    <a href="/settings/llm" class="btn btn-outline-primary">
+                        <i class="bi bi-robot"></i> Configure LLM
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-info-circle"></i> System Status
+                </div>
+                <div class="card-body">
+                    <div id="health-status">
+                        <button class="btn btn-sm btn-outline-secondary" 
+                                hx-get="/api/health" 
+                                hx-target="#health-status"
+                                hx-trigger="load">
+                            <i class="bi bi-arrow-repeat"></i> Checking...
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Getting Started Guide -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-book"></i> Getting Started
+                </div>
+                <div class="card-body">
+                    <ol>
+                        <li><strong>Add a Candidate:</strong> Create a profile for yourself or someone else</li>
+                        <li><strong>Configure LLM:</strong> Set up Ollama (free) or other AI providers</li>
+                        <li><strong>Set Preferences:</strong> Add job titles, skills, and search queries</li>
+                        <li><strong>Search Jobs:</strong> Run job searches for your candidates</li>
+                        <li><strong>Review Results:</strong> AI analyzes and scores each job</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

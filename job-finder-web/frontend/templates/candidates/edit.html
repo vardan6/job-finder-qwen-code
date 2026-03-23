@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action }} Candidate - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1><i class="bi bi-person-{{ 'plus' if action == 'Create' else 'pencil' }}"></i> {{ action }} Candidate</h1>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <form method="POST" 
+                  {% if candidate %}
+                    action="/candidates/{{ candidate.id }}"
+                  {% else %}
+                    action="/candidates/"
+                  {% endif %}>
+                
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-person"></i> Basic Information
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Name *</label>
+                            <input type="text" class="form-control" id="name" name="name" 
+                                   value="{{ candidate.name if candidate else '' }}" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" name="email" 
+                                   value="{{ candidate.email if candidate else '' }}">
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="location" class="form-label">Location</label>
+                                <input type="text" class="form-control" id="location" name="location" 
+                                       value="{{ candidate.location if candidate else 'Armenia' }}">
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="timezone" class="form-label">Timezone</label>
+                                <select class="form-select" id="timezone" name="timezone">
+                                    <option value="Asia/Yerevan" {% if candidate and candidate.timezone == 'Asia/Yerevan' %}selected{% endif %}>Asia/Yerevan</option>
+                                    <option value="Europe/Berlin" {% if candidate and candidate.timezone == 'Europe/Berlin' %}selected{% endif %}>Europe/Berlin</option>
+                                    <option value="Europe/London" {% if candidate and candidate.timezone == 'Europe/London' %}selected{% endif %}>Europe/London</option>
+                                    <option value="America/New_York" {% if candidate and candidate.timezone == 'America/New_York' %}selected{% endif %}>America/New_York</option>
+                                    <option value="America/Los_Angeles" {% if candidate and candidate.timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="current_role" class="form-label">Current Role</label>
+                                <input type="text" class="form-control" id="current_role" name="current_role" 
+                                       value="{{ candidate.current_role if candidate else '' }}" 
+                                       placeholder="e.g., Software Engineer">
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="experience_years" class="form-label">Years of Experience</label>
+                                <input type="number" class="form-control" id="experience_years" name="experience_years" 
+                                       value="{{ candidate.experience_years if candidate else '' }}" 
+                                       min="0" max="50" placeholder="e.g., 5">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> {{ action }} Candidate
+                    </button>
+                    <a href="/candidates" class="btn btn-secondary">
+                        <i class="bi bi-x-circle"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-info-circle"></i> Information
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-2">
+                        {% if candidate %}
+                        Update the candidate's information. Changes will be saved immediately.
+                        {% else %}
+                        Create a new candidate profile. All fields except name are optional and can be updated later.
+                        {% endif %}
+                    </p>
+                    <hr>
+                    <small class="text-muted">
+                        <i class="bi bi-lightbulb"></i>
+                        <strong>Tip:</strong> After creating a candidate, you'll be able to configure their job preferences, skills, and search queries.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
