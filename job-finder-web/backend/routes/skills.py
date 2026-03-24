@@ -54,48 +54,49 @@ async def create_skill(
     request: Request,
     candidate_id: int,
     skill_name: str = Form(...),
-    category: str = Form("preferred"),
-    years_experience: Optional[int] = Form(None),
-    is_enabled: bool = Form(True),
+    category: str = Form("preferred"),  # Kept for backward compatibility
+    years_experience: Optional[int] = Form(None),  # Kept for backward compatibility
+    is_enabled: str = Form("true"),  # Changed to string for easier handling
     db: Session = Depends(get_db)
 ):
     """Create a new skill"""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
     # Check for duplicate
     existing = db.query(CandidateSkill).filter(
         CandidateSkill.candidate_id == candidate_id,
         CandidateSkill.skill_name.ilike(skill_name.strip()),
         CandidateSkill.is_active == True
     ).first()
-    
+
     if existing:
         return JSONResponse({
             "success": False,
             "message": f"Skill '{skill_name}' already exists"
         }, status_code=400)
-    
+
     try:
+        # Parse is_enabled from string
+        is_enabled_bool = is_enabled.lower() == 'true'
+        
         skill = CandidateSkill(
             candidate_id=candidate_id,
             skill_name=skill_name.strip(),
             category=category,
             years_experience=years_experience,
-            is_enabled=is_enabled
+            is_enabled=is_enabled_bool
         )
         db.add(skill)
         db.commit()
-        
+
         return JSONResponse({
             "success": True,
             "message": f"Skill '{skill_name}' added",
             "skill": {
                 "id": skill.id,
                 "skill_name": skill.skill_name,
-                "category": skill.category,
-                "years_experience": skill.years_experience,
                 "is_enabled": skill.is_enabled
             }
         })
@@ -136,33 +137,30 @@ async def update_skill(
     candidate_id: int,
     skill_id: int,
     skill_name: str = Form(...),
-    category: str = Form("preferred"),
-    years_experience: Optional[int] = Form(None),
+    category: str = Form("preferred"),  # Kept for compatibility but ignored
+    years_experience: Optional[int] = Form(None),  # Kept for compatibility but ignored
     db: Session = Depends(get_db)
 ):
-    """Update a skill"""
+    """Update a skill (inline edit)"""
     skill = db.query(CandidateSkill).filter(
         CandidateSkill.id == skill_id,
         CandidateSkill.candidate_id == candidate_id
     ).first()
-    
+
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
-    
+
     try:
+        # Only update skill name (category and years_experience ignored in new UI)
         skill.skill_name = skill_name.strip()
-        skill.category = category
-        skill.years_experience = years_experience
         db.commit()
-        
+
         return JSONResponse({
             "success": True,
             "message": f"Skill '{skill.skill_name}' updated",
             "skill": {
                 "id": skill.id,
                 "skill_name": skill.skill_name,
-                "category": skill.category,
-                "years_experience": skill.years_experience,
                 "is_enabled": skill.is_enabled
             }
         })
