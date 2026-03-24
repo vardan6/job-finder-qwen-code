@@ -129,6 +129,11 @@ def get_documents_router():
     return documents.router
 
 
+def get_candidate_parser_router():
+    from backend.routes import candidate_parser
+    return candidate_parser.router
+
+
 def get_llm_functions_router():
     from backend.routes import llm_functions
     return llm_functions.router
@@ -139,14 +144,33 @@ def get_chat_router():
     return chat.router
 
 
+def get_skills_router():
+    from backend.routes import skills
+    return skills.router
+
+
+def get_preferences_router():
+    from backend.routes import preferences
+    return preferences.router
+
+
+def get_platform_accounts_router():
+    from backend.routes import platform_accounts
+    return platform_accounts.router
+
+
 # Register routes
 app.include_router(get_candidate_router(), prefix="/candidates", tags=["Candidates"])
 app.include_router(get_health_router(), prefix="/api", tags=["Health"])
 app.include_router(get_llm_router(), prefix="/api/llm", tags=["LLM Test"])
 app.include_router(get_llm_config_router(), prefix="/settings", tags=["LLM Config"])
-app.include_router(get_documents_router(), tags=["Documents"])
+app.include_router(get_documents_router(), prefix="/candidates", tags=["Documents"])
+app.include_router(get_candidate_parser_router(), prefix="/candidates", tags=["Candidate Parser"])
 app.include_router(get_llm_functions_router(), tags=["LLM Functions"])
 app.include_router(get_chat_router(), tags=["AI Chat"])
+app.include_router(get_skills_router(), tags=["Skills"])
+app.include_router(get_preferences_router(), tags=["Preferences"])
+app.include_router(get_platform_accounts_router(), tags=["Platform Accounts"])
 
 
 if __name__ == "__main__":

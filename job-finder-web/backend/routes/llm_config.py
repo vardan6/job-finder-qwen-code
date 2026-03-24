@@ -567,5 +567,136 @@ def get_error_hint(error: Exception, model: str) -> str:
     
     if "timeout" in error_msg:
         return "Request timed out. The model may be loading or the server is slow."
+
+
+# ============================================
+# Claude Code OAuth Routes
+# ============================================
+
+@router.post("/{provider_id}/claude-code/import")
+async def import_claude_code(
+    provider_id: int,
+    db: Session = Depends(get_db)
+):
+    """Import Claude Code OAuth credentials from CLI"""
+    from backend.utils.claude_code_auth import import_claude_code_credentials
+    from backend.security import encrypt_data
+    from datetime import datetime, timezone
     
-    return "Check your configuration and try again."
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    # Import credentials
+    success, error, token_info = import_claude_code_credentials()
+    
+    if not success:
+        return {"success": False, "message": error}
+    
+    # Store encrypted tokens
+    provider.auth_method = "claude_code_oauth"
+    provider.oauth_token_encrypted = encrypt_data(token_info['access_token'])
+    provider.oauth_refresh_token_encrypted = encrypt_data(token_info['refresh_token'])
+    provider.oauth_expires_at = datetime.fromtimestamp(token_info['expires_at'] / 1000, tz=timezone.utc)
+    provider.oauth_subscription_type = token_info['subscription_type']
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Imported Claude Code credentials ({token_info['subscription_type']})",
+        "subscription_type": token_info['subscription_type'],
+        "expires_at": token_info['expires_at']
+    }
+
+
+@router.post("/{provider_id}/claude-code/refresh")
+async def refresh_claude_code(
+    provider_id: int,
+    db: Session = Depends(get_db)
+):
+    """Refresh Claude Code OAuth token"""
+    from backend.utils.claude_code_auth import refresh_claude_code_token, get_valid_oauth_token
+    from backend.security import encrypt_data, decrypt_data
+    from datetime import datetime, timezone
+    
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    if not provider.oauth_refresh_token_encrypted:
+        return {"success": False, "message": "No refresh token available"}
+    
+    # Get refresh token
+    refresh_token = decrypt_data(provider.oauth_refresh_token_encrypted)
+    
+    # Refresh
+    new_access, new_refresh, new_expires_ms, sub_type = refresh_claude_code_token(refresh_token)
+    
+    if not new_access:
+        return {"success": False, "message": "Failed to refresh token"}
+    
+    # Update database
+    provider.oauth_token_encrypted = encrypt_data(new_access)
+    provider.oauth_refresh_token_encrypted = encrypt_data(new_refresh)
+    provider.oauth_expires_at = datetime.fromtimestamp(new_expires_ms / 1000, tz=timezone.utc)
+    if sub_type:
+        provider.oauth_subscription_type = sub_type
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Token refreshed successfully",
+        "subscription_type": sub_type,
+        "expires_at": new_expires_ms
+    }
+
+
+@router.get("/{provider_id}/claude-code/status")
+async def claude_code_status(
+    provider_id: int,
+    db: Session = Depends(get_db)
+):
+    """Check Claude Code OAuth status"""
+    from backend.utils.claude_code_auth import test_claude_code_connection, get_valid_oauth_token
+    from backend.security import decrypt_data
+    
+    provider = db.query(LLMProvider).filter(LLMProvider.id == provider_id).first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    if provider.auth_method != 'claude_code_oauth':
+        return {
+            "configured": False,
+            "message": "Claude Code OAuth not configured for this provider"
+        }
+    
+    if not provider.oauth_token_encrypted:
+        return {
+            "configured": False,
+            "message": "No OAuth token configured"
+        }
+    
+    # Get valid token (may refresh)
+    access_token, error = get_valid_oauth_token(provider)
+    
+    if not access_token:
+        return {
+            "configured": True,
+            "valid": False,
+            "message": f"Token error: {error}",
+            "subscription_type": provider.oauth_subscription_type,
+            "expires_at": provider.oauth_expires_at.isoformat() if provider.oauth_expires_at else None
+        }
+    
+    # Test connection
+    is_valid, message = test_claude_code_connection(access_token)
+    
+    return {
+        "configured": True,
+        "valid": is_valid,
+        "message": message,
+        "subscription_type": provider.oauth_subscription_type,
+        "expires_at": provider.oauth_expires_at.isoformat() if provider.oauth_expires_at else None
+    }

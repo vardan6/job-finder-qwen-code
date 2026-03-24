@@ -32,11 +32,11 @@ def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
     try:
         # Import litellm lazily
         from litellm import completion
-        
+
         provider = model.provider
         if not provider:
             return None
-        
+
         # Build the model identifier
         if provider.name == "ollama":
             # For Ollama, use host + model
@@ -59,31 +59,42 @@ def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
             api_base = provider.api_url
             if api_base and api_base.endswith('/v1'):
                 api_base = api_base[:-3]  # Remove /v1, LiteLLM will add it
-        
+
         # Prepare completion kwargs
         kwargs = {
             "model": model_name,
             "messages": [{"role": "user", "content": prompt}],
         }
-        
+
         if api_base:
             kwargs["api_base"] = api_base
-        
-        # Add API key if present (for non-Ollama providers)
-        if provider.api_key_encrypted and provider.name != "ollama":
+
+        # Check for OAuth authentication (Claude Code)
+        if hasattr(provider, 'auth_method') and provider.auth_method == 'claude_code_oauth':
+            from backend.utils.claude_code_auth import get_valid_oauth_token
+            access_token, error = get_valid_oauth_token(provider)
+            
+            if not access_token:
+                print(f"OAuth token error: {error}")
+                return None
+            
+            # Use OAuth token as API key for LiteLLM
+            kwargs["api_key"] = access_token
+        # Otherwise use API key if present (for non-Ollama providers)
+        elif provider.api_key_encrypted and provider.name != "ollama":
             from backend.security import decrypt_data
             api_key = decrypt_data(provider.api_key_encrypted)
             if api_key:
                 kwargs["api_key"] = api_key
-        
+
         # Call the LLM
         response = completion(**kwargs)
-        
+
         if response and response.choices and len(response.choices) > 0:
             return response.choices[0].message.content
-        
+
         return None
-        
+
     except Exception as e:
         print(f"LLM call error: {e}")
         return None

@@ -140,63 +140,81 @@
                     <div class="accordion accordion-flush" id="functionDescriptions">
                         <div class="accordion-item">
                             <h2 class="accordion-header">
-                                <button class="accordion-button collapsed" type="button" 
+                                <button class="accordion-button collapsed" type="button"
                                         data-bs-toggle="collapse" data-bs-target="#desc1">
                                     <strong>Job Title Parser</strong>
                                 </button>
                             </h2>
-                            <div id="desc1" class="accordion-collapse collapse" 
+                            <div id="desc1" class="accordion-collapse collapse"
                                  data-bs-parent="#functionDescriptions">
                                 <div class="accordion-body small">
-                                    Extracts job titles from uploaded markdown documents (resume, profile, etc.). 
+                                    Extracts job titles from uploaded markdown documents (resume, profile, etc.).
                                     Used when you upload files to auto-populate candidate's preferred job titles.
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="accordion-item">
                             <h2 class="accordion-header">
-                                <button class="accordion-button collapsed" type="button" 
+                                <button class="accordion-button collapsed" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#desc5">
+                                    <strong>Skill Extractor</strong>
+                                </button>
+                            </h2>
+                            <div id="desc5" class="accordion-collapse collapse"
+                                 data-bs-parent="#functionDescriptions">
+                                <div class="accordion-body small">
+                                    Extracts technical skills from resumes and profiles. Categorizes skills as
+                                    <strong>Required</strong> (core/essential) or <strong>Preferred</strong> (nice-to-have),
+                                    and estimates years of experience. Used in the Skills Manager when you click
+                                    "Parse from Documents".
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button"
                                         data-bs-toggle="collapse" data-bs-target="#desc2">
                                     <strong>Job Scorer (AI)</strong>
                                 </button>
                             </h2>
-                            <div id="desc2" class="accordion-collapse collapse" 
+                            <div id="desc2" class="accordion-collapse collapse"
                                  data-bs-parent="#functionDescriptions">
                                 <div class="accordion-body small">
-                                    Analyzes job postings and scores them (0-100) for remote-work compatibility. 
+                                    Analyzes job postings and scores them (0-100) for remote-work compatibility.
                                     Used during job search to prioritize high-quality matches.
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="accordion-item">
                             <h2 class="accordion-header">
-                                <button class="accordion-button collapsed" type="button" 
+                                <button class="accordion-button collapsed" type="button"
                                         data-bs-toggle="collapse" data-bs-target="#desc3">
                                     <strong>Resume-Job Matcher</strong>
                                 </button>
                             </h2>
-                            <div id="desc3" class="accordion-collapse collapse" 
+                            <div id="desc3" class="accordion-collapse collapse"
                                  data-bs-parent="#functionDescriptions">
                                 <div class="accordion-body small">
-                                    Compares candidate profile against job descriptions to calculate match percentage. 
+                                    Compares candidate profile against job descriptions to calculate match percentage.
                                     Used to rank jobs by how well they fit the candidate's skills and experience.
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="accordion-item">
                             <h2 class="accordion-header">
-                                <button class="accordion-button collapsed" type="button" 
+                                <button class="accordion-button collapsed" type="button"
                                         data-bs-toggle="collapse" data-bs-target="#desc4">
                                     <strong>AI Chat Assistant</strong>
                                 </button>
                             </h2>
-                            <div id="desc4" class="accordion-collapse collapse" 
+                            <div id="desc4" class="accordion-collapse collapse"
                                  data-bs-parent="#functionDescriptions">
                                 <div class="accordion-body small">
-                                    General-purpose AI chat interface. Use it to ask questions, get help with job search 
+                                    General-purpose AI chat interface. Use it to ask questions, get help with job search
                                     strategies, or test different LLM models. Access it from the "AI Chat" menu.
                                 </div>
                             </div>

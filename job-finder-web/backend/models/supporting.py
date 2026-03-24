@@ -10,28 +10,34 @@ from backend.database import Base
 class CandidateJobTitle(Base):
     """Preferred job titles for a candidate"""
     __tablename__ = "candidate_job_titles"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
-    priority = Column(Integer, default=0)  # Lower number = higher priority
+    priority = Column(Integer, default=2)  # 1=High, 2=Medium, 3=Low
+    description = Column(Text, nullable=True)  # Optional description/note
+    source_document_id = Column(Integer, ForeignKey("candidate_documents.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True)
-    
+
     candidate = relationship("Candidate", back_populates="job_titles")
+    source_document = relationship("CandidateDocument", backref="job_titles")
 
 
 class CandidateSkill(Base):
     """Skills for a candidate"""
     __tablename__ = "candidate_skills"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
     skill_name = Column(String, nullable=False)
     category = Column(String, default="preferred")  # required, preferred
     years_experience = Column(Integer, nullable=True)
-    is_active = Column(Boolean, default=True)
-    
+    is_enabled = Column(Boolean, default=True)  # Toggle for search matching
+    is_active = Column(Boolean, default=True)  # Soft delete flag
+    source_document_id = Column(Integer, ForeignKey("candidate_documents.id", ondelete="SET NULL"), nullable=True)
+
     candidate = relationship("Candidate", back_populates="skills")
+    source_document = relationship("CandidateDocument", backref="skills")
 
 
 class CandidatePreferences(Base):

@@ -56,11 +56,13 @@ async def save_function_mapping(
     else:
         # Get function display name
         display_names = {
-            "job_title_parser": "Job Title Parser",
+            "job_title_parser": "Job Title Parser (AI)",
             "job_scorer": "Job Scorer (AI)",
-            "resume_matcher": "Resume-Job Matcher",
+            "resume_matcher": "Resume-Job Matcher (AI)",
+            "ai_chat": "AI Chat Assistant",
+            "skill_extractor": "Skill Extractor (AI)",
         }
-        
+
         mapping = LLMFunctionMapping(
             function_name=function_name,
             display_name=display_names.get(function_name, function_name),

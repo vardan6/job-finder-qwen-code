@@ -31,6 +31,7 @@ class Candidate(Base):
     jobs = relationship("Job", back_populates="candidate", cascade="all, delete-orphan", lazy="select")
     preferences = relationship("CandidatePreferences", back_populates="candidate", uselist=False, cascade="all, delete-orphan", lazy="select")
     documents = relationship("CandidateDocument", back_populates="candidate", cascade="all, delete-orphan", lazy="select")
+    platform_accounts = relationship("PlatformAccount", back_populates="candidate", cascade="all, delete-orphan", lazy="select")
     parse_prompts = relationship("DocumentParsePrompt", back_populates="candidate", cascade="all, delete-orphan", lazy="select")
 
     def __repr__(self):

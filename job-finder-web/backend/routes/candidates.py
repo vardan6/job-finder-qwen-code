@@ -87,13 +87,19 @@ async def create_candidate(
 @router.get("/{candidate_id}", response_class=HTMLResponse)
 async def view_candidate(request: Request, candidate_id: int, db: Session = Depends(get_db)):
     """View candidate details"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    from sqlalchemy.orm import joinedload
+    from backend.models.supporting import CandidateSkill, CandidateJobTitle
+    from backend.models.document import CandidateDocument
+    
+    # Eager load relationships
+    candidate = db.query(Candidate).options(
+        joinedload(Candidate.skills),
+        joinedload(Candidate.job_titles),
+        joinedload(Candidate.documents)
+    ).filter(Candidate.id == candidate_id).first()
 
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
-    # Eager load relationships for the template
-    db.refresh(candidate)
 
     return templates.TemplateResponse("candidates/detail.html", {"request": request, "candidate": candidate})
 

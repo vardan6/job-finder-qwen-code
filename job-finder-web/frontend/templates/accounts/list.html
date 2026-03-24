@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Platform Accounts - {{ candidate.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="bi bi-key"></i> Platform Accounts</h1>
+            <p class="text-muted">Manage login credentials for job platforms</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/candidates/{{ candidate.id }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Candidate
+            </a>
+        </div>
+    </div>
+
+    {% if request.query_params.get("success") == "deleted" %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle"></i> {{ request.query_params.get("platform", "Account") }} account removed successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-8">
+            {% for platform_key, platform_info in platforms.items() %}
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="bi {{ platform_info.icon }} text-{{ platform_info.color }} fs-4 me-2"></i>
+                        <span class="fs-5">{{ platform_info.name }}</span>
+                    </div>
+                    {% if platform_info.account %}
+                        {% if platform_info.account.status == 'active' %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>
+                        {% elif platform_info.account.status == 'expired' %}
+                            <span class="badge bg-warning"><i class="bi bi-exclamation-triangle"></i> Expired</span>
+                        {% elif platform_info.account.status == 'captcha_required' %}
+                            <span class="badge bg-danger"><i class="bi bi-shield-exclamation"></i> CAPTCHA</span>
+                        {% else %}
+                            <span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> Inactive</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Not Connected</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if platform_info.account %}
+                        <!-- Account Connected -->
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <p class="mb-1">
+                                    <strong>Status:</strong> 
+                                    {% if platform_info.account.status == 'active' %}
+                                        <span class="text-success">Connected and ready</span>
+                                    {% else %}
+                                        <span class="text-warning">Needs attention</span>
+                                    {% endif %}
+                                </p>
+                                {% if platform_info.account.email_encrypted %}
+                                <p class="mb-1 text-muted small">
+                                    <i class="bi bi-envelope"></i> Logged in as: [ENCRYPTED]
+                                </p>
+                                {% endif %}
+                                {% if platform_info.account.last_used_at %}
+                                <p class="mb-0 text-muted small">
+                                    <i class="bi bi-clock"></i> Last used: {{ platform_info.account.last_used_at.strftime('%Y-%m-%d %H:%M') }}
+                                </p>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <button class="btn btn-sm btn-outline-primary mb-1" onclick="testCookies({{ platform_info.account.id }})">
+                                    <i class="bi bi-plug"></i> Test Connection
+                                </button>
+                                <button class="btn btn-sm btn-outline-info mb-1" onclick="showCookieImporter('{{ platform_key }}', '{{ platform_info.name }}')">
+                                    <i class="bi bi-download"></i> Update Cookies
+                                </button>
+                                <form method="POST" action="/candidates/{{ candidate.id }}/accounts/{{ platform_info.account.id }}/delete" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" 
+                                            onclick="return confirm('Remove this {{ platform_info.name }} account?')">
+                                        <i class="bi bi-trash"></i> Remove
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    {% else %}
+                        <!-- No Account -->
+                        <div class="text-center py-3">
+                            <i class="bi {{ platform_info.icon }} text-{{ platform_info.color }} fs-1"></i>
+                            <p class="mt-2 mb-3">
+                                {{ platform_info.name }} account not connected
+                                <br>
+                                <small class="text-muted">Connect your account to enable job searching</small>
+                            </p>
+                            <button class="btn btn-{{ platform_info.color }}" onclick="showCookieImporter('{{ platform_key }}', '{{ platform_info.name }}')">
+                                <i class="bi bi-link-45deg"></i> Connect {{ platform_info.name }}
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Help Card -->
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <i class="bi bi-lightbulb"></i> How to Connect
+                </div>
+                <div class="card-body">
+                    <h6>Step 1: Login Manually</h6>
+                    <p class="small text-muted">
+                        Open the platform in your browser and login to your account.
+                    </p>
+
+                    <h6>Step 2: Export Cookies</h6>
+                    <p class="small text-muted">
+                        Use a browser extension like "EditThisCookie" or "Cookie Editor" to export your session cookies as JSON.
+                    </p>
+
+                    <h6>Step 3: Import Here</h6>
+                    <p class="small text-muted">
+                        Click "Connect" or "Update Cookies" and paste the exported JSON.
+                    </p>
+
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-shield-exclamation"></i>
+                        <strong>Security:</strong> Cookies are encrypted at rest using AES-256 encryption.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Browser Extensions -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <i class="bi bi-puzzle"></i> Recommended Extensions
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled small mb-0">
+                        <li class="mb-2">
+                            <strong>EditThisCookie</strong>
+                            <br>
+                            <a href="https://chrome.google.com/webstore/detail/editthiscookie/fngmhnnpilhplaeedifhccceomclgfbg" target="_blank">Chrome</a> | 
+                            <a href="https://addons.mozilla.org/firefox/addon/editthiscookie/" target="_blank">Firefox</a>
+                        </li>
+                        <li>
+                            <strong>Cookie Editor</strong>
+                            <br>
+                            <a href="https://chrome.google.com/webstore/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank">Chrome</a> | 
+                            <a href="https://addons.mozilla.org/firefox/addon/cookie-editor/" target="_blank">Firefox</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cookie Import Modal -->
+<div class="modal fade" id="cookieImportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-download"></i> Import Cookies for <span id="importPlatformName"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Instructions:</strong>
+                    <ol class="mb-0">
+                        <li>Login to the platform in your browser</li>
+                        <li>Use a cookie editor extension to export all cookies</li>
+                        <li>Copy the JSON output</li>
+                        <li>Paste it in the field below</li>
+                    </ol>
+                </div>
+                
+                <form id="cookieImportForm">
+                    <input type="hidden" id="importPlatform">
+                    
+                    <div class="mb-3">
+                        <label for="cookiesJson" class="form-label">Cookies JSON</label>
+                        <textarea class="form-control" id="cookiesJson" rows="8" 
+                                  placeholder='[{"name": "li_at", "value": "...", "domain": ".linkedin.com"}, ...]'></textarea>
+                        <div class="form-text">Paste the exported cookies JSON here</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="accountEmail" class="form-label">Account Email (optional)</label>
+                        <input type="email" class="form-control" id="accountEmail" 
+                               placeholder="your.email@example.com">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveCookies()">
+                    <i class="bi bi-check-circle"></i> Save Cookies
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showCookieImporter(platform, platformName) {
+    document.getElementById('importPlatform').value = platform;
+    document.getElementById('importPlatformName').textContent = platformName;
+    document.getElementById('cookiesJson').value = '';
+    document.getElementById('accountEmail').value = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('cookieImportModal'));
+    modal.show();
+}
+
+function saveCookies() {
+    const platform = document.getElementById('importPlatform').value;
+    const cookiesJson = document.getElementById('cookiesJson').value;
+    const email = document.getElementById('accountEmail').value;
+    
+    if (!cookiesJson.trim()) {
+        alert('Please paste your cookies JSON');
+        return;
+    }
+    
+    // Validate JSON
+    try {
+        JSON.parse(cookiesJson);
+    } catch (e) {
+        alert('Invalid JSON format: ' + e.message);
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('platform', platform);
+    formData.append('cookies_json', cookiesJson);
+    if (email) {
+        formData.append('email', email);
+    }
+    
+    fetch('/candidates/{{ candidate.id }}/accounts/save-cookies', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => alert('Error: ' + error));
+}
+
+function testCookies(accountId) {
+    fetch(`/candidates/{{ candidate.id }}/accounts/${accountId}/test`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ ' + data.message);
+        } else {
+            alert('✗ ' + data.message);
+        }
+    })
+    .catch(error => alert('Error: ' + error));
+}
+</script>
+{% endblock %}

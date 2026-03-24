@@ -11,9 +11,17 @@ class LLMProvider(Base):
     __tablename__ = "llm_providers"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, unique=True)  # ollama, openrouter, anthropic, openai
+    name = Column(String, nullable=False, unique=True)  # ollama, openrouter, anthropic, openai, nvidia_nim
     api_key_encrypted = Column(Text, nullable=True)  # Encrypted API key
     api_url = Column(String, nullable=True)  # For local providers like Ollama
+    
+    # OAuth authentication (for Claude Code and other OAuth providers)
+    auth_method = Column(String, default="api_key")  # api_key, claude_code_oauth
+    oauth_token_encrypted = Column(Text, nullable=True)  # Encrypted OAuth access token
+    oauth_refresh_token_encrypted = Column(Text, nullable=True)  # Encrypted OAuth refresh token
+    oauth_expires_at = Column(DateTime, nullable=True)  # Token expiration timestamp
+    oauth_subscription_type = Column(String, nullable=True)  # pro, max, etc.
+    
     is_global_default = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
@@ -22,7 +30,7 @@ class LLMProvider(Base):
     models = relationship("LLMModel", back_populates="provider", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<LLMProvider(name='{self.name}')>"
+        return f"<LLMProvider(name='{self.name}', auth='{self.auth_method}')>"
 
 
 class LLMModel(Base):

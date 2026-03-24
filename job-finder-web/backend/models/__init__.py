@@ -8,6 +8,7 @@ from backend.models.job import Job, JobApplication
 from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences
 from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, LLMFunctionMapping
+from backend.models.platform_account import PlatformAccount
 
 __all__ = [
     "Candidate",
@@ -22,4 +23,5 @@ __all__ = [
     "DocumentSection",
     "DocumentParsePrompt",
     "LLMFunctionMapping",
+    "PlatformAccount",
 ]

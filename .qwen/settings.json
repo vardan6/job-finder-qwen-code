@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/vardana/.qwen/**)",
+      "Read(//home/vardana/**)"
+    ]
+  },
+  "$version": 3
+}

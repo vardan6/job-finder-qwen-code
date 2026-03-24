@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}Preferences - {{ candidate.name }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="bi bi-gear"></i> Search Preferences</h1>
+            <p class="text-muted">Configure job search and filtering settings for {{ candidate.name }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/candidates/{{ candidate.id }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Candidate
+            </a>
+        </div>
+    </div>
+
+    {% if request.query_params.get("success") == "1" %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle"></i> Preferences saved successfully!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-8">
+            <form method="POST" action="/candidates/{{ candidate.id }}/preferences/save" class="card">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-sliders"></i> Job Search Settings
+                </div>
+                <div class="card-body">
+                    <!-- Minimum Fit Score -->
+                    <div class="mb-4">
+                        <label for="min_score" class="form-label">
+                            <i class="bi bi-bar-chart"></i> Minimum Fit Score
+                            <span class="badge bg-info ms-2">{{ preferences.min_score }}</span>
+                        </label>
+                        <input type="range" class="form-range" id="min_score" name="min_score" 
+                               min="0" max="100" value="{{ preferences.min_score }}"
+                               oninput="document.querySelector('#min_score + label .badge').textContent = this.value">
+                        <div class="d-flex justify-content-between text-muted small">
+                            <span>0 (Any)</span>
+                            <span>50 (Moderate)</span>
+                            <span>100 (Perfect Match)</span>
+                        </div>
+                        <div class="form-text">
+                            Jobs with a fit score below this threshold will be hidden from results.
+                        </div>
+                    </div>
+
+                    <!-- Minimum AI Remote Score -->
+                    <div class="mb-4">
+                        <label for="min_ai_remote_score" class="form-label">
+                            <i class="bi bi-robot"></i> Minimum AI Remote Score
+                            <span class="badge bg-success ms-2">{{ preferences.min_ai_remote_score }}</span>
+                        </label>
+                        <input type="range" class="form-range" id="min_ai_remote_score" name="min_ai_remote_score" 
+                               min="0" max="100" value="{{ preferences.min_ai_remote_score }}"
+                               oninput="document.querySelector('#min_ai_remote_score + label .badge').textContent = this.value">
+                        <div class="d-flex justify-content-between text-muted small">
+                            <span>0 (Any)</span>
+                            <span>50 (Some Remote)</span>
+                            <span>100 (Fully Remote)</span>
+                        </div>
+                        <div class="form-text">
+                            AI-scored remote-friendliness. Higher = more remote-friendly.
+                        </div>
+                    </div>
+
+                    <!-- Remote Only Toggle -->
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="remote_only" name="remote_only"
+                                   {% if preferences.remote_only %}checked{% endif %}>
+                            <label class="form-check-label" for="remote_only">
+                                <i class="bi bi-house-check"></i> Remote Only
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            When enabled, only show jobs that are fully remote or hybrid-remote.
+                        </div>
+                    </div>
+
+                    <!-- Experience Levels -->
+                    <div class="mb-4">
+                        <label class="form-label d-block">
+                            <i class="bi bi-briefcase"></i> Experience Levels
+                        </label>
+                        <div class="border rounded p-3 bg-light">
+                            {% set exp_list = preferences.experience_levels | default('["Senior", "Staff", "Principal", "Lead"]') | tojson | safe %}
+                            
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Junior" id="exp_junior">
+                                <label class="form-check-label" for="exp_junior">Junior</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Mid" id="exp_mid">
+                                <label class="form-check-label" for="exp_mid">Mid-Level</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Senior" id="exp_senior">
+                                <label class="form-check-label" for="exp_senior">Senior</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Staff" id="exp_staff">
+                                <label class="form-check-label" for="exp_staff">Staff</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Principal" id="exp_principal">
+                                <label class="form-check-label" for="exp_principal">Principal</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input experience-check" type="checkbox" 
+                                       value="Lead" id="exp_lead">
+                                <label class="form-check-label" for="exp_lead">Lead</label>
+                            </div>
+                        </div>
+                        <input type="hidden" name="experience_levels" id="experience_levels_input"
+                               value='{{ preferences.experience_levels }}'>
+                        <div class="form-text">
+                            Select experience levels to include in search results.
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> Save Preferences
+                    </button>
+                    <a href="/candidates/{{ candidate.id }}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Help Card -->
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <i class="bi bi-lightbulb"></i> Tips
+                </div>
+                <div class="card-body">
+                    <h6>Fit Score</h6>
+                    <p class="small text-muted">
+                        Combines your skills, experience, and preferences to calculate how well you match a job.
+                    </p>
+                    
+                    <h6>AI Remote Score</h6>
+                    <p class="small text-muted">
+                        AI analyzes job descriptions to determine remote-friendliness based on:
+                        <ul class="small text-muted">
+                            <li>Remote work mentions</li>
+                            <li>Location requirements</li>
+                            <li>Citizenship/residency requirements</li>
+                            <li>Office visit expectations</li>
+                        </ul>
+                    </p>
+                    
+                    <h6>Experience Levels</h6>
+                    <p class="small text-muted">
+                        Filter jobs by seniority to focus on roles that match your career stage.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Parse experience levels and check appropriate boxes
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        const expInput = document.getElementById('experience_levels_input').value;
+        const expLevels = JSON.parse(expInput || '["Senior", "Staff", "Principal", "Lead"]');
+        
+        expLevels.forEach(level => {
+            const checkbox = document.getElementById('exp_' + level.toLowerCase());
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+    } catch (e) {
+        console.error('Error parsing experience levels:', e);
+    }
+});
+
+// Update hidden input with selected experience levels before submit
+document.querySelector('form').addEventListener('submit', function(e) {
+    const checkboxes = document.querySelectorAll('.experience-check:checked');
+    const selected = Array.from(checkboxes).map(cb => cb.value);
+    document.getElementById('experience_levels_input').value = JSON.stringify(selected);
+});
+</script>
+{% endblock %}

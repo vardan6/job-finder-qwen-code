@@ -90,8 +90,14 @@
                     <button class="btn btn-primary w-100 mb-2" disabled>
                         <i class="bi bi-search"></i> Search Jobs (Coming Soon)
                     </button>
-                    <a href="/candidates/{{ candidate.id }}/edit" class="btn btn-outline-primary w-100">
-                        <i class="bi bi-gear"></i> Configure Preferences
+                    <button class="btn btn-success w-100 mb-2" type="button" data-bs-toggle="modal" data-bs-target="#skillsModal">
+                        <i class="bi bi-collection"></i> Manage Skills
+                    </button>
+                    <a href="/candidates/{{ candidate.id }}/preferences/edit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="bi bi-gear"></i> Search Preferences
+                    </a>
+                    <a href="/candidates/{{ candidate.id }}/accounts" class="btn btn-outline-info w-100">
+                        <i class="bi bi-key"></i> Platform Accounts
                     </a>
                 </div>
             </div>
@@ -118,8 +124,11 @@
                         <div class="card card-body bg-light">
                             <form id="uploadForm"
                                   hx-post="/candidates/{{ candidate.id }}/documents/upload"
+                                  enctype="multipart/form-data"
                                   hx-encoding="multipart/form-data"
-                                  hx-on::after-request="handleUploadResponse(event)">
+                                  hx-on::before-request="handleBeforeUpload(event)"
+                                  hx-on::after-request="handleUploadResponse(event)"
+                                  hx-swap="none">
                                 <div class="row g-3">
                                     <div class="col-md-8">
                                         <label class="form-label">Select File</label>
@@ -153,6 +162,7 @@
                                         </button>
                                     </div>
                                 </div>
+                                <div id="uploadStatus" class="mt-2"></div>
                             </form>
                         </div>
                     </div>
@@ -241,30 +251,150 @@
         </div>
     </div>
 
-    <!-- Job Titles Section -->
-    {% if candidate.job_titles %}
+    <!-- AI Job Title Parser Section -->
     <div class="row mt-4">
         <div class="col-12">
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-white py-3">
-                    <h5 class="mb-0">
-                        <i class="bi bi-briefcase"></i> Preferred Job Titles
-                    </h5>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-robot text-primary me-2"></i>
+                            Preferred Job Titles (AI Extracted)
+                        </h5>
+                        <button class="btn btn-primary btn-sm" type="button"
+                                hx-post="/candidates/{{ candidate.id }}/parse-job-titles"
+                                hx-timeout="180"
+                                hx-on::before-request="showParsingStatus()"
+                                hx-on::htmx:timeout="handleParseTimeout(event)"
+                                hx-on::htmx:send-error="handleParseError(event)"
+                                hx-on::after-request="handleParseResponse(event)">
+                            <i class="bi bi-magic"></i> Parse from Files
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <div class="d-flex flex-wrap gap-2">
-                        {% for jt in candidate.job_titles %}
-                        <span class="badge {% if jt.priority == 1 %}bg-primary{% elif jt.priority == 2 %}bg-success{% else %}bg-secondary{% endif %} p-2">
-                            {{ jt.title }}
-                            {% if jt.priority == 1 %}<i class="bi bi-star-fill ms-1"></i>{% endif %}
-                        </span>
-                        {% endfor %}
+                    <div id="parseStatus" class="mb-3"></div>
+                    
+                    <!-- Parsed Job Titles Table -->
+                    <div id="parsedJobTitlesPanel" class="collapse">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Review and edit</strong> the extracted job titles below. 
+                            Adjust priorities, remove irrelevant ones, or add new titles manually.
+                            Click "Save to Candidate" when done.
+                        </div>
+                        
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 40%">Job Title</th>
+                                    <th style="width: 15%">Priority</th>
+                                    <th style="width: 30%">Description</th>
+                                    <th style="width: 15%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="parsedJobTitlesTable">
+                                <!-- Rows will be added dynamically -->
+                            </tbody>
+                        </table>
+                        
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="addNewJobTitleRow()">
+                                <i class="bi bi-plus-circle"></i> Add Manual Title
+                            </button>
+                            <button class="btn btn-success btn-sm" onclick="saveParsedJobTitles()">
+                                <i class="bi bi-check-circle"></i> Save to Candidate
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="discardParsedJobTitles()">
+                                <i class="bi bi-x-circle"></i> Discard Changes
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Current Job Titles - Editable Table -->
+                    <div class="mt-4">
+                        <div class="card shadow-sm border-0">
+                            <div class="card-header bg-white py-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-list-check"></i> Preferred Job Titles
+                                        <span class="badge bg-primary ms-2" id="jobTitlesCount">{{ candidate.job_titles|length }}</span>
+                                    </h6>
+                                    <div class="btn-group btn-group-sm" role="group" id="jobTitlesActions">
+                                        <button class="btn btn-outline-primary" onclick="enableJobTitlesEdit()" id="btnEditJobTitles">
+                                            <i class="bi bi-pencil"></i> Edit
+                                        </button>
+                                        <button class="btn btn-outline-success" onclick="addJobTitleRow()" id="btnAddJobTitle" style="display:none;">
+                                            <i class="bi bi-plus-circle"></i> Add New
+                                        </button>
+                                        <button class="btn btn-success" onclick="saveJobTitles()" id="btnSaveJobTitles" style="display:none;">
+                                            <i class="bi bi-check-circle"></i> Save
+                                        </button>
+                                        <button class="btn btn-outline-secondary" onclick="cancelJobTitlesEdit()" id="btnCancelJobTitles" style="display:none;">
+                                            <i class="bi bi-x-circle"></i> Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <!-- View Mode: List -->
+                                <div id="jobTitlesViewMode">
+                                    {% if candidate.job_titles %}
+                                    <ul class="list-group list-group-flush" id="jobTitlesList">
+                                        {% for jt in candidate.job_titles %}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center py-3">
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    {% if jt.priority == 1 %}
+                                                        <span class="badge bg-primary"><i class="bi bi-star-fill"></i> High</span>
+                                                    {% elif jt.priority == 2 %}
+                                                        <span class="badge bg-success">Medium</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">Low</span>
+                                                    {% endif %}
+                                                    <strong>{{ jt.title }}</strong>
+                                                </div>
+                                                {% if jt.description %}
+                                                <small class="text-muted ms-4">
+                                                    <i class="bi bi-info-circle"></i> {{ jt.description[:100] }}{% if jt.description|length > 100 %}...{% endif %}
+                                                </small>
+                                                {% endif %}
+                                            </div>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <div class="text-center text-muted py-5">
+                                        <i class="bi bi-inbox fs-1"></i>
+                                        <p class="mb-0">No job titles saved yet</p>
+                                        <small class="text-muted">Click "Parse from Files" to extract job titles from uploaded documents</small>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Edit Mode: Table -->
+                                <div id="jobTitlesEditMode" class="collapse">
+                                    <table class="table table-hover align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width: 10%">Priority</th>
+                                                <th style="width: 45%">Job Title</th>
+                                                <th style="width: 35%">Description (optional)</th>
+                                                <th style="width: 10%">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="jobTitlesEditTable">
+                                            <!-- Rows will be populated by JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    {% endif %}
 </div>
 
 <!-- View Document Modal -->
@@ -284,15 +414,41 @@
 </div>
 
 <script>
+function handleBeforeUpload(event) {
+    // Show loading status
+    const statusDiv = document.getElementById('uploadStatus');
+    statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Uploading...</div>';
+}
+
 function handleUploadResponse(event) {
-    const response = JSON.parse(event.detail.xhr.responseText);
-    if (response.success) {
-        // Show success message
-        alert('Document uploaded successfully!');
-        // Reload the page
-        window.location.reload();
+    const statusDiv = document.getElementById('uploadStatus');
+    const detail = event.detail;
+    
+    // Check if request succeeded
+    if (detail.successful) {
+        try {
+            const response = JSON.parse(detail.xhr.responseText);
+            if (response.success) {
+                statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ' + response.message + '</div>';
+                // Close the upload panel
+                const uploadPanel = document.getElementById('uploadPanel');
+                const bsCollapse = new bootstrap.Collapse(uploadPanel, {toggle: true});
+                bsCollapse.hide();
+                // Reload after short delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 800);
+                return;
+            } else {
+                statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Upload failed: ' + response.message + '</div>';
+            }
+        } catch (e) {
+            statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Invalid response from server</div>';
+        }
     } else {
-        alert('Upload failed: ' + response.message);
+        // Request failed (network error, server error, etc.)
+        statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Upload failed. Please try again.</div>';
+        console.error('Upload failed:', detail);
     }
 }
 
@@ -337,5 +493,403 @@ function deleteDocument(event) {
         window.location.reload();
     }
 }
+
+// Job Title Parser functions
+let parsedJobTitlesData = [];
+
+function showParsingStatus() {
+    const statusDiv = document.getElementById('parseStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-info d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm me-2" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div>
+                <strong>AI is parsing your documents...</strong>
+                <p class="mb-0 small text-muted">This may take 30-90 seconds depending on document size and LLM provider</p>
+            </div>
+        </div>
+    `;
+}
+
+function handleParseTimeout(event) {
+    const statusDiv = document.getElementById('parseStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-warning">
+            <i class="bi bi-hourglass-split"></i>
+            <strong>Still processing...</strong>
+            <p class="mb-0 small text-muted">The AI is taking longer than expected. Please wait or refresh the page and try again.</p>
+        </div>
+    `;
+    console.warn('Parse request timed out - LLM may still be processing');
+}
+
+function handleParseError(event) {
+    const statusDiv = document.getElementById('parseStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i>
+            <strong>Connection error</strong>
+            <p class="mb-0 small text-muted">Lost connection to server. Please refresh and try again.</p>
+        </div>
+    `;
+    console.error('Parse request failed:', event.detail);
+}
+
+function handleParseResponse(event) {
+    const statusDiv = document.getElementById('parseStatus');
+    const detail = event.detail;
+    
+    if (!detail.successful) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>Parsing failed:</strong> Network error or server unavailable
+            </div>
+        `;
+        return;
+    }
+    
+    try {
+        const response = JSON.parse(detail.xhr.responseText);
+        
+        if (response.success) {
+            parsedJobTitlesData = response.job_titles || [];
+            
+            if (parsedJobTitlesData.length === 0) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>No job titles extracted.</strong> Try uploading different documents or check LLM configuration.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Show the table
+            renderParsedJobTitles();
+            
+            const panel = document.getElementById('parsedJobTitlesPanel');
+            const bsCollapse = new bootstrap.Collapse(panel, {toggle: true});
+            bsCollapse.show();
+            
+            let message = response.message || `Extracted ${parsedJobTitlesData.length} job titles`;
+            if (response.warning) {
+                message += `<br><small class="text-muted">${response.warning}</small>`;
+            }
+            
+            statusDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i>
+                    <strong>${message}</strong>
+                </div>
+            `;
+        } else {
+            statusDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Parsing failed:</strong> ${response.message || 'Unknown error'}
+                </div>
+            `;
+        }
+    } catch (e) {
+        statusDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>Invalid response from server</strong>
+            </div>
+        `;
+        console.error('Parse response error:', e);
+    }
+}
+
+function renderParsedJobTitles() {
+    const tbody = document.getElementById('parsedJobTitlesTable');
+    tbody.innerHTML = '';
+    
+    parsedJobTitlesData.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                       value="${escapeHtml(item.title)}" 
+                       onchange="updateJobTitle(${index}, 'title', this.value)">
+            </td>
+            <td>
+                <select class="form-select form-select-sm" 
+                        onchange="updateJobTitle(${index}, 'priority', parseInt(this.value))">
+                    <option value="1" ${item.priority === 1 ? 'selected' : ''}>⭐ High</option>
+                    <option value="2" ${item.priority === 2 ? 'selected' : ''}>⚪ Medium</option>
+                    <option value="3" ${item.priority === 3 ? 'selected' : ''}>⚪ Low</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                       value="${escapeHtml(item.description || '')}" 
+                       placeholder="Optional description"
+                       onchange="updateJobTitle(${index}, 'description', this.value)">
+            </td>
+            <td>
+                <button class="btn btn-outline-danger btn-sm" onclick="removeJobTitleRow(${index})" 
+                        title="Remove this title">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function updateJobTitle(index, field, value) {
+    if (parsedJobTitlesData[index]) {
+        parsedJobTitlesData[index][field] = value;
+    }
+}
+
+function removeJobTitleRow(index) {
+    parsedJobTitlesData.splice(index, 1);
+    renderParsedJobTitles();
+}
+
+function addNewJobTitleRow() {
+    parsedJobTitlesData.push({
+        title: "New Job Title",
+        priority: 2,
+        description: "",
+        source_file: "Manual"
+    });
+    renderParsedJobTitles();
+}
+
+function saveParsedJobTitles() {
+    if (parsedJobTitlesData.length === 0) {
+        alert('No job titles to save');
+        return;
+    }
+
+    // Filter out empty titles
+    const validTitles = parsedJobTitlesData.filter(item => item.title.trim() !== '');
+
+    if (validTitles.length === 0) {
+        alert('Please enter at least one job title');
+        return;
+    }
+
+    const candidateId = window.location.pathname.split('/').pop();
+
+    fetch(`/candidates/${candidateId}/save-job-titles`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            job_titles: validTitles,
+            clear_existing: false  // Append to existing, don't replace
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            window.location.reload();
+        } else {
+            alert(`❌ Save failed: ${data.message}`);
+        }
+    })
+    .catch(error => {
+        console.error('Save error:', error);
+        alert('❌ Save failed: Network error');
+    });
+}
+
+// ============================================
+// Job Titles Management (Editable List)
+// ============================================
+
+let originalJobTitles = [];
+let currentJobTitles = [];
+
+function enableJobTitlesEdit() {
+    // Fetch current job titles
+    const candidateId = window.location.pathname.split('/').pop();
+    
+    fetch(`/candidates/${candidateId}/job-titles`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                originalJobTitles = data.job_titles || [];
+                currentJobTitles = JSON.parse(JSON.stringify(originalJobTitles)); // Deep copy
+                renderJobTitlesEditTable();
+                
+                // Switch to edit mode
+                document.getElementById('jobTitlesViewMode').classList.add('d-none');
+                document.getElementById('jobTitlesEditMode').classList.remove('collapse');
+                document.getElementById('jobTitlesEditMode').classList.add('show');
+                
+                // Update buttons
+                document.getElementById('btnEditJobTitles').style.display = 'none';
+                document.getElementById('btnAddJobTitle').style.display = 'inline-block';
+                document.getElementById('btnSaveJobTitles').style.display = 'inline-block';
+                document.getElementById('btnCancelJobTitles').style.display = 'inline-block';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading job titles:', error);
+            alert('Failed to load job titles');
+        });
+}
+
+function renderJobTitlesEditTable() {
+    const tbody = document.getElementById('jobTitlesEditTable');
+    tbody.innerHTML = '';
+    
+    currentJobTitles.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <select class="form-select form-select-sm" onchange="updateJobTitleEdit(${index}, 'priority', parseInt(this.value))">
+                    <option value="1" ${item.priority === 1 ? 'selected' : ''}>⭐ High</option>
+                    <option value="2" ${item.priority === 2 ? 'selected' : ''}>⚪ Medium</option>
+                    <option value="3" ${item.priority === 3 ? 'selected' : ''}>⚪ Low</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                       value="${escapeHtml(item.title)}" 
+                       onchange="updateJobTitleEdit(${index}, 'title', this.value)">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm" 
+                       value="${escapeHtml(item.description || '')}" 
+                       placeholder="Optional description"
+                       onchange="updateJobTitleEdit(${index}, 'description', this.value)">
+            </td>
+            <td>
+                <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteJobTitleEdit(${index})" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    ${index > 0 ? `
+                    <button class="btn btn-outline-secondary btn-sm" onclick="moveJobTitleEdit(${index}, -1)" title="Move up">
+                        <i class="bi bi-arrow-up"></i>
+                    </button>
+                    ` : ''}
+                    ${index < currentJobTitles.length - 1 ? `
+                    <button class="btn btn-outline-secondary btn-sm" onclick="moveJobTitleEdit(${index}, 1)" title="Move down">
+                        <i class="bi bi-arrow-down"></i>
+                    </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function updateJobTitleEdit(index, field, value) {
+    if (currentJobTitles[index]) {
+        currentJobTitles[index][field] = value;
+    }
+}
+
+function deleteJobTitleEdit(index) {
+    if (confirm('Delete this job title?')) {
+        currentJobTitles.splice(index, 1);
+        renderJobTitlesEditTable();
+    }
+}
+
+function moveJobTitleEdit(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex >= 0 && newIndex < currentJobTitles.length) {
+        // Swap
+        [currentJobTitles[index], currentJobTitles[newIndex]] = 
+        [currentJobTitles[newIndex], currentJobTitles[index]];
+        renderJobTitlesEditTable();
+    }
+}
+
+function addJobTitleRow() {
+    currentJobTitles.push({
+        id: null,  // New item
+        title: "New Job Title",
+        priority: 2,
+        description: "",
+        source_file: "Manual"
+    });
+    renderJobTitlesEditTable();
+}
+
+function saveJobTitles() {
+    if (currentJobTitles.length === 0) {
+        if (confirm('Save empty list? This will delete all job titles.')) {
+            // Proceed with empty list
+        } else {
+            return;
+        }
+    }
+    
+    // Filter out empty titles
+    const validTitles = currentJobTitles.filter(item => item.title.trim() !== '');
+    
+    const candidateId = window.location.pathname.split('/').pop();
+    
+    fetch(`/candidates/${candidateId}/job-titles/bulk-save`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            job_titles: validTitles
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            window.location.reload();
+        } else {
+            alert(`❌ Save failed: ${data.message}`);
+        }
+    })
+    .catch(error => {
+        console.error('Save error:', error);
+        alert('❌ Save failed: Network error');
+    });
+}
+
+function cancelJobTitlesEdit() {
+    // Switch back to view mode without saving
+    document.getElementById('jobTitlesViewMode').classList.remove('d-none');
+    document.getElementById('jobTitlesEditMode').classList.remove('show');
+    document.getElementById('jobTitlesEditMode').classList.add('collapse');
+    
+    // Reset buttons
+    document.getElementById('btnEditJobTitles').style.display = 'inline-block';
+    document.getElementById('btnAddJobTitle').style.display = 'none';
+    document.getElementById('btnSaveJobTitles').style.display = 'none';
+    document.getElementById('btnCancelJobTitles').style.display = 'none';
+    
+    // Clear data
+    originalJobTitles = [];
+    currentJobTitles = [];
+}
+
+function discardParsedJobTitles() {
+    if (confirm('Discard all parsed job titles?')) {
+        parsedJobTitlesData = [];
+        document.getElementById('parsedJobTitlesPanel').classList.remove('show');
+        document.getElementById('parseStatus').innerHTML = '';
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 </script>
+
+<!-- Include Skills Modal -->
+{% include "skills/modal.html" %}
 {% endblock %}

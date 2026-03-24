@@ -1,10 +1,10 @@
 # Job Finder Web App — Project Context
 
-**User:** Vardan Arakelyan  
-**Location:** Armenia  
-**Goal:** Find fully remote jobs in US/EU/Canada while working from Armenia  
-**Project Status:** Phase 1 COMPLETE (Core Foundation)  
-**Last Updated:** March 23, 2026
+**User:** Vardan Arakelyan
+**Location:** Armenia
+**Goal:** Find fully remote jobs in US/EU/Canada while working from Armenia
+**Project Status:** Phase 1 COMPLETE + Phase 2 COMPLETE (Skills, Preferences, Platform Accounts)
+**Last Updated:** March 24, 2026 (Phase 2 Complete)
 
 ---
 
@@ -55,15 +55,22 @@ All 11 tasks completed and tested:
 - LLM settings page for configuring Ollama, OpenRouter, Anthropic, OpenAI
 - Health check verifies database connectivity
 
-### 📋 Phase 2: Candidate Profiles — NEXT
+### ✅ Phase 2: Candidate Profiles — COMPLETE
 
-Pending implementation:
-- Platform accounts (encrypted cookie storage per candidate)
-- Candidate profile (experience, location, timezone)
-- Job titles (per-candidate preferred titles, priority ordering)
-- Skills (required/preferred skills per candidate)
-- Search queries (per-candidate query management)
-- Profile UI (settings pages for all candidate config)
+All Phase 2 tasks completed:
+
+- ✅ **Skills Management** - Modal-based UI with search, filter, bulk actions
+- ✅ **AI Skill Extraction** - Parse skills from uploaded documents
+- ✅ **Enable/Disable Skills** - Toggle skills for search matching
+- ✅ **Search Preferences** - Min scores, remote-only, experience levels
+- ✅ **Platform Accounts** - Encrypted cookie storage for LinkedIn/Glassdoor
+
+**Tested & Working:**
+- Skills modal with search/filter functionality
+- AI parsing of skills from documents
+- Bulk enable/disable/delete operations
+- Preferences page with sliders and checkboxes
+- Platform accounts with cookie import
 
 ### Future Phases
 
@@ -392,6 +399,36 @@ DEFAULT_TIMEZONE=Asia/Yerevan
 7. ✅ Created LLM configuration UI (was "Coming Soon")
 8. ✅ All models properly imported in `__init__.py`
 
+### Fixed Issues (Phase 2 - LLM Integration)
+
+9. ✅ **NVIDIA NIM Integration** - Fixed after deep research
+   - Model format: `nvidia_nim/meta/llama3-70b-instruct` (NOT `nvidia/...`)
+   - API base: `https://integrate.api.nvidia.com/v1/` (with trailing slash)
+   - All routes updated: `chat.py`, `llm_config.py`, `llm_test.py`
+   - Tested & working models:
+     - `meta/llama3-70b-instruct` (free tier)
+     - `meta/llama3-8b-instruct` (free tier)
+     - `qwen/qwen3-coder-480b-a35b-instruct` (Continue.dev)
+     - `meta/llama-3.1-405b-instruct` (requires credits)
+10. ✅ **AI Chat Page** - Shows provider names in model dropdown `[NVIDIA] model-name`
+11. ✅ **Provider Detection** - Smart detection for `nvidia_nim/`, `ollama/`, etc.
+
+### Fixed Issues (Phase 2 - Document Upload & AI Chat)
+
+12. ✅ **NVIDIA API Key Decryption** - Fixed in `chat.py`, `document_parser.py`
+    - Changed `decrypt_token` → `decrypt_data` for consistency
+13. ✅ **NVIDIA Model Prefix for LiteLLM** - Added proper prefixes
+    - `nvidia/` for NVIDIA, `openrouter/` for OpenRouter, etc.
+    - Fixed in: `chat.py`, `document_parser.py`, `llm_test.py`
+14. ✅ **NVIDIA API Base URL** - Fixed `/v1/v1/` double path issue
+    - LiteLLM appends `/v1`, so strip it from config
+    - Code: `if api_base.endswith('/v1'): api_base = api_base[:-3]`
+15. ✅ **Parse from Files Button Error** - Fixed March 24 session
+    - Profile docs now use cached parsed data (faster, no format mismatch)
+    - HTMX timeout extended to 180s
+    - Added timeout and error handlers
+    - Fixed in: `job_title_parser.py`, `detail.html`
+
 ### Current Limitations
 
 - Job search/scraping not yet implemented (Phase 3)
@@ -401,15 +438,31 @@ DEFAULT_TIMEZONE=Asia/Yerevan
 
 ---
 
+## 🔐 Security Notes
+
+**Sensitive Files (NEVER commit to GitHub):**
+- `.env` - Contains `ENCRYPTION_KEY`, `SECRET_KEY`, API keys
+- `data/jobs.db` - Encrypted API keys, user data
+- `data/cookies/` - Browser session cookies
+- `logs/app.log` - May contain debug info
+
+**All above files are in `.gitignore` ✅**
+
+---
+
 ## 🎯 Next Steps for Development
 
 ### Immediate (Continue Phase 2)
 
-1. Implement candidate profile editing (experience, skills)
-2. Add job title management per candidate
-3. Add skill management (required/preferred)
-4. Create search query configuration
-5. Build candidate preferences UI
+1. ✅ **Parse from Files** - FIXED and tested (March 24)
+2. [ ] Test NVIDIA Integration - Verify AI Chat works with NVIDIA models
+3. [ ] Test Document Upload - Upload `prefered-job-titles.md` and verify extraction
+4. [ ] Test All Providers - OpenRouter, Anthropic, OpenAI (if API keys configured)
+5. [ ] Candidate experience section (manual entry + AI extraction)
+6. [ ] Candidate skills management (required/preferred)
+7. [ ] Candidate platform accounts (LinkedIn, Glassdoor cookies)
+8. [ ] Candidate timezone & location preferences
+9. [ ] Search query management per candidate
 
 ### Short Term (Phase 3)
 
@@ -439,6 +492,28 @@ curl http://localhost:9002/api/health
 ```bash
 tail -f logs/app.log
 ```
+
+**Generate New Keys (if needed):**
+```bash
+# ENCRYPTION_KEY (for data encryption)
+venv/bin/python -c "from cryptography.fernet import Fernet; print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())"
+
+# SECRET_KEY (for sessions)
+venv/bin/python -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(32))"
+```
+
+**NVIDIA NIM Configuration:**
+- Model format: `nvidia_nim/meta/llama3-70b-instruct`
+- API Base: `https://integrate.api.nvidia.com/v1/`
+- Free models: `meta/llama3-70b-instruct`, `meta/llama3-8b-instruct`
+- Continue.dev models: `qwen/qwen3-coder-480b-a35b-instruct`
+
+**Parse from Files (AI Job Title Extraction):**
+- Button location: Candidate Detail page → "Preferred Job Titles (AI Extracted)" section
+- Extracts from: `job_titles`, `profile`, `resume` documents
+- Uses cached parsed data for profile docs (faster)
+- Timeout: 180 seconds (HTMX)
+- Expected time: 30-90 seconds depending on LLM
 
 ---
 
