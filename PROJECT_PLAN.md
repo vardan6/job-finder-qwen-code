@@ -50,47 +50,83 @@ A **web-based job search application** that:
 
 ## 🎯 Phased Implementation Strategy
 
-### Phase 1: Core Foundation (Hours 1-13)
+### ✅ Phase 1: Core Foundation (Hours 1-13) — COMPLETE
 
 **Goal:** Working web app with candidate management
 
-| Phase | Task | Deliverable | Time |
-|-------|------|-------------|------|
-| 1.1 | Project Skeleton | FastAPI + HTMX structure, requirements.txt, .env.example, setup script | 2h |
-| 1.2 | Base Template | base.html, navigation, flash message system, error handling | 1h |
-| 1.3 | Database Models | Candidate model, SQLite setup, database connection | 2h |
-| 1.4 | Static Files | HTMX, Alpine.js, basic CSS, favicon | 30m |
-| 1.5 | Candidate Routes | CRUD endpoints with Pydantic validation | 2h |
-| 1.6 | Candidate UI | Forms with error display, HTMX interactions | 2h |
-| 1.7 | Flash Messages | User feedback system (success/error messages) | 30m |
-| 1.8 | Logging | File + console logging, debug support | 20m |
-| 1.9 | LLM Config + Test | API keys, encrypted storage, test chat interface | 2h |
-| 1.10 | Health Check | /api/health endpoint, smoke test script | 30m |
-| 1.11 | Error Pages | Custom 404, 500 pages (basic) | 30m |
+| Phase | Task | Deliverable | Status |
+|-------|------|-------------|--------|
+| 1.1 | Project Skeleton | FastAPI + HTMX structure, requirements.txt, .env.example, setup script | ✅ COMPLETE |
+| 1.2 | Base Template | base.html, navigation, flash message system, error handling | ✅ COMPLETE |
+| 1.3 | Database Models | Candidate, Job, LLMProvider, Supporting models | ✅ COMPLETE |
+| 1.4 | Static Files | HTMX, Alpine.js, basic CSS, favicon | ✅ COMPLETE |
+| 1.5 | Candidate Routes | CRUD endpoints with Pydantic validation | ✅ COMPLETE |
+| 1.6 | Candidate UI | Forms with error display, HTMX interactions | ✅ COMPLETE |
+| 1.7 | Flash Messages | User feedback system (success/error messages) | ✅ COMPLETE |
+| 1.8 | Logging | File + console logging, debug support | ✅ COMPLETE |
+| 1.9 | LLM Config + Test | API keys, encrypted storage, test chat interface | ✅ COMPLETE |
+| 1.10 | Health Check | /api/health endpoint, smoke test script | ✅ COMPLETE |
+| 1.11 | Error Pages | Custom 404, 500 pages (basic) | ✅ COMPLETE |
 
-**End of Phase 1:** 
+**End of Phase 1:**
 - ✅ Working web app with navigation
 - ✅ Can create/edit/delete candidates with feedback
 - ✅ LLM providers configured and testable
 - ✅ Logging configured for debugging
 - ✅ Health check verifies everything works
+- ✅ AI Chat interface working
 
 ---
 
-### Phase 2: Candidate Profiles (Hours 14-22)
+### ✅ Phase 2: Candidate Profiles — COMPLETE
 
 **Goal:** Complete candidate configuration
 
-| Phase | Task | Deliverable | Time |
-|-------|------|-------------|------|
-| 2.1 | Platform Accounts | Encrypted cookie storage per candidate, login flow | 2h |
-| 2.2 | Candidate Profile | Edit experience, location, timezone | 2h |
-| 2.3 | Job Titles | Per-candidate preferred titles, priority ordering | 1h |
-| 2.4 | Skills | Required/preferred skills per candidate | 1h |
-| 2.5 | Search Queries | Per-candidate query management, validation | 1h |
-| 2.6 | Profile UI | Settings pages for all candidate config | 2h |
+| Phase | Task | Deliverable | Status |
+|-------|------|-------------|--------|
+| 2.1 | Platform Accounts | Encrypted cookie storage per candidate, login flow | ✅ COMPLETE |
+| 2.2 | Candidate Profile | Edit experience, location, timezone | ✅ COMPLETE (via document upload) |
+| 2.3 | Job Titles | Per-candidate preferred titles, priority ordering | ✅ COMPLETE + AI extraction |
+| 2.4 | Skills | Required/preferred skills per candidate | ✅ COMPLETE + AI extraction |
+| 2.5 | Search Queries | Per-candidate query management, validation | ⏳ Deferred to Phase 3 |
+| 2.6 | Profile UI | Settings pages for all candidate config | ✅ COMPLETE |
 
-**End of Phase 2:** Full candidate profiles ready for job search
+**Additional Features Implemented:**
+- ✅ AI-powered job title extraction from documents
+- ✅ AI-powered skill extraction with categorization (required/preferred)
+- ✅ Skills modal with search, filter, bulk actions
+- ✅ Enable/disable skills toggle for search matching
+- ✅ Search preferences (min scores, remote-only, experience levels)
+- ✅ Platform accounts UI with cookie import
+- ✅ Document upload and parsing system
+- ✅ LLM function mappings for all AI features
+
+**End of Phase 2:** Full candidate profiles ready for job search ✅
+
+---
+
+### ✅ LLM Configuration Redesign — COMPLETE
+
+**Additional improvements implemented after Phase 2:**
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Inline Model Selectors** | Dropdown next to each AI action button | ✅ COMPLETE |
+| **Reusable Model Selector Widget** | `components/model_selector.html` component | ✅ COMPLETE |
+| **Backend API Endpoints** | `/api/llm/models`, `/api/llm/function/{name}/model` | ✅ COMPLETE |
+| **Code Cleanup (DRY)** | Removed duplicate functions, single source of truth | ✅ COMPLETE |
+| **Enhanced Navigation** | Links between provider config and function mappings | ✅ COMPLETE |
+
+**AI Functions Configured (5 total):**
+- ✅ `job_title_parser` - Job Title Parser (AI)
+- ✅ `skill_extractor` - Skill Extractor (AI)
+- ✅ `job_scorer` - Job Scorer (AI) - Ready for Phase 3
+- ✅ `resume_matcher` - Resume-Job Matcher (AI) - Ready for Phase 3
+- ✅ `ai_chat` - AI Chat Assistant
+
+**Files Changed:**
+- Backend: 7 files (removed duplicates, added API endpoints, updated imports)
+- Frontend: 4 files (new widget component, added inline selectors)
 
 ---
 
@@ -193,70 +229,75 @@ job-finder-web/
 │   ├── config.py                # Env vars, conservative defaults
 │   ├── security.py              # Encryption, XSS, validation
 │   ├── database.py              # SQLite + migrations
+│   ├── logging_config.py        # File + console logging
 │   ├── routes/
 │   │   ├── candidates.py        # Candidate CRUD
-│   │   ├── profiles.py          # Profile, titles, skills
-│   │   ├── jobs.py              # Search, list, export
-│   │   ├── settings.py          # Per-candidate settings
+│   │   ├── candidate_parser.py  # AI parsing (job titles, skills)
+│   │   ├── skills.py            # Skills management [NEW]
+│   │   ├── preferences.py       # Search preferences [NEW]
+│   │   ├── platform_accounts.py # Cookie management [NEW]
+│   │   ├── documents.py         # Document upload/management
+│   │   ├── chat.py              # AI Chat interface
 │   │   ├── llm_config.py        # LLM provider config
-│   │   ├── login_manager.py     # Cookie login flow
-│   │   └── analytics.py         # Stats dashboard
+│   │   ├── llm_functions.py     # Function-to-model mappings
+│   │   ├── llm_test.py          # LLM test endpoint
+│   │   └── health.py            # Health check
 │   ├── services/
-│   │   ├── candidate_service.py
-│   │   ├── scraper_service.py   # Async Playwright
-│   │   ├── ai_service.py        # LiteLLM with fallback
-│   │   ├── analysis_service.py  # Remote + skill scoring
-│   │   ├── rate_limiter.py      # SQLite-backed persistent
-│   │   ├── search_lock.py       # File-based global lock
-│   │   ├── scheduler_service.py
-│   │   ├── notification_service.py
-│   │   └── backup_service.py    # SQLite backup() API
+│   │   ├── llm_service.py       # Canonical LLM utilities [NEW]
+│   │   ├── document_parser.py   # Document parsing service
+│   │   ├── job_title_parser.py  # Job title extraction
+│   │   ├── init_prompts.py      # Initialize system prompts
+│   │   └── init_function_mappings.py # Init LLM mappings [NEW]
 │   ├── models/
-│   │   ├── candidate.py         # With timezone
-│   │   ├── job.py               # With description_path
-│   │   ├── llm_provider.py      # Encrypted keys
-│   │   └── ...
-│   ├── scrapers/
-│   │   ├── linkedin.py          # Async, resume-capable
-│   │   └── glassdoor.py
-│   ├── validators/
-│   │   ├── query_validator.py   # SQL injection, XSS
-│   │   └── input_validator.py
-│   └── utils/
-│       ├── browser_manager.py   # Orphan cleanup
-│       ├── deduplication.py     # Multi-signal
-│       └── storage.py
+│   │   ├── candidate.py         # Candidate model
+│   │   ├── job.py               # Job & JobApplication models
+│   │   ├── llm_provider.py      # LLMProvider & LLMModel
+│   │   ├── supporting.py        # JobTitle, Skill, Preferences
+│   │   ├── platform_account.py  # Platform accounts [NEW]
+│   │   └── document.py          # Documents & parse prompts
+│   ├── utils/
+│   │   └── claude_code_auth.py  # OAuth for Claude Code [NEW]
+│   └── database/
+│       ├── migrate_add_job_title_fields.py
+│       └── migrate_add_oauth_auth.py
 ├── frontend/
 │   ├── templates/
 │   │   ├── base.html
 │   │   ├── dashboard.html
+│   │   ├── chat.html
 │   │   ├── candidates/
 │   │   │   ├── list.html
-│   │   │   ├── detail.html
+│   │   │   ├── detail.html      # With inline model selectors
 │   │   │   └── edit.html
-│   │   ├── jobs/
-│   │   │   ├── list.html
-│   │   │   └── detail.html
-│   │   └── settings/
-│   │       ├── profile.html
-│   │       ├── queries.html
-│   │       └── llm.html
+│   │   ├── skills/
+│   │   │   ├── modal.html       # Skills manager [NEW]
+│   │   │   └── parse_result.html # AI parse results [NEW]
+│   │   ├── preferences/
+│   │   │   └── edit.html        # Search preferences [NEW]
+│   │   ├── accounts/
+│   │   │   └── list.html        # Platform accounts [NEW]
+│   │   ├── settings/
+│   │   │   ├── llm.html         # Provider config
+│   │   │   ├── functions.html   # Function mappings
+│   │   │   └── llm_test_result.html
+│   │   └── errors/
+│   │       ├── 404.html
+│   │       └── 500.html
 │   └── static/
 │       ├── css/
 │       └── js/
 ├── data/
 │   ├── jobs.db                  # Main database
-│   ├── rate_limits.db           # Persistent rate limiting
-│   ├── search.lock              # Global lock file
 │   ├── candidates/
 │   │   └── {uuid}/
-│   │       ├── exports/
-│   │       ├── notes/
 │   │       ├── documents/
-│   │       └── descriptions/    # Job descriptions as files
-│   ├── archive/
+│   │       └── exports/
 │   ├── cookies/                 # ENCRYPTED .enc files
 │   └── backups/
+├── logs/
+│   └── app.log
+├── migrate_skills.py            # Skills migration [NEW]
+├── migrate_platform_accounts.py # Accounts migration [NEW]
 ├── .env.example
 ├── requirements.txt
 ├── run.py                       # Entry point

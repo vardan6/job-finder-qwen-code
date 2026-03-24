@@ -13,20 +13,7 @@ from sqlalchemy import func
 from backend.models.document import CandidateDocument, DocumentParsePrompt, LLMFunctionMapping
 from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.models.supporting import CandidateJobTitle
-from backend.services.document_parser import call_llm, extract_json_from_response
-
-
-def get_llm_for_function(db: Session, function_name: str) -> Optional[LLMModel]:
-    """Get the LLM model configured for a specific function"""
-    mapping = db.query(LLMFunctionMapping).filter(
-        LLMFunctionMapping.function_name == function_name,
-        LLMFunctionMapping.is_active == True
-    ).first()
-
-    if not mapping or not mapping.model_id:
-        return None
-
-    return db.query(LLMModel).filter(LLMModel.id == mapping.model_id).first()
+from backend.services.llm_service import call_llm, extract_json_from_response, get_llm_for_function
 
 
 def get_parse_prompt(db: Session, document_type: str) -> Optional[DocumentParsePrompt]:

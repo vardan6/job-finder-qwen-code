@@ -63,15 +63,13 @@
                                     <small class="text-muted">Function: <code>{{ mapping.function_name }}</code></small>
                                 </div>
                                 <div class="col-md-6">
-                                    <form hx-post="{{ url_for('save_function_mapping') }}"
-                                          hx-trigger="change"
-                                          hx-swap="none"
-                                          hx-on::after-request="window.location.reload()">
+                                    <div>
                                         <input type="hidden" name="function_name" value="{{ mapping.function_name }}">
-                                        
+
                                         <label class="form-label small text-muted mb-1">Select Model:</label>
                                         <div class="input-group">
-                                            <select name="model_id" class="form-select form-select-sm">
+                                            <select name="model_id" class="form-select form-select-sm"
+                                                    onchange="saveFunctionMapping('{{ mapping.function_name }}', this.value)">
                                                 <option value="">-- No Model Selected --</option>
                                                 {% for provider in providers %}
                                                     {% if provider.models %}
@@ -89,13 +87,10 @@
                                                     {% endif %}
                                                 {% endfor %}
                                             </select>
-                                            
-                                            <button type="button" 
+
+                                            <button type="button"
                                                     class="btn btn-outline-secondary btn-sm"
-                                                    hx-post="{{ url_for('reset_function_mapping') }}"
-                                                    hx-vals='{"function_name": "{{ mapping.function_name }}"}'
-                                                    hx-swap="none"
-                                                    hx-on::after-request="window.location.reload()"
+                                                    onclick="resetFunctionMapping('{{ mapping.function_name }}')"
                                                     title="Reset to default (Ollama)">
                                                 <i class="bi bi-arrow-counterclockwise"></i>
                                             </button>
@@ -112,7 +107,7 @@
                                                 </span>
                                             {% endif %}
                                         </div>
-                                    </form>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -225,4 +220,55 @@
         </div>
     </div>
 </div>
+
+<script>
+function saveFunctionMapping(functionName, modelId) {
+    fetch(`/api/llm/function/${functionName}/model`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model_id: modelId ? parseInt(modelId) : null })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success indicator
+            const select = event.target;
+            select.classList.add('is-valid');
+            setTimeout(() => select.classList.remove('is-valid'), 2000);
+        } else {
+            alert('Error saving mapping: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function resetFunctionMapping(functionName) {
+    if (!confirm('Reset this function to use the default Ollama model?')) {
+        return;
+    }
+    
+    fetch(`/api/llm/function/${functionName}/model`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model_id: null })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + JSON.stringify(data));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+</script>
 {% endblock %}

@@ -13,7 +13,7 @@ import time
 from backend.database import get_db
 from backend.models.document import LLMFunctionMapping
 from backend.models.llm_provider import LLMProvider, LLMModel
-from backend.services.document_parser import call_llm
+from backend.services.llm_service import call_llm
 
 
 router = APIRouter(tags=["AI Chat"])

@@ -1,0 +1,139 @@
+<!-- Reusable Model Selector Component -->
+<!-- 
+    Usage: Include this next to any AI action button
+    Required variables:
+        - function_name: The function identifier (e.g., "job_title_parser", "skill_extractor")
+        - selected_model_id: Currently selected model ID (optional)
+        - providers: List of providers with their models (optional, will fetch via API if not provided)
+-->
+
+<div class="model-selector-widget" data-function="{{ function_name }}">
+    <select class="form-select form-select-sm" 
+            style="min-width: 180px;"
+            onchange="onModelSelectorChange('{{ function_name }}', this.value)"
+            id="model-selector-{{ function_name }}">
+        <option value="">-- Select Model --</option>
+        {% if providers %}
+            {% for provider in providers %}
+                {% if provider.models %}
+                <optgroup label="{{ provider.name | title }}">
+                    {% for model in provider.models %}
+                        {% if model.is_active %}
+                        <option value="{{ model.id }}"
+                                {% if selected_model_id == model.id %}selected{% endif %}>
+                            {{ model.model_name }}
+                            {% if model.is_default_for_provider %} (default){% endif %}
+                        </option>
+                        {% endif %}
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+            {% endfor %}
+        {% else %}
+            <!-- Will be populated by JavaScript via API -->
+            <option value="">Loading models...</option>
+        {% endif %}
+    </select>
+    <span class="model-selector-status ms-2" id="status-{{ function_name }}">
+        {% if selected_model_id %}
+            <span class="badge bg-success">
+                <i class="bi bi-check-circle"></i> Ready
+            </span>
+        {% else %}
+            <span class="badge bg-warning text-dark">
+                <i class="bi bi-exclamation-triangle"></i> Not configured
+            </span>
+        {% endif %}
+    </span>
+</div>
+
+<script>
+// Model selector change handler
+function onModelSelectorChange(functionName, modelId) {
+    const statusSpan = document.getElementById(`status-${functionName}`);
+    
+    // Show loading state
+    statusSpan.innerHTML = '<span class="badge bg-secondary"><i class="bi bi-hourglass-split"></i> Saving...</span>';
+    
+    // Save selection to backend
+    fetch(`/api/llm/function/${functionName}/model`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model_id: modelId ? parseInt(modelId) : null})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update status badge
+            if (modelId) {
+                statusSpan.innerHTML = `
+                    <span class="badge bg-success">
+                        <i class="bi bi-check-circle"></i> Ready
+                    </span>
+                `;
+            } else {
+                statusSpan.innerHTML = `
+                    <span class="badge bg-warning text-dark">
+                        <i class="bi bi-exclamation-triangle"></i> Not configured
+                    </span>
+                `;
+            }
+        } else {
+            statusSpan.innerHTML = `
+                <span class="badge bg-danger">
+                    <i class="bi bi-x-circle"></i> Error
+                </span>
+            `;
+            console.error('Failed to save model selection:', data);
+        }
+    })
+    .catch(error => {
+        statusSpan.innerHTML = `
+            <span class="badge bg-danger">
+                <i class="bi bi-x-circle"></i> Error
+            </span>
+        `;
+        console.error('Error saving model selection:', error);
+    });
+}
+
+// Load models via API if not provided
+document.addEventListener('DOMContentLoaded', function() {
+    const widget = document.querySelector(`.model-selector-widget[data-function="{{ function_name }}"]`);
+    const selectElement = widget?.querySelector('select');
+    
+    if (selectElement && selectElement.options.length <= 1) {
+        // Fetch models from API
+        fetch('/api/llm/models')
+            .then(response => response.json())
+            .then(data => {
+                // Clear loading option
+                selectElement.innerHTML = '<option value="">-- Select Model --</option>';
+                
+                // Populate with providers and models
+                data.providers.forEach(provider => {
+                    if (provider.models && provider.models.length > 0) {
+                        const optgroup = document.createElement('optgroup');
+                        optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
+                        
+                        provider.models.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.id;
+                            option.textContent = model.display_name || model.name;
+                            if (model.is_default) {
+                                option.textContent += ' (default)';
+                            }
+                            optgroup.appendChild(option);
+                        });
+                        
+                        selectElement.appendChild(optgroup);
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error loading models:', error);
+                selectElement.innerHTML = '<option value="">Error loading models</option>';
+            });
+    }
+});
+</script>

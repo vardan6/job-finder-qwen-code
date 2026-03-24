@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//home/vardana/.qwen/**)",
-      "Read(//home/vardana/**)"
+      "Read(//home/vardana/**)",
+      "Bash(python *)"
     ]
   },
   "$version": 3

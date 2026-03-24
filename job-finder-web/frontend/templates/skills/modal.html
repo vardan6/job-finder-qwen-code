@@ -36,22 +36,28 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="btn-group mb-3" role="group">
-                    <button class="btn btn-success" onclick="showAddSkillForm()">
-                        <i class="bi bi-plus-circle"></i> Add Skill
-                    </button>
-                    <button class="btn btn-primary" 
-                            hx-post="/candidates/{{ candidate.id }}/skills/parse"
-                            hx-target="#skillsModalBody"
-                            hx-swap="innerHTML">
-                        <i class="bi bi-robot"></i> Parse from Documents
-                    </button>
-                    <button class="btn btn-outline-danger" id="btnBulkDisable" onclick="bulkToggleSkills(false)" disabled>
-                        <i class="bi bi-toggle-off"></i> Disable Selected
-                    </button>
-                    <button class="btn btn-outline-danger" id="btnBulkDelete" onclick="bulkDeleteSkills()" disabled>
-                        <i class="bi bi-trash"></i> Delete Selected
-                    </button>
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-success" onclick="showAddSkillForm()">
+                            <i class="bi bi-plus-circle"></i> Add Skill
+                        </button>
+                        <button class="btn btn-primary"
+                                hx-post="/candidates/{{ candidate.id }}/skills/parse"
+                                hx-target="#skillsModalBody"
+                                hx-swap="innerHTML">
+                            <i class="bi bi-robot"></i> Parse from Documents
+                        </button>
+                        <button class="btn btn-outline-danger" id="btnBulkDisable" onclick="bulkToggleSkills(false)" disabled>
+                            <i class="bi bi-toggle-off"></i> Disable Selected
+                        </button>
+                        <button class="btn btn-outline-danger" id="btnBulkDelete" onclick="bulkDeleteSkills()" disabled>
+                            <i class="bi bi-trash"></i> Delete Selected
+                        </button>
+                    </div>
+                    <!-- Inline Model Selector -->
+                    {% set function_name = 'skill_extractor' %}
+                    {% set selected_model_id = skill_extractor_model_id %}
+                    {% include "components/model_selector.html" %}
                     <span class="badge bg-secondary ms-2" id="selectedCount">0 selected</span>
                 </div>
 

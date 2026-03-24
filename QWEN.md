@@ -3,8 +3,13 @@
 **User:** Vardan Arakelyan
 **Location:** Armenia
 **Goal:** Find fully remote jobs in US/EU/Canada while working from Armenia
-**Project Status:** Phase 1 COMPLETE + Phase 2 COMPLETE (Skills, Preferences, Platform Accounts)
-**Last Updated:** March 24, 2026 (Phase 2 Complete)
+**Project Status:** 
+- ✅ Phase 1: Core Foundation — COMPLETE
+- ✅ Phase 2: Candidate Profiles — COMPLETE  
+- ✅ LLM Configuration Redesign — COMPLETE
+- ⏳ Phase 3: Job Search Engine — NEXT
+
+**Last Updated:** March 24, 2026
 
 ---
 
@@ -71,6 +76,30 @@ All Phase 2 tasks completed:
 - Bulk enable/disable/delete operations
 - Preferences page with sliders and checkboxes
 - Platform accounts with cookie import
+
+### ✅ LLM Configuration Redesign — COMPLETE
+
+**New Features:**
+- ✅ **Inline Model Selectors** - Dropdown next to AI action buttons
+- ✅ **Reusable Model Selector Widget** - `components/model_selector.html`
+- ✅ **Backend API Endpoints** - `/api/llm/models`, `/api/llm/function/{name}/model`
+- ✅ **Code Cleanup** - Removed duplicate functions (DRY principle restored)
+- ✅ **Enhanced Navigation** - Links between provider config and function mappings
+
+**Files Changed:**
+- Backend: 7 files (removed duplicates, added API endpoints, updated imports)
+- Frontend: 4 files (new widget component, added inline selectors)
+
+**How to Use:**
+1. Visit candidate page → See model selector next to "Parse from Files"
+2. Change model → Auto-saves to database
+3. Click parse → Uses selected model
+4. Central config still available at `/settings/functions`
+
+**Documentation:**
+- See `IMPLEMENTATION_SUMMARY.md` for complete details
+- See `LLM_REDESIGN_PLAN.md` for original plan
+- See `CODE_REVIEW_CLEANUP.md` for cleanup analysis
 
 ### Future Phases
 
@@ -491,6 +520,20 @@ curl http://localhost:9002/api/health
 **View Logs:**
 ```bash
 tail -f logs/app.log
+```
+
+**Test LLM Model Selection API:**
+```bash
+# Get all available models
+curl http://localhost:9002/api/llm/models
+
+# Get current model for job_title_parser
+curl http://localhost:9002/api/llm/function/job_title_parser/model
+
+# Set model for skill_extractor (replace 5 with actual model ID)
+curl -X POST http://localhost:9002/api/llm/function/skill_extractor/model \
+  -H "Content-Type: application/json" \
+  -d '{"model_id": 5}'
 ```
 
 **Generate New Keys (if needed):**

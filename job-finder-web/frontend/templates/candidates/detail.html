@@ -261,15 +261,23 @@
                             <i class="bi bi-robot text-primary me-2"></i>
                             Preferred Job Titles (AI Extracted)
                         </h5>
-                        <button class="btn btn-primary btn-sm" type="button"
-                                hx-post="/candidates/{{ candidate.id }}/parse-job-titles"
-                                hx-timeout="180"
-                                hx-on::before-request="showParsingStatus()"
-                                hx-on::htmx:timeout="handleParseTimeout(event)"
-                                hx-on::htmx:send-error="handleParseError(event)"
-                                hx-on::after-request="handleParseResponse(event)">
-                            <i class="bi bi-magic"></i> Parse from Files
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <!-- Inline Model Selector -->
+                            {% set function_name = 'job_title_parser' %}
+                            {% set selected_model_id = job_title_parser_model_id %}
+                            {% include "components/model_selector.html" %}
+                            
+                            <!-- Parse Button -->
+                            <button class="btn btn-primary btn-sm" type="button"
+                                    hx-post="/candidates/{{ candidate.id }}/parse-job-titles"
+                                    hx-timeout="180"
+                                    hx-on::before-request="showParsingStatus()"
+                                    hx-on::htmx:timeout="handleParseTimeout(event)"
+                                    hx-on::htmx:send-error="handleParseError(event)"
+                                    hx-on::after-request="handleParseResponse(event)">
+                                <i class="bi bi-magic"></i> Parse from Files
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
