@@ -154,6 +154,48 @@ function filterSkills() {
     });
 }
 
+// Load models for model selector widget
+function loadModelsForWidget(widget) {
+    const functionName = widget.getAttribute('data-function');
+    const selectElement = widget.querySelector('select');
+    
+    if (!selectElement || selectElement.options.length > 1) {
+        return; // Already loaded or no select element
+    }
+    
+    // Fetch models from API
+    fetch('/api/llm/models')
+        .then(response => response.json())
+        .then(data => {
+            // Clear loading option
+            selectElement.innerHTML = '<option value="">-- Select Model --</option>';
+            
+            // Populate with providers and models
+            data.providers.forEach(provider => {
+                if (provider.models && provider.models.length > 0) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
+                    
+                    provider.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.display_name || model.name;
+                        if (model.is_default) {
+                            option.textContent += ' (default)';
+                        }
+                        optgroup.appendChild(option);
+                    });
+                    
+                    selectElement.appendChild(optgroup);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+            selectElement.innerHTML = '<option value="">Error loading models</option>';
+        });
+}
+
 // Show add skill row
 function showAddSkillRow() {
     const row = document.getElementById('addSkillRow');
@@ -391,5 +433,23 @@ function handleParseResult() {
 // Initialize on load
 document.addEventListener('DOMContentLoaded', function() {
     handleParseResult();
+    // Initialize model selectors
+    document.querySelectorAll('.model-selector-widget').forEach(function(widget) {
+        loadModelsForWidget(widget);
+    });
 });
+
+// Also handle HTMX content loads
+document.addEventListener('htmx:afterSwap', function(event) {
+    event.target.querySelectorAll('.model-selector-widget').forEach(function(widget) {
+        loadModelsForWidget(widget);
+    });
+});
+
+// Initialize immediately for inline scripts
+setTimeout(function() {
+    document.querySelectorAll('.model-selector-widget').forEach(function(widget) {
+        loadModelsForWidget(widget);
+    });
+}, 100);
 </script>

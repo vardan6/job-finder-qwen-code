@@ -10,8 +10,10 @@ from typing import List, Dict, Optional
 
 from backend.database import get_db
 from backend.models.candidate import Candidate
+from backend.models.document import CandidateDocument
 from backend.services.job_title_parser import (
     parse_all_candidate_documents,
+    parse_selected_documents,
     save_job_titles_to_candidate,
     get_candidate_job_titles_with_sources
 )
@@ -23,37 +25,71 @@ templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 templates = Jinja2Templates(directory=str(templates_path))
 
 
-@router.post("/{candidate_id}/parse-job-titles")
-async def parse_job_titles(
-    candidate_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Parse all candidate documents and extract job titles using AI.
-    Returns parsed results without saving to database.
-    """
+@router.get("/{candidate_id}/documents")
+async def get_candidate_documents(candidate_id: int, db: Session = Depends(get_db)):
+    """Get list of parseable documents with metadata"""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     
-    # Parse all documents
-    success, job_titles, error = parse_all_candidate_documents(db, candidate_id)
+    documents = db.query(CandidateDocument).filter(
+        CandidateDocument.candidate_id == candidate_id,
+        CandidateDocument.is_active == True,
+        CandidateDocument.document_type.in_(["job_titles", "profile", "resume", "cover_letter"])
+    ).order_by(CandidateDocument.created_at.desc()).all()
+    
+    return {
+        "documents": [
+            {
+                "id": doc.id,
+                "filename": doc.filename,
+                "document_type": doc.document_type,
+                "file_size": doc.file_size,
+                "created_at": doc.created_at.isoformat(),
+                "parse_status": doc.parse_status
+            }
+            for doc in documents
+        ]
+    }
+
+
+@router.post("/{candidate_id}/parse-job-titles")
+async def parse_job_titles(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Parse selected or all documents"""
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    # Parse request body
+    try:
+        body = await request.json()
+        document_ids = body.get("document_ids", [])
+    except:
+        document_ids = []
+    
+    # Parse selected or all documents
+    if document_ids:
+        success, job_titles, error = parse_selected_documents(db, candidate_id, document_ids)
+        message = f"Extracted {len(job_titles)} job titles from {len(document_ids)} file(s)"
+    else:
+        success, job_titles, error = parse_all_candidate_documents(db, candidate_id)
+        message = f"Extracted {len(job_titles)} job titles from documents"
     
     if not success:
         return JSONResponse(
             status_code=400,
-            content={
-                "success": False,
-                "message": error,
-                "job_titles": []
-            }
+            content={"success": False, "message": error, "job_titles": []}
         )
     
     return {
         "success": True,
-        "message": f"Extracted {len(job_titles)} job titles from documents",
+        "message": message,
         "job_titles": job_titles,
-        "warning": error  # Non-fatal warnings
+        "warning": error
     }
 
 

@@ -6,14 +6,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import json
 import time
 
 from backend.database import get_db
 from backend.models.document import LLMFunctionMapping
 from backend.models.llm_provider import LLMProvider, LLMModel
-from backend.services.llm_service import call_llm
 
 
 router = APIRouter(tags=["AI Chat"])
@@ -55,7 +54,6 @@ async def chat_page(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/api/chat")
 async def chat(
-    request: Request,
     model_id: int = Form(...),
     message: str = Form(...),
     conversation_history: str = Form(default="[]"),
@@ -63,6 +61,8 @@ async def chat(
 ):
     """Send a message to the AI and get a response"""
     try:
+        start_time = time.time()
+
         # Get the model
         model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
         if not model:
@@ -139,6 +139,10 @@ async def chat(
         
         if response and response.choices and len(response.choices) > 0:
             ai_message = response.choices[0].message.content
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            usage = getattr(response, "usage", None)
+            tokens_used = getattr(usage, "total_tokens", None) if usage else None
             
             # Update conversation history
             history.append({"role": "user", "content": message})
@@ -147,7 +151,13 @@ async def chat(
             return {
                 "success": True,
                 "message": ai_message,
-                "conversation": history
+                "conversation": history,
+                "meta": {
+                    "provider": provider.name,
+                    "model": model.display_name or model.model_name,
+                    "time_ms": elapsed_ms,
+                    "tokens_used": tokens_used,
+                }
             }
         else:
             raise HTTPException(status_code=500, detail="Empty response from LLM")

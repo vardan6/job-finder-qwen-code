@@ -8,33 +8,13 @@
 -->
 
 <div class="model-selector-widget" data-function="{{ function_name }}">
-    <select class="form-select form-select-sm" 
+    <select class="form-select form-select-sm"
             style="min-width: 180px;"
             onchange="onModelSelectorChange('{{ function_name }}', this.value)"
             id="model-selector-{{ function_name }}">
         <option value="">-- Select Model --</option>
-        {% if providers %}
-            {% for provider in providers %}
-                {% if provider.models %}
-                <optgroup label="{{ provider.name | title }}">
-                    {% for model in provider.models %}
-                        {% if model.is_active %}
-                        <option value="{{ model.id }}"
-                                {% if selected_model_id == model.id %}selected{% endif %}>
-                            {{ model.model_name }}
-                            {% if model.is_default_for_provider %} (default){% endif %}
-                        </option>
-                        {% endif %}
-                    {% endfor %}
-                </optgroup>
-                {% endif %}
-            {% endfor %}
-        {% else %}
-            <!-- Will be populated by JavaScript via API -->
-            <option value="">Loading models...</option>
-        {% endif %}
     </select>
-    <span class="model-selector-status ms-2" id="status-{{ function_name }}">
+    <span class="model-selector-status ms-2" id="status-{{ function_name }}" {% if selected_model_id %}data-model-id="{{ selected_model_id }}"{% endif %}>
         {% if selected_model_id %}
             <span class="badge bg-success">
                 <i class="bi bi-check-circle"></i> Ready
@@ -98,42 +78,62 @@ function onModelSelectorChange(functionName, modelId) {
 }
 
 // Load models via API if not provided
-document.addEventListener('DOMContentLoaded', function() {
-    const widget = document.querySelector(`.model-selector-widget[data-function="{{ function_name }}"]`);
-    const selectElement = widget?.querySelector('select');
+function loadModelsForWidget(widget) {
+    const functionName = widget.getAttribute('data-function');
+    const selectElement = widget.querySelector('select');
+    const statusElement = document.getElementById(`status-${functionName}`);
     
-    if (selectElement && selectElement.options.length <= 1) {
-        // Fetch models from API
-        fetch('/api/llm/models')
-            .then(response => response.json())
-            .then(data => {
-                // Clear loading option
-                selectElement.innerHTML = '<option value="">-- Select Model --</option>';
-                
-                // Populate with providers and models
-                data.providers.forEach(provider => {
-                    if (provider.models && provider.models.length > 0) {
-                        const optgroup = document.createElement('optgroup');
-                        optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
-                        
-                        provider.models.forEach(model => {
-                            const option = document.createElement('option');
-                            option.value = model.id;
-                            option.textContent = model.display_name || model.name;
-                            if (model.is_default) {
-                                option.textContent += ' (default)';
-                            }
-                            optgroup.appendChild(option);
-                        });
-                        
-                        selectElement.appendChild(optgroup);
-                    }
-                });
-            })
-            .catch(error => {
-                console.error('Error loading models:', error);
-                selectElement.innerHTML = '<option value="">Error loading models</option>';
-            });
+    // Get currently selected model ID from status badge data
+    const currentModelId = statusElement?.getAttribute('data-model-id');
+    
+    if (!selectElement || selectElement.options.length > 1) {
+        return; // Already loaded or no select element
     }
+    
+    // Fetch models from API
+    fetch('/api/llm/models')
+        .then(response => response.json())
+        .then(data => {
+            // Clear and rebuild options
+            selectElement.innerHTML = '<option value="">-- Select Model --</option>';
+            
+            // Populate with providers and models
+            data.providers.forEach(provider => {
+                if (provider.models && provider.models.length > 0) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
+                    
+                    provider.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.display_name || model.name;
+                        if (model.is_default) {
+                            option.textContent += ' (default)';
+                        }
+                        // Select the current model if it matches
+                        if (currentModelId && model.id == currentModelId) {
+                            option.selected = true;
+                        }
+                        optgroup.appendChild(option);
+                    });
+                    
+                    selectElement.appendChild(optgroup);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+            selectElement.innerHTML = '<option value="">Error loading models</option>';
+        });
+}
+
+// Initialize all model selectors on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
+});
+
+// Also initialize on HTMX content load (for dynamically loaded content)
+document.addEventListener('htmx:afterSwap', function(event) {
+    event.target.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
 });
 </script>

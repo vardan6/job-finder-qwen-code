@@ -100,6 +100,20 @@ def parse_document_for_job_titles(
         # Call LLM
         result = call_llm(db, model, full_prompt)
 
+        # Fallback to direct Ollama call if configured model failed
+        if not result:
+            try:
+                from litellm import completion
+                response = completion(
+                    model="ollama/llama3",
+                    messages=[{"role": "user", "content": full_prompt}],
+                    api_base="http://localhost:11434"
+                )
+                result = response.choices[0].message.content if response else None
+            except Exception as ollama_error:
+                print(f"Direct Ollama fallback failed: {ollama_error}")
+                return False, [], f"LLM call failed: {str(ollama_error)}"
+
         if not result:
             return False, [], "LLM returned empty response"
 
@@ -129,6 +143,52 @@ def parse_document_for_job_titles(
 
     except Exception as e:
         return False, [], str(e)
+
+
+def parse_selected_documents(
+    db: Session,
+    candidate_id: int,
+    document_ids: List[int]
+) -> Tuple[bool, List[Dict], Optional[str]]:
+    """
+    Parse only selected documents for job titles.
+    
+    Returns:
+        (success, job_titles_list, error_message)
+    """
+    documents = db.query(CandidateDocument).filter(
+        CandidateDocument.candidate_id == candidate_id,
+        CandidateDocument.id.in_(document_ids),
+        CandidateDocument.is_active == True
+    ).all()
+    
+    if not documents:
+        return False, [], "No documents found"
+    
+    all_job_titles = []
+    errors = []
+    
+    for doc in documents:
+        success, titles, error = parse_document_for_job_titles(db, doc)
+        if success:
+            all_job_titles.extend(titles)
+        else:
+            errors.append(f"{doc.filename}: {error}")
+    
+    if not all_job_titles:
+        return False, [], f"All documents failed: {'; '.join(errors)}"
+    
+    # Deduplicate by title
+    deduplicated = {}
+    for title_data in all_job_titles:
+        title = title_data["title"]
+        if title not in deduplicated or title_data["priority"] < deduplicated[title]["priority"]:
+            deduplicated[title] = title_data
+    
+    result = sorted(deduplicated.values(), key=lambda x: x["priority"])
+    
+    warning = f"Warning: {'; '.join(errors)}" if errors else None
+    return True, result, warning
 
 
 def parse_all_candidate_documents(

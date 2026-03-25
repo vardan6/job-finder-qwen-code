@@ -65,109 +65,119 @@ def detect_document_type(filename: str) -> str:
 async def upload_document(
     request: Request,
     candidate_id: int,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),
     document_type: str = Form(""),
     load_strategy: str = Form("immediate"),
     db: Session = Depends(get_db)
 ):
-    """Upload a document for a candidate"""
+    """Upload one or more documents for a candidate"""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    
+
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
-    # Validate file extension
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in ALLOWED_EXTENSIONS:
-        return JSONResponse({
-            "success": False,
-            "message": f"Unsupported file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
-        }, status_code=400)
-    
-    # Auto-detect document type if not provided
-    if not document_type:
-        document_type = detect_document_type(file.filename)
-    
-    # Create candidate document folder
-    candidate_folder = Path(candidate.folder_path) / "documents"
-    candidate_folder.mkdir(parents=True, exist_ok=True)
-    
-    # Generate unique filename
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    file_path = candidate_folder / unique_filename
-    
-    # Save file
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "message": f"Failed to save file: {str(e)}"
-        }, status_code=500)
-    
-    # Calculate file hash and size
-    file_hash = calculate_file_hash(file_path)
-    file_size = file_path.stat().st_size
-    
-    # Check for duplicates
-    existing = db.query(CandidateDocument).filter(
-        CandidateDocument.candidate_id == candidate_id,
-        CandidateDocument.file_hash == file_hash,
-        CandidateDocument.is_active == True
-    ).first()
-    
-    if existing:
-        # Delete the duplicate file
-        file_path.unlink()
-        return JSONResponse({
-            "success": False,
-            "message": "Duplicate file detected (same content already exists)"
-        }, status_code=409)
-    
-    # Create database record
-    try:
-        document = CandidateDocument(
-            candidate_id=candidate_id,
-            filename=file.filename,
-            file_path=str(file_path.relative_to(DATA_DIR)),
-            file_hash=file_hash,
-            file_size=file_size,
-            mime_type="text/markdown" if file_ext == ".md" else "text/plain" if file_ext == ".txt" else "application/pdf",
-            document_type=document_type,
-            load_strategy=load_strategy,
-            parse_status="pending" if load_strategy == "immediate" else "not_required"
-        )
-        
-        db.add(document)
-        db.commit()
-        db.refresh(document)
-        
-        # TODO: If immediate parsing is requested, trigger AI parsing here
-        # For now, we'll just mark it as completed for markdown files
-        if load_strategy == "immediate" and file_ext in [".md", ".txt"]:
-            # Read content for future parsing
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            # Mark as completed (actual parsing will be done by AI agent in Phase 3)
-            document.parse_status = "completed"
-            db.commit()
-        
-        return JSONResponse({
-            "success": True,
-            "message": "Document uploaded successfully",
-            "document_id": document.id
-        })
-        
-    except Exception as e:
-        db.rollback()
-        # Clean up file
-        if file_path.exists():
+
+    uploaded_count = 0
+    duplicate_count = 0
+    error_count = 0
+    errors = []
+
+    for file in files:
+        # Validate file extension
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            error_count += 1
+            errors.append(f"{file.filename}: Unsupported file type")
+            continue
+
+        # Auto-detect document type if not provided
+        doc_type = document_type
+        if not doc_type:
+            doc_type = detect_document_type(file.filename)
+
+        # Create candidate document folder
+        candidate_folder = Path(candidate.folder_path) / "documents"
+        candidate_folder.mkdir(parents=True, exist_ok=True)
+
+        # Generate unique filename
+        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = candidate_folder / unique_filename
+
+        # Save file
+        try:
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        except Exception as e:
+            error_count += 1
+            errors.append(f"{file.filename}: Failed to save - {str(e)}")
+            continue
+
+        # Calculate file hash and size
+        file_hash = calculate_file_hash(file_path)
+        file_size = file_path.stat().st_size
+
+        # Check for duplicates
+        existing = db.query(CandidateDocument).filter(
+            CandidateDocument.candidate_id == candidate_id,
+            CandidateDocument.file_hash == file_hash,
+            CandidateDocument.is_active == True
+        ).first()
+
+        if existing:
+            # Delete the duplicate file
             file_path.unlink()
-        return JSONResponse({
-            "success": False,
-            "message": f"Database error: {str(e)}"
-        }, status_code=500)
+            duplicate_count += 1
+            continue
+
+        # Create database record
+        try:
+            document = CandidateDocument(
+                candidate_id=candidate_id,
+                filename=file.filename,
+                file_path=str(file_path.relative_to(DATA_DIR)),
+                file_hash=file_hash,
+                file_size=file_size,
+                mime_type="text/markdown" if file_ext == ".md" else "text/plain" if file_ext == ".txt" else "application/pdf",
+                document_type=doc_type,
+                load_strategy=load_strategy,
+                parse_status="pending" if load_strategy == "immediate" else "not_required"
+            )
+
+            db.add(document)
+            db.commit()
+            db.refresh(document)
+
+            # If immediate parsing is requested, mark as completed
+            # (actual parsing will be done by AI when user clicks "Parse from Files")
+            if load_strategy == "immediate" and file_ext in [".md", ".txt"]:
+                document.parse_status = "completed"
+                db.commit()
+
+            uploaded_count += 1
+
+        except Exception as e:
+            error_count += 1
+            errors.append(f"{file.filename}: Database error - {str(e)}")
+            db.rollback()
+
+    # Build response message
+    if uploaded_count > 0:
+        message = f"Uploaded {uploaded_count} file(s)"
+        if duplicate_count > 0:
+            message += f" ({duplicate_count} duplicate(s) skipped)"
+        if error_count > 0:
+            message += f" ({error_count} error(s))"
+    elif duplicate_count > 0:
+        message = f"All files were duplicates ({duplicate_count} files skipped)"
+    else:
+        message = f"Upload failed: {'; '.join(errors)}"
+
+    return JSONResponse({
+        "success": uploaded_count > 0 or duplicate_count > 0,
+        "message": message,
+        "uploaded": uploaded_count,
+        "duplicates": duplicate_count,
+        "errors": error_count
+    })
 
 
 @router.get("/{candidate_id}/documents/{doc_id}/view", response_class=JSONResponse)

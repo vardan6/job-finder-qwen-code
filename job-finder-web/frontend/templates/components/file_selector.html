@@ -1,0 +1,327 @@
+<!-- File Selection Modal for Parse -->
+<div class="modal fade" id="fileSelectorModal" tabindex="-1" aria-labelledby="fileSelectorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="fileSelectorModalLabel">
+                    <i class="bi bi-file-earmark-check"></i> Select Files to Parse
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Model Selector -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-cpu"></i> AI Model
+                    </label>
+                    {% set function_name = 'job_title_parser' %}
+                    {% set selected_model_id = job_title_parser_model_id %}
+                    {% include "components/model_selector.html" %}
+                </div>
+                
+                <!-- File List -->
+                <div>
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-files"></i> Available Files
+                    </label>
+                    <div id="fileList" class="list-group">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mb-0 mt-2">Loading files...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="btn-group mt-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="selectAllFiles()">
+                        <i class="bi bi-check-all"></i> Select All
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                        <i class="bi bi-x-lg"></i> Clear
+                    </button>
+                    <span class="badge bg-secondary ms-2 d-flex align-items-center" id="fileCountBadge">
+                        0 files selected
+                    </span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="parseSelectedFiles()">
+                    <i class="bi bi-magic"></i> Parse <span id="fileCount">0</span> File(s)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let availableFiles = [];
+let selectedFileIds = [];
+
+// Load available files
+function loadAvailableFiles() {
+    fetch('/candidates/{{ candidate.id }}/documents')
+        .then(response => response.json())
+        .then(data => {
+            availableFiles = data.documents;
+            
+            // Load last selection from localStorage
+            const saved = localStorage.getItem(`parse_selection_{{ candidate.id }}`);
+            if (saved) {
+                try {
+                    selectedFileIds = JSON.parse(saved);
+                } catch (e) {
+                    selectedFileIds = [];
+                }
+            } else {
+                // Default: select all files
+                selectedFileIds = availableFiles.map(f => f.id);
+            }
+            
+            renderFileList();
+        })
+        .catch(error => {
+            console.error('Error loading files:', error);
+            document.getElementById('fileList').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> Error loading files
+                </div>
+            `;
+        });
+}
+
+// Render file list with checkboxes
+function renderFileList() {
+    const container = document.getElementById('fileList');
+    
+    if (availableFiles.length === 0) {
+        container.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i> No files available for parsing
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = availableFiles.map(file => {
+        const isChecked = selectedFileIds.includes(file.id);
+        const typeBadges = {
+            'profile': '<span class="badge bg-info">Profile</span>',
+            'job_titles': '<span class="badge bg-primary">Job Titles</span>',
+            'resume': '<span class="badge bg-success">Resume</span>',
+            'cover_letter': '<span class="badge bg-secondary">Cover Letter</span>'
+        };
+        
+        return `
+            <label class="list-group-item list-group-item-action">
+                <div class="d-flex align-items-start">
+                    <input type="checkbox" class="form-check-input me-3 mt-1"
+                           value="${file.id}"
+                           ${isChecked ? 'checked' : ''}
+                           onchange="toggleFileSelection(${file.id}, this.checked)">
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <strong class="text-primary">${file.filename}</strong>
+                            <span class="badge bg-secondary">${formatFileSize(file.file_size || 0)}</span>
+                        </div>
+                        <div class="text-muted small">
+                            ${typeBadges[file.document_type] || '<span class="badge bg-light text-dark">Custom</span>'}
+                            • Uploaded ${formatDate(file.created_at)}
+                            ${file.parse_status === 'completed' ? '<span class="badge bg-success ms-1">✓ Parsed</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+            </label>
+        `;
+    }).join('');
+    
+    updateFileCount();
+}
+
+// Toggle file selection
+function toggleFileSelection(fileId, isChecked) {
+    if (isChecked) {
+        if (!selectedFileIds.includes(fileId)) {
+            selectedFileIds.push(fileId);
+        }
+    } else {
+        selectedFileIds = selectedFileIds.filter(id => id !== fileId);
+    }
+    updateFileCount();
+}
+
+// Update file count badge
+function updateFileCount() {
+    const count = selectedFileIds.length;
+    document.getElementById('fileCount').textContent = count;
+    document.getElementById('fileCountBadge').textContent = `${count} file(s) selected`;
+}
+
+// Select all files
+function selectAllFiles() {
+    selectedFileIds = availableFiles.map(f => f.id);
+    renderFileList();
+}
+
+// Clear selection
+function clearSelection() {
+    selectedFileIds = [];
+    renderFileList();
+}
+
+// Parse selected files
+function parseSelectedFiles() {
+    if (selectedFileIds.length === 0) {
+        alert('Please select at least one file to parse');
+        return;
+    }
+    
+    // Save selection for next time
+    localStorage.setItem(`parse_selection_{{ candidate.id }}`, JSON.stringify(selectedFileIds));
+    
+    // Close modal
+    const modalEl = document.getElementById('fileSelectorModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+        modal.hide();
+    }
+    
+    // Start parsing
+    showParsingStatus();
+    parseWithSelection(selectedFileIds);
+}
+
+// Parse with selected files
+function parseWithSelection(documentIds) {
+    // Show loading status
+    showParsingStatus();
+    
+    // Create abort controller for timeout
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+        abortController.abort();
+    }, 180000); // 3 minute timeout
+    
+    fetch(`/candidates/{{ candidate.id }}/parse-job-titles`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({document_ids: documentIds}),
+        signal: abortController.signal
+    })
+    .then(response => {
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Call the existing handler with proper format
+        if (data.success) {
+            handleParseResponse({
+                detail: {
+                    successful: true,
+                    xhr: {
+                        responseText: JSON.stringify(data)
+                    }
+                }
+            });
+        } else {
+            handleParseResponse({
+                detail: {
+                    successful: false,
+                    xhr: {
+                        responseText: JSON.stringify(data)
+                    }
+                }
+            });
+        }
+    })
+    .catch(error => {
+        clearTimeout(timeoutId);
+        console.error('Parse error:', error);
+        
+        let errorMessage = error.message;
+        if (error.name === 'AbortError') {
+            errorMessage = 'Request timed out. The AI is taking longer than expected. Please check server logs and refresh the page.';
+        }
+        
+        document.getElementById('parseStatus').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> 
+                <strong>Parse failed:</strong> ${errorMessage}
+                <div class="small mt-2">
+                    <strong>Troubleshooting:</strong>
+                    <ul class="mb-0 mt-1">
+                        <li>Check if LLM model is configured (Settings → LLM Functions)</li>
+                        <li>Check server logs: <code>tail -f logs/app.log</code></li>
+                        <li>Try with fewer files or smaller files</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+    });
+}
+
+// Utility: Format file size
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Utility: Format date
+function formatDate(isoString) {
+    if (!isoString) return 'Unknown';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+    });
+}
+
+// Show parsing status with progress
+function showParsingStatus() {
+    const statusDiv = document.getElementById('parseStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-info">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="flex-grow-1">
+                    <strong>Parsing ${selectedFileIds.length} file(s)...</strong>
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 100%"></div>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        <i class="bi bi-info-circle"></i> 
+                        This may take 30-90 seconds depending on file size and model speed
+                    </div>
+                    <div class="small text-muted">
+                        <i class="bi bi-clock"></i> Started at: ${new Date().toLocaleTimeString()}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Initialize file list when modal opens
+document.addEventListener('DOMContentLoaded', function() {
+    const modalEl = document.getElementById('fileSelectorModal');
+    if (modalEl) {
+        modalEl.addEventListener('show.bs.modal', function() {
+            loadAvailableFiles();
+        });
+    }
+});
+</script>

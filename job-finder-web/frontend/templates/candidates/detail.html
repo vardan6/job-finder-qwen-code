@@ -131,9 +131,13 @@
                                   hx-swap="none">
                                 <div class="row g-3">
                                     <div class="col-md-8">
-                                        <label class="form-label">Select File</label>
-                                        <input type="file" class="form-control" name="file" accept=".md,.txt,.pdf" required>
-                                        <div class="form-text">Supported: Markdown (.md), Text (.txt), PDF (coming soon)</div>
+                                        <label class="form-label">Select Files</label>
+                                        <input type="file" class="form-control" name="files" accept=".md,.txt,.pdf" multiple required>
+                                        <div class="form-text">
+                                            Supported: Markdown (.md), Text (.txt), PDF<br>
+                                            <i class="bi bi-info-circle"></i> Hold Ctrl/Cmd to select multiple files
+                                        </div>
+                                        <div id="selectedFilesList" class="mt-2"></div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label">Document Type</label>
@@ -266,15 +270,9 @@
                             {% set function_name = 'job_title_parser' %}
                             {% set selected_model_id = job_title_parser_model_id %}
                             {% include "components/model_selector.html" %}
-                            
+
                             <!-- Parse Button -->
-                            <button class="btn btn-primary btn-sm" type="button"
-                                    hx-post="/candidates/{{ candidate.id }}/parse-job-titles"
-                                    hx-timeout="180"
-                                    hx-on::before-request="showParsingStatus()"
-                                    hx-on::htmx:timeout="handleParseTimeout(event)"
-                                    hx-on::htmx:send-error="handleParseError(event)"
-                                    hx-on::after-request="handleParseResponse(event)">
+                            <button class="btn btn-primary btn-sm" type="button" onclick="showFileSelectorModal()">
                                 <i class="bi bi-magic"></i> Parse from Files
                             </button>
                         </div>
@@ -422,16 +420,45 @@
 </div>
 
 <script>
+// Display selected files when user selects them
+document.addEventListener('DOMContentLoaded', function() {
+    const fileInput = document.querySelector('input[name="files"]');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            const files = this.files;
+            const listDiv = document.getElementById('selectedFilesList');
+            
+            if (files.length > 0) {
+                let html = '<div class="small text-muted">Selected files:</div><ul class="list-group list-group-flush">';
+                for (let i = 0; i < files.length; i++) {
+                    html += `<li class="list-group-item px-0 py-1 border-0">
+                        <i class="bi bi-file-earmark"></i> ${files[i].name} 
+                        <span class="badge bg-secondary">${(files[i].size / 1024).toFixed(1)} KB</span>
+                    </li>`;
+                }
+                html += '</ul>';
+                listDiv.innerHTML = html;
+            } else {
+                listDiv.innerHTML = '';
+            }
+        });
+    }
+});
+
 function handleBeforeUpload(event) {
     // Show loading status
     const statusDiv = document.getElementById('uploadStatus');
-    statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Uploading...</div>';
+    const fileInput = document.querySelector('input[name="files"]');
+    const fileCount = fileInput ? fileInput.files.length : 0;
+    statusDiv.innerHTML = `<div class="alert alert-info">
+        <i class="bi bi-hourglass-split"></i> Uploading ${fileCount} file(s)...
+    </div>`;
 }
 
 function handleUploadResponse(event) {
     const statusDiv = document.getElementById('uploadStatus');
     const detail = event.detail;
-    
+
     // Check if request succeeded
     if (detail.successful) {
         try {
@@ -442,6 +469,12 @@ function handleUploadResponse(event) {
                 const uploadPanel = document.getElementById('uploadPanel');
                 const bsCollapse = new bootstrap.Collapse(uploadPanel, {toggle: true});
                 bsCollapse.hide();
+                // Clear file selection
+                const fileInput = document.querySelector('input[name="files"]');
+                if (fileInput) {
+                    fileInput.value = '';
+                    document.getElementById('selectedFilesList').innerHTML = '';
+                }
                 // Reload after short delay
                 setTimeout(() => {
                     window.location.reload();
@@ -896,7 +929,16 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
+
+// Show file selector modal
+function showFileSelectorModal() {
+    const modal = new bootstrap.Modal(document.getElementById('fileSelectorModal'));
+    modal.show();
+}
 </script>
+
+<!-- Include File Selector Modal -->
+{% include "components/file_selector.html" %}
 
 <!-- Include Skills Modal -->
 {% include "skills/modal.html" %}
