@@ -265,17 +265,9 @@
                             <i class="bi bi-robot text-primary me-2"></i>
                             Preferred Job Titles (AI Extracted)
                         </h5>
-                        <div class="d-flex align-items-center gap-2">
-                            <!-- Inline Model Selector -->
-                            {% set function_name = 'job_title_parser' %}
-                            {% set selected_model_id = job_title_parser_model_id %}
-                            {% include "components/model_selector.html" %}
-
-                            <!-- Parse Button -->
-                            <button class="btn btn-primary btn-sm" type="button" onclick="showFileSelectorModal()">
-                                <i class="bi bi-magic"></i> Parse from Files
-                            </button>
-                        </div>
+                        <button class="btn btn-primary btn-sm" type="button" onclick="showFileSelectorModal()">
+                            <i class="bi bi-magic"></i> Parse from Files
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -932,6 +924,9 @@ function escapeHtml(text) {
 
 // Show file selector modal
 function showFileSelectorModal() {
+    // Load available files before showing modal
+    loadAvailableFiles();
+    
     const modal = new bootstrap.Modal(document.getElementById('fileSelectorModal'));
     modal.show();
 }

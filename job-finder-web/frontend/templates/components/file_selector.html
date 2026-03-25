@@ -14,11 +14,36 @@
                     <label class="form-label fw-semibold">
                         <i class="bi bi-cpu"></i> AI Model
                     </label>
-                    {% set function_name = 'job_title_parser' %}
-                    {% set selected_model_id = job_title_parser_model_id %}
-                    {% include "components/model_selector.html" %}
+                    <div class="model-selector-widget" data-function="job_title_parser">
+                        <select class="form-select form-select-sm"
+                                style="min-width: 180px;"
+                                onchange="onModelSelectorChange('job_title_parser', this.value)"
+                                id="model-selector-job_title_parser">
+                            <option value="">-- Select Model --</option>
+                        </select>
+                        <span class="model-selector-status ms-2" id="status-job_title_parser">
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-hourglass-split"></i> Loading...
+                            </span>
+                        </span>
+                    </div>
+                    <div class="form-text mt-1">
+                        <i class="bi bi-info-circle"></i> This model will be used for parsing job titles from your documents
+                    </div>
                 </div>
-                
+
+                <!-- Filter Toggle -->
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="showCustomDocs"
+                           onchange="toggleCustomDocuments(this.checked)">
+                    <label class="form-check-label" for="showCustomDocs">
+                        <i class="bi bi-folder2-open"></i> Show custom documents
+                    </label>
+                    <div class="form-text">
+                        Custom documents may not have structured data for job title extraction
+                    </div>
+                </div>
+
                 <!-- File List -->
                 <div>
                     <label class="form-label fw-semibold">
@@ -33,7 +58,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Quick Actions -->
                 <div class="btn-group mt-3">
                     <button class="btn btn-sm btn-outline-primary" onclick="selectAllFiles()">
@@ -62,6 +87,7 @@
 <script>
 let availableFiles = [];
 let selectedFileIds = [];
+let showCustomDocuments = false;  // Filter state
 
 // Load available files
 function loadAvailableFiles() {
@@ -69,7 +95,12 @@ function loadAvailableFiles() {
         .then(response => response.json())
         .then(data => {
             availableFiles = data.documents;
-            
+
+            // Load toggle state from localStorage
+            const savedState = localStorage.getItem(`show_custom_docs_{{ candidate.id }}`);
+            showCustomDocuments = savedState === 'true';
+            document.getElementById('showCustomDocs').checked = showCustomDocuments;
+
             // Load last selection from localStorage
             const saved = localStorage.getItem(`parse_selection_{{ candidate.id }}`);
             if (saved) {
@@ -79,10 +110,11 @@ function loadAvailableFiles() {
                     selectedFileIds = [];
                 }
             } else {
-                // Default: select all files
-                selectedFileIds = availableFiles.map(f => f.id);
+                // Default: select all visible files (respecting filter)
+                const visibleFiles = getVisibleFiles();
+                selectedFileIds = visibleFiles.map(f => f.id);
             }
-            
+
             renderFileList();
         })
         .catch(error => {
@@ -95,20 +127,42 @@ function loadAvailableFiles() {
         });
 }
 
+// Get visible files based on filter
+function getVisibleFiles() {
+    if (showCustomDocuments) {
+        return availableFiles;
+    }
+    return availableFiles.filter(f => f.document_type !== 'custom');
+}
+
 // Render file list with checkboxes
 function renderFileList() {
     const container = document.getElementById('fileList');
-    
-    if (availableFiles.length === 0) {
-        container.innerHTML = `
-            <div class="alert alert-warning">
-                <i class="bi bi-exclamation-triangle"></i> No files available for parsing
-            </div>
-        `;
+    const filesToDisplay = getVisibleFiles();
+
+    if (filesToDisplay.length === 0) {
+        if (availableFiles.length > 0) {
+            // All files are custom and filter is off
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> All files are custom documents
+                    <button class="btn btn-sm btn-link ms-2" onclick="document.getElementById('showCustomDocs').checked = true; toggleCustomDocuments(true);">
+                        Show them
+                    </button>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> No files available for parsing
+                </div>
+            `;
+        }
+        updateFileCount();
         return;
     }
-    
-    container.innerHTML = availableFiles.map(file => {
+
+    container.innerHTML = filesToDisplay.map(file => {
         const isChecked = selectedFileIds.includes(file.id);
         const typeBadges = {
             'profile': '<span class="badge bg-info">Profile</span>',
@@ -116,7 +170,7 @@ function renderFileList() {
             'resume': '<span class="badge bg-success">Resume</span>',
             'cover_letter': '<span class="badge bg-secondary">Cover Letter</span>'
         };
-        
+
         return `
             <label class="list-group-item list-group-item-action">
                 <div class="d-flex align-items-start">
@@ -139,7 +193,7 @@ function renderFileList() {
             </label>
         `;
     }).join('');
-    
+
     updateFileCount();
 }
 
@@ -155,6 +209,17 @@ function toggleFileSelection(fileId, isChecked) {
     updateFileCount();
 }
 
+// Toggle custom documents filter
+function toggleCustomDocuments(show) {
+    showCustomDocuments = show;
+    
+    // Persist state to localStorage
+    localStorage.setItem(`show_custom_docs_{{ candidate.id }}`, show.toString());
+    
+    // Re-render file list with new filter
+    renderFileList();
+}
+
 // Update file count badge
 function updateFileCount() {
     const count = selectedFileIds.length;
@@ -162,9 +227,10 @@ function updateFileCount() {
     document.getElementById('fileCountBadge').textContent = `${count} file(s) selected`;
 }
 
-// Select all files
+// Select all visible files (respects filter)
 function selectAllFiles() {
-    selectedFileIds = availableFiles.map(f => f.id);
+    const visibleFiles = getVisibleFiles();
+    selectedFileIds = visibleFiles.map(f => f.id);
     renderFileList();
 }
 
@@ -317,6 +383,9 @@ function showParsingStatus() {
 
 // Initialize file list when modal opens
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize model selector for job_title_parser
+    initializeModelSelector();
+    
     const modalEl = document.getElementById('fileSelectorModal');
     if (modalEl) {
         modalEl.addEventListener('show.bs.modal', function() {
@@ -324,4 +393,74 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Initialize model selector with current selection
+function initializeModelSelector() {
+    const selectElement = document.getElementById('model-selector-job_title_parser');
+    const statusSpan = document.getElementById('status-job_title_parser');
+    
+    if (!selectElement) return;
+    
+    // Fetch current model mapping for job_title_parser
+    fetch('/api/llm/function/job_title_parser/model')
+        .then(response => response.json())
+        .then(data => {
+            const currentModelId = data.model_id || null;
+            
+            // Load all available models
+            return fetch('/api/llm/models')
+                .then(res => res.json())
+                .then(modelsData => {
+                    // Clear and rebuild options
+                    selectElement.innerHTML = '<option value="">-- Select Model --</option>';
+                    
+                    // Populate with providers and models
+                    modelsData.providers.forEach(provider => {
+                        if (provider.models && provider.models.length > 0) {
+                            const optgroup = document.createElement('optgroup');
+                            optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
+                            
+                            provider.models.forEach(model => {
+                                const option = document.createElement('option');
+                                option.value = model.id;
+                                option.textContent = model.display_name || model.model_name;
+                                
+                                // Select the current model
+                                if (currentModelId && model.id == currentModelId) {
+                                    option.selected = true;
+                                }
+                                
+                                optgroup.appendChild(option);
+                            });
+                            
+                            selectElement.appendChild(optgroup);
+                        }
+                    });
+                    
+                    // Update status badge
+                    if (currentModelId) {
+                        statusSpan.innerHTML = `
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> Ready
+                            </span>
+                        `;
+                    } else {
+                        statusSpan.innerHTML = `
+                            <span class="badge bg-warning text-dark">
+                                <i class="bi bi-exclamation-triangle"></i> Not configured
+                            </span>
+                        `;
+                    }
+                });
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+            selectElement.innerHTML = '<option value="">Error loading models</option>';
+            statusSpan.innerHTML = `
+                <span class="badge bg-danger">
+                    <i class="bi bi-x-circle"></i> Error
+                </span>
+            `;
+        });
+}
 </script>

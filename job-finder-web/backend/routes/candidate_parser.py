@@ -1,5 +1,7 @@
 """
 Candidate Parser Routes - AI-powered job title extraction from documents
+
+Uses LiteLLM native async (acompletion) for true non-blocking operation.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -31,13 +33,12 @@ async def get_candidate_documents(candidate_id: int, db: Session = Depends(get_d
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
     documents = db.query(CandidateDocument).filter(
         CandidateDocument.candidate_id == candidate_id,
-        CandidateDocument.is_active == True,
-        CandidateDocument.document_type.in_(["job_titles", "profile", "resume", "cover_letter"])
+        CandidateDocument.is_active == True
     ).order_by(CandidateDocument.created_at.desc()).all()
-    
+
     return {
         "documents": [
             {
@@ -59,32 +60,32 @@ async def parse_job_titles(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Parse selected or all documents"""
+    """Parse selected or all documents (native async)"""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
     # Parse request body
     try:
         body = await request.json()
         document_ids = body.get("document_ids", [])
     except:
         document_ids = []
-    
-    # Parse selected or all documents
+
+    # Parse selected or all documents (native async)
     if document_ids:
-        success, job_titles, error = parse_selected_documents(db, candidate_id, document_ids)
+        success, job_titles, error = await parse_selected_documents(db, candidate_id, document_ids)
         message = f"Extracted {len(job_titles)} job titles from {len(document_ids)} file(s)"
     else:
-        success, job_titles, error = parse_all_candidate_documents(db, candidate_id)
+        success, job_titles, error = await parse_all_candidate_documents(db, candidate_id)
         message = f"Extracted {len(job_titles)} job titles from documents"
-    
+
     if not success:
         return JSONResponse(
             status_code=400,
             content={"success": False, "message": error, "job_titles": []}
         )
-    
+
     return {
         "success": True,
         "message": message,

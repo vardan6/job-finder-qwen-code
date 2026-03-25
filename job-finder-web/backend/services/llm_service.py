@@ -1,5 +1,7 @@
 """
 LLM Service - AI-powered extraction and analysis
+
+Uses LiteLLM native async (acompletion) for true non-blocking LLM calls.
 """
 import json
 import re
@@ -24,11 +26,15 @@ def get_llm_for_function(db: Session, function_name: str) -> Optional[LLMModel]:
     return mapping.model
 
 
-def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
-    """Call LLM API using the specified model"""
+async def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
+    """
+    Call LLM API using the specified model (native async).
+    
+    Uses LiteLLM's acompletion() for true async operation.
+    """
     try:
         # Import litellm lazily
-        from litellm import completion
+        from litellm import acompletion
 
         provider = model.provider
         if not provider:
@@ -85,8 +91,8 @@ def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
             if api_key:
                 kwargs["api_key"] = api_key
 
-        # Call the LLM
-        response = completion(**kwargs)
+        # Call the LLM (native async)
+        response = await acompletion(**kwargs)
 
         if response and response.choices and len(response.choices) > 0:
             return response.choices[0].message.content
@@ -132,9 +138,9 @@ Extract skills as JSON:
 """
 
 
-def extract_skills_from_text(content: str, db: Optional[Session] = None) -> List[Dict[str, Any]]:
+async def extract_skills_from_text(content: str, db: Optional[Session] = None) -> List[Dict[str, Any]]:
     """
-    Extract skills from text using AI.
+    Extract skills from text using AI (native async).
 
     Args:
         content: The text content to analyze (resume, profile, etc.)
@@ -143,7 +149,7 @@ def extract_skills_from_text(content: str, db: Optional[Session] = None) -> List
     Returns:
         List of skill dictionaries with keys: skill, category, years_experience
     """
-    from litellm import completion
+    from litellm import acompletion
 
     try:
         # Build the prompt
@@ -166,12 +172,12 @@ def extract_skills_from_text(content: str, db: Optional[Session] = None) -> List
 
             # Try configured model
             if model:
-                result_text = call_llm(db, model, prompt)
+                result_text = await call_llm(db, model, prompt)
 
         # Fallback to direct Ollama call if configured model failed
         if not result_text:
             try:
-                response = completion(
+                response = await acompletion(
                     model="ollama/llama3",
                     messages=[{"role": "user", "content": prompt}],
                     api_base="http://localhost:11434"
@@ -210,7 +216,7 @@ def extract_json_from_response(response: str) -> Any:
     """Extract JSON from LLM response (handles markdown code blocks)"""
     # Try to find JSON in markdown code blocks
     json_match = re.search(r'```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```', response, re.DOTALL)
-    
+
     if json_match:
         json_str = json_match.group(1)
     else:
@@ -221,7 +227,7 @@ def extract_json_from_response(response: str) -> Any:
         else:
             # Try parsing the whole response as JSON
             json_str = response
-    
+
     try:
         return json.loads(json_str)
     except json.JSONDecodeError:

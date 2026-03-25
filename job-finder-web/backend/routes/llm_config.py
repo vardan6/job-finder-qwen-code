@@ -35,7 +35,7 @@ DEFAULT_PROVIDERS = {
         "display_name": "Ollama (Local)",
         "api_url": OLLAMA_URL,
         "is_active": True,
-        "models": ["llama3", "llama3.1", "mistral", "gemma", "codellama", "phi3"]
+        "models": ["llama3", "llama3.1", "mistral", "gemma", "codellama", "phi3", "glm-5:cloud", "glm-4.6:cloud", "glm-4.7:cloud"]
     },
     "nvidia": {
         "display_name": "NVIDIA (NIM)",

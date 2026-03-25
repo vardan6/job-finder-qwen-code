@@ -1,5 +1,7 @@
 """
 AI Chat Routes - Simple chat interface with LLM
+
+Uses LiteLLM native async (acompletion) for true non-blocking operation.
 """
 from fastapi import APIRouter, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -59,7 +61,7 @@ async def chat(
     conversation_history: str = Form(default="[]"),
     db: Session = Depends(get_db)
 ):
-    """Send a message to the AI and get a response"""
+    """Send a message to the AI and get a response (native async)"""
     try:
         start_time = time.time()
 
@@ -67,24 +69,24 @@ async def chat(
         model = db.query(LLMModel).filter(LLMModel.id == model_id).first()
         if not model:
             raise HTTPException(status_code=404, detail="Model not found")
-        
+
         # Parse conversation history
         try:
             history = json.loads(conversation_history)
         except:
             history = []
-        
+
         # Build messages for the LLM
         messages = history[-10:]  # Keep last 10 messages for context
         messages.append({"role": "user", "content": message})
-        
+
         # Get provider info
         provider = model.provider
         if not provider:
             raise HTTPException(status_code=400, detail="Model has no provider configured")
-        
-        # Call the LLM
-        from litellm import completion
+
+        # Call the LLM using native async (acompletion)
+        from litellm import acompletion
 
         # Build model identifier with proper provider prefix
         # NVIDIA NIM requires "nvidia_nim/" prefix (not "nvidia/")
@@ -117,37 +119,37 @@ async def chat(
             api_base = provider.api_url
             if api_base and api_base.endswith('/v1'):
                 api_base = api_base[:-3]  # Remove /v1, LiteLLM will add it
-        
+
         # Prepare completion kwargs
         kwargs = {
             "model": model_name,
             "messages": messages,
         }
-        
+
         if api_base:
             kwargs["api_base"] = api_base
-        
+
         # Add API key if present
         if provider.api_key_encrypted and provider.name != "ollama":
             from backend.security import decrypt_data
             api_key = decrypt_data(provider.api_key_encrypted)
             if api_key:
                 kwargs["api_key"] = api_key
-        
-        # Call the LLM
-        response = completion(**kwargs)
-        
+
+        # Call the LLM (native async - no thread pool needed)
+        response = await acompletion(**kwargs)
+
         if response and response.choices and len(response.choices) > 0:
             ai_message = response.choices[0].message.content
             elapsed_ms = int((time.time() - start_time) * 1000)
 
             usage = getattr(response, "usage", None)
             tokens_used = getattr(usage, "total_tokens", None) if usage else None
-            
+
             # Update conversation history
             history.append({"role": "user", "content": message})
             history.append({"role": "assistant", "content": ai_message})
-            
+
             return {
                 "success": True,
                 "message": ai_message,
@@ -161,7 +163,7 @@ async def chat(
             }
         else:
             raise HTTPException(status_code=500, detail="Empty response from LLM")
-        
+
     except Exception as e:
         return JSONResponse(
             status_code=500,

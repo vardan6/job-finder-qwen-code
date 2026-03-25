@@ -1,5 +1,7 @@
 """
 Job Title Parsing Service - AI-powered extraction from candidate documents
+
+Uses LiteLLM native async (acompletion) for true non-blocking operation.
 """
 import json
 import re
@@ -25,12 +27,12 @@ def get_parse_prompt(db: Session, document_type: str) -> Optional[DocumentParseP
     ).first()
 
 
-def parse_document_for_job_titles(
+async def parse_document_for_job_titles(
     db: Session,
     document: CandidateDocument
 ) -> Tuple[bool, List[Dict], Optional[str]]:
     """
-    Parse a single document for job titles using AI.
+    Parse a single document for job titles using AI (native async).
 
     For profile/resume documents that have already been parsed, extracts job titles
     from the existing parsed data instead of making a new LLM call.
@@ -44,7 +46,7 @@ def parse_document_for_job_titles(
             # Check if document has already been parsed
             if document.parse_status == "completed" and document.parsed_data:
                 parsed_data = document.get_parsed_data_json()
-                
+
                 # Extract job titles from profile data (experience section)
                 job_titles = []
                 if isinstance(parsed_data, dict) and "experience" in parsed_data:
@@ -58,14 +60,14 @@ def parse_document_for_job_titles(
                                 "source_file": document.filename,
                                 "source_document_id": document.id
                             })
-                    
+
                     if job_titles:
                         return True, job_titles, None
-                
+
                 # If no experience-based titles found, fall through to AI parsing below
                 # But use job_titles-specific prompt, not profile prompt
                 # This handles cases where profile was parsed but didn't extract titles
-        
+
         # Read document content
         file_path = Path("data") / document.file_path
         if not file_path.exists():
@@ -97,14 +99,14 @@ def parse_document_for_job_titles(
         if not model:
             return False, [], "No LLM model configured for parsing"
 
-        # Call LLM
-        result = call_llm(db, model, full_prompt)
+        # Call LLM (native async)
+        result = await call_llm(db, model, full_prompt)
 
         # Fallback to direct Ollama call if configured model failed
         if not result:
             try:
-                from litellm import completion
-                response = completion(
+                from litellm import acompletion
+                response = await acompletion(
                     model="ollama/llama3",
                     messages=[{"role": "user", "content": full_prompt}],
                     api_base="http://localhost:11434"
@@ -145,14 +147,14 @@ def parse_document_for_job_titles(
         return False, [], str(e)
 
 
-def parse_selected_documents(
+async def parse_selected_documents(
     db: Session,
     candidate_id: int,
     document_ids: List[int]
 ) -> Tuple[bool, List[Dict], Optional[str]]:
     """
-    Parse only selected documents for job titles.
-    
+    Parse only selected documents for job titles (native async).
+
     Returns:
         (success, job_titles_list, error_message)
     """
@@ -161,43 +163,43 @@ def parse_selected_documents(
         CandidateDocument.id.in_(document_ids),
         CandidateDocument.is_active == True
     ).all()
-    
+
     if not documents:
         return False, [], "No documents found"
-    
+
     all_job_titles = []
     errors = []
-    
+
     for doc in documents:
-        success, titles, error = parse_document_for_job_titles(db, doc)
+        success, titles, error = await parse_document_for_job_titles(db, doc)
         if success:
             all_job_titles.extend(titles)
         else:
             errors.append(f"{doc.filename}: {error}")
-    
+
     if not all_job_titles:
         return False, [], f"All documents failed: {'; '.join(errors)}"
-    
+
     # Deduplicate by title
     deduplicated = {}
     for title_data in all_job_titles:
         title = title_data["title"]
         if title not in deduplicated or title_data["priority"] < deduplicated[title]["priority"]:
             deduplicated[title] = title_data
-    
+
     result = sorted(deduplicated.values(), key=lambda x: x["priority"])
-    
+
     warning = f"Warning: {'; '.join(errors)}" if errors else None
     return True, result, warning
 
 
-def parse_all_candidate_documents(
-    db: Session, 
+async def parse_all_candidate_documents(
+    db: Session,
     candidate_id: int
 ) -> Tuple[bool, List[Dict], Optional[str]]:
     """
-    Parse all relevant documents for a candidate and extract job titles.
-    
+    Parse all relevant documents for a candidate and extract job titles (native async).
+
     Returns:
         (success, combined_job_titles_list, error_message)
     """
@@ -207,39 +209,39 @@ def parse_all_candidate_documents(
         CandidateDocument.is_active == True,
         CandidateDocument.document_type.in_(["job_titles", "profile", "resume"])
     ).all()
-    
+
     if not documents:
         return False, [], "No documents found to parse"
-    
+
     all_job_titles = []
     errors = []
-    
+
     for doc in documents:
-        success, titles, error = parse_document_for_job_titles(db, doc)
-        
+        success, titles, error = await parse_document_for_job_titles(db, doc)
+
         if success:
             all_job_titles.extend(titles)
         else:
             errors.append(f"{doc.filename}: {error}")
-    
+
     if not all_job_titles:
         return False, [], f"All documents failed to parse: {'; '.join(errors)}"
-    
+
     # Deduplicate by title (keep highest priority)
     deduplicated = {}
     for title_data in all_job_titles:
         title = title_data["title"]
         if title not in deduplicated or title_data["priority"] < deduplicated[title]["priority"]:
             deduplicated[title] = title_data
-    
+
     # Convert to list and sort by priority
     result = sorted(deduplicated.values(), key=lambda x: x["priority"])
-    
+
     # Add warnings if some documents failed
     warning = None
     if errors:
         warning = f"Warning: Some documents failed to parse: {'; '.join(errors)}"
-    
+
     return True, result, warning
 
 
@@ -251,13 +253,13 @@ def save_job_titles_to_candidate(
 ) -> Tuple[bool, int, Optional[str]]:
     """
     Save parsed job titles to candidate's profile.
-    
+
     Args:
         db: Database session
         candidate_id: Candidate ID
         job_titles_data: List of job title dicts with title, priority, description
         clear_existing: If True, remove existing job titles first
-    
+
     Returns:
         (success, count_saved, error_message)
     """
@@ -270,23 +272,23 @@ def save_job_titles_to_candidate(
             for jt in existing:
                 db.delete(jt)
             db.commit()
-        
+
         # Add new job titles
         count = 0
         for title_data in job_titles_data:
             # Skip empty titles
             if not title_data.get("title"):
                 continue
-            
+
             # Check for duplicates
             existing = db.query(CandidateJobTitle).filter(
                 CandidateJobTitle.candidate_id == candidate_id,
                 CandidateJobTitle.title == title_data["title"]
             ).first()
-            
+
             if existing:
                 continue
-            
+
             job_title = CandidateJobTitle(
                 candidate_id=candidate_id,
                 title=title_data["title"],
@@ -296,10 +298,10 @@ def save_job_titles_to_candidate(
             )
             db.add(job_title)
             count += 1
-        
+
         db.commit()
         return True, count, None
-        
+
     except Exception as e:
         db.rollback()
         return False, 0, str(e)
@@ -313,7 +315,7 @@ def get_candidate_job_titles_with_sources(
     job_titles = db.query(CandidateJobTitle).filter(
         CandidateJobTitle.candidate_id == candidate_id
     ).order_by(CandidateJobTitle.priority).all()
-    
+
     result = []
     for jt in job_titles:
         result.append({
@@ -324,5 +326,5 @@ def get_candidate_job_titles_with_sources(
             "source_document_id": jt.source_document_id,
             "source_file": jt.source_document.filename if jt.source_document else "Manual"
         })
-    
+
     return result

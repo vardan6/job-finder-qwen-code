@@ -1,5 +1,7 @@
 """
 Skills Management Routes - CRUD, toggle, AI parsing
+
+Uses LiteLLM native async (acompletion) for true non-blocking operation.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -316,10 +318,10 @@ async def parse_skills_from_documents(
 
     combined_content = "\n\n".join(all_content)
 
-    # Extract skills using AI
+    # Extract skills using AI (native async)
     try:
         # Pass db session for LLM model lookup
-        extracted_skills = extract_skills_from_text(combined_content, db)
+        extracted_skills = await extract_skills_from_text(combined_content, db)
 
         # Filter out duplicates and prepare skills
         new_skills = []

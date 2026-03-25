@@ -234,9 +234,11 @@ function saveFunctionMapping(functionName, modelId) {
     .then(data => {
         if (data.success) {
             // Show success indicator
-            const select = event.target;
-            select.classList.add('is-valid');
-            setTimeout(() => select.classList.remove('is-valid'), 2000);
+            const select = document.querySelector(`select[onchange*="${functionName}"]`);
+            if (select) {
+                select.classList.add('is-valid');
+                setTimeout(() => select.classList.remove('is-valid'), 2000);
+            }
         } else {
             alert('Error saving mapping: ' + JSON.stringify(data));
         }
@@ -250,7 +252,7 @@ function resetFunctionMapping(functionName) {
     if (!confirm('Reset this function to use the default Ollama model?')) {
         return;
     }
-    
+
     fetch(`/api/llm/function/${functionName}/model`, {
         method: 'POST',
         headers: {
