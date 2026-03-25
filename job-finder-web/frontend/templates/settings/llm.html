@@ -218,6 +218,11 @@
                                             <i class="bi bi-info-circle"></i> Get your API key from
                                             <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>
                                         </div>
+                                        {% elif provider.name == 'groq' %}
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle"></i> Get your API key from
+                                            <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>
+                                        </div>
                                         {% elif provider.name == 'anthropic' %}
                                         <div class="form-text">
                                             <i class="bi bi-info-circle"></i> Get your API key from
@@ -344,6 +349,12 @@
                                             <i class="bi bi-lightbulb"></i> Free: <code>qwen/qwen-2.5-coder-32b-instruct:free</code>, 
                                             <code>meta-llama/llama-3-8b-instruct:free</code>
                                         </div>
+                                        {% elif provider.name == 'groq' %}
+                                        <div class="form-text mt-2">
+                                            <i class="bi bi-lightbulb"></i> Recommended free-plan text models:
+                                            <code>openai/gpt-oss-20b</code>, <code>openai/gpt-oss-120b</code>,
+                                            <code>llama-3.3-70b-versatile</code>, <code>qwen/qwen3-32b</code>
+                                        </div>
                                         {% elif provider.name == 'anthropic' %}
                                         <div class="form-text mt-2">
                                             <i class="bi bi-lightbulb"></i> Popular: <code>claude-3-opus-20240229</code>, 
@@ -407,6 +418,10 @@
                             <span class="text-muted">Access to 100+ models. <a href="https://openrouter.ai/" target="_blank">openrouter.ai</a></span>
                         </li>
                         <li class="mb-2">
+                            <strong class="text-primary"><i class="bi bi-lightning-charge"></i> Groq</strong><br>
+                            <span class="text-muted">Fast OpenAI-compatible inference with strong free-plan text models. <a href="https://console.groq.com/docs/" target="_blank">console.groq.com/docs</a></span>
+                        </li>
+                        <li class="mb-2">
                             <strong class="text-primary"><i class="bi bi-cloud"></i> Anthropic</strong><br>
                             <span class="text-muted">Claude models. <a href="https://anthropic.com" target="_blank">anthropic.com</a></span>
                         </li>
@@ -434,6 +449,8 @@ function testProvider(name, model) {
     let fullName;
     if (name === 'ollama') {
         fullName = 'ollama/' + (model || 'llama3');
+    } else if (name === 'groq') {
+        fullName = model || 'openai/gpt-oss-20b';
     } else if (name === 'nvidia') {
         // For NVIDIA, add nvidia_nim/ prefix for LiteLLM
         // Default to llama3-70b (free tier) or use qwen model from Continue.dev config
@@ -461,6 +478,7 @@ function testProvider(name, model) {
 
     // Send test request
     const formData = new FormData();
+    formData.append('provider_name', name);
     formData.append('model', fullName);
     formData.append('prompt', 'Hello! Please respond with OK if you can read this.');
 

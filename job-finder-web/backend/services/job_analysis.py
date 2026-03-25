@@ -1,0 +1,349 @@
+"""
+AI Job Analysis Service
+
+Analyzes job postings using LLM to determine:
+- Remote work compatibility score (0-100)
+- Armenia compatibility (timezone, citizenship, relocation)
+- Skill match analysis
+- Red flags detection
+"""
+import hashlib
+import json
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
+from backend.services.llm_service import send_message
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class JobAnalysis:
+    """Result of AI job analysis"""
+    
+    # Remote work score (0-100)
+    remote_score: int
+    
+    # Remote work type
+    remote_type: str  # "Fully Remote", "Hybrid", "Onsite", "Unknown"
+    
+    # Location requirements
+    location_requirement: str  # "Worldwide", "US Only", "EU Only", "Specific Country", etc.
+    
+    # Citizenship/visa requirements
+    citizenship_required: Optional[str]  # "US", "EU", None
+    
+    # Office visits required
+    office_visits: str  # "Never", "Occasional", "Regular", "Unknown"
+    
+    # Timezone requirements
+    timezone_requirement: Optional[str]
+    
+    # Skill match
+    matched_skills: List[str]
+    missing_skills: List[str]
+    skill_match_score: int  # 0-100
+    
+    # Experience level
+    experience_level: str  # "Entry", "Mid", "Senior", "Staff", "Principal"
+    
+    # Red flags
+    red_flags: List[str]
+    
+    # Summary
+    summary: str
+    
+    # Recommendation
+    recommendation: str  # "Apply", "Consider", "Skip"
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary"""
+        return {
+            "remote_score": self.remote_score,
+            "remote_type": self.remote_type,
+            "location_requirement": self.location_requirement,
+            "citizenship_required": self.citizenship_required,
+            "office_visits": self.office_visits,
+            "timezone_requirement": self.timezone_requirement,
+            "matched_skills": self.matched_skills,
+            "missing_skills": self.missing_skills,
+            "skill_match_score": self.skill_match_score,
+            "experience_level": self.experience_level,
+            "red_flags": self.red_flags,
+            "summary": self.summary,
+            "recommendation": self.recommendation,
+        }
+
+
+# System prompt for job analysis
+JOB_ANALYSIS_PROMPT = """
+You are an expert job analyst specializing in remote work compatibility assessment.
+Analyze the following job posting and provide a structured assessment.
+
+**Candidate Profile:**
+- Location: Armenia (Asia/Yerevan timezone, UTC+4)
+- Experience: 18+ years in EDA, VLSI, Python, Test Automation
+- Target Roles: Staff/Principal SDET, EDA Design Automation, Test Infrastructure
+
+**Analysis Tasks:**
+
+1. **Remote Work Score (0-100):**
+   - 40 points: Fully remote (no office required)
+   - 25 points: Location flexibility (worldwide vs country-specific)
+   - 20 points: No citizenship/visa restrictions
+   - 15 points: No office visits required
+   
+2. **Armenia Compatibility:**
+   - Check for timezone overlap requirements
+   - Check for citizenship/visa restrictions
+   - Check for relocation requirements
+   - Check for occasional/regular office visits
+
+3. **Skill Match:**
+   - Compare job requirements with candidate's skills
+   - Identify matched and missing skills
+   - Calculate skill match percentage
+
+4. **Red Flags:**
+   - "US citizens only" or similar restrictions
+   - "Must relocate" requirements
+   - "Onsite required" statements
+   - Excessive experience requirements (20+ years)
+   - Salary range below market
+
+**Output Format:**
+Provide your analysis in valid JSON format with this exact structure:
+
+{
+  "remote_score": <integer 0-100>,
+  "remote_type": "<Fully Remote|Hybrid|Onsite|Unknown>",
+  "location_requirement": "<Worldwide|US Only|EU Only|Specific Country|...>",
+  "citizenship_required": "<US|EU|...|null>",
+  "office_visits": "<Never|Occasional|Regular|Unknown>",
+  "timezone_requirement": "<string or null>",
+  "matched_skills": ["skill1", "skill2", ...],
+  "missing_skills": ["skill1", "skill2", ...],
+  "skill_match_score": <integer 0-100>,
+  "experience_level": "<Entry|Mid|Senior|Staff|Principal>",
+  "red_flags": ["flag1", "flag2", ...],
+  "summary": "<2-3 sentence summary>",
+  "recommendation": "<Apply|Consider|Skip>"
+}
+
+**Job Posting:**
+{job_description}
+
+**Candidate Skills:**
+{candidate_skills}
+
+Provide ONLY the JSON output, no additional text.
+"""
+
+
+class JobAnalysisService:
+    """Service for AI-powered job analysis"""
+    
+    def __init__(self):
+        self._cache_dir = Path("data/job_analysis_cache")
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _get_cache_key(self, description: str, skills: List[str]) -> str:
+        """Generate cache key from description and skills"""
+        content = f"{description}|||{','.join(sorted(skills))}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _get_cache_path(self, cache_key: str) -> Path:
+        """Get cache file path"""
+        return self._cache_dir / f"{cache_key}.json"
+    
+    def _load_from_cache(self, cache_key: str) -> Optional[JobAnalysis]:
+        """Load analysis from cache if available"""
+        cache_path = self._get_cache_path(cache_key)
+        if cache_path.exists():
+            try:
+                data = json.loads(cache_path.read_text())
+                return JobAnalysis(**data)
+            except Exception as e:
+                logger.warning(f"Failed to load cached analysis: {e}")
+        return None
+    
+    def _save_to_cache(self, cache_key: str, analysis: JobAnalysis):
+        """Save analysis to cache"""
+        cache_path = self._get_cache_path(cache_key)
+        cache_path.write_text(json.dumps(analysis.to_dict(), indent=2))
+        logger.debug(f"Cached job analysis: {cache_key}")
+    
+    async def analyze_job(
+        self,
+        job_description: str,
+        candidate_skills: List[str],
+        use_cache: bool = True,
+        model_name: Optional[str] = None,
+    ) -> JobAnalysis:
+        """
+        Analyze a job posting using AI.
+        
+        Args:
+            job_description: Full job description text
+            candidate_skills: List of candidate's skills
+            use_cache: Whether to use cached results
+            model_name: Optional model override
+        
+        Returns:
+            JobAnalysis object with detailed assessment
+        """
+        # Check cache
+        cache_key = self._get_cache_key(job_description, candidate_skills)
+        if use_cache:
+            cached = self._load_from_cache(cache_key)
+            if cached:
+                logger.info("Using cached job analysis")
+                return cached
+        
+        # Prepare prompt
+        prompt = JOB_ANALYSIS_PROMPT.format(
+            job_description=job_description[:8000],  # Truncate if too long
+            candidate_skills=", ".join(candidate_skills) if candidate_skills else "Not provided",
+        )
+        
+        # Call LLM
+        try:
+            logger.info(f"Analyzing job with LLM (model: {model_name or 'default'})...")
+            response = await send_message(
+                prompt,
+                function_name="job_scorer",
+                model_override=model_name,
+                temperature=0.1,  # Low temperature for consistent analysis
+            )
+            
+            # Parse JSON response
+            # Remove markdown code blocks if present
+            response_text = response.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+            
+            data = json.loads(response_text)
+            
+            # Create JobAnalysis object
+            analysis = JobAnalysis(
+                remote_score=data.get("remote_score", 50),
+                remote_type=data.get("remote_type", "Unknown"),
+                location_requirement=data.get("location_requirement", "Unknown"),
+                citizenship_required=data.get("citizenship_required"),
+                office_visits=data.get("office_visits", "Unknown"),
+                timezone_requirement=data.get("timezone_requirement"),
+                matched_skills=data.get("matched_skills", []),
+                missing_skills=data.get("missing_skills", []),
+                skill_match_score=data.get("skill_match_score", 50),
+                experience_level=data.get("experience_level", "Mid"),
+                red_flags=data.get("red_flags", []),
+                summary=data.get("summary", ""),
+                recommendation=data.get("recommendation", "Consider"),
+            )
+            
+            # Save to cache
+            if use_cache:
+                self._save_to_cache(cache_key, analysis)
+            
+            logger.info(f"Job analysis complete: remote_score={analysis.remote_score}, recommendation={analysis.recommendation}")
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Failed to analyze job: {e}")
+            # Return a default analysis on failure
+            return JobAnalysis(
+                remote_score=50,
+                remote_type="Unknown",
+                location_requirement="Unknown",
+                citizenship_required=None,
+                office_visits="Unknown",
+                timezone_requirement=None,
+                matched_skills=[],
+                missing_skills=[],
+                skill_match_score=50,
+                experience_level="Mid",
+                red_flags=[f"Analysis failed: {str(e)}"],
+                summary="Job analysis failed. Please review manually.",
+                recommendation="Consider",
+            )
+    
+    def calculate_armenia_compatibility(self, analysis: JobAnalysis) -> tuple[bool, List[str]]:
+        """
+        Determine if a job is compatible with working from Armenia.
+        
+        Returns:
+            (is_compatible, list_of_issues)
+        """
+        issues = []
+        
+        # Check citizenship requirements
+        if analysis.citizenship_required:
+            if analysis.citizenship_required.lower() in ["us", "usa", "united states"]:
+                issues.append("US citizenship required")
+            elif analysis.citizenship_required.lower() in ["eu", "european union"]:
+                issues.append("EU citizenship required")
+        
+        # Check location requirements
+        location_lower = analysis.location_requirement.lower()
+        if "us only" in location_lower or "united states only" in location_lower:
+            issues.append("Location restricted to United States")
+        elif "relocate" in location_lower:
+            issues.append("Relocation required")
+        
+        # Check office visits
+        if analysis.office_visits in ["Regular", "Onsite"]:
+            issues.append(f"Office visits: {analysis.office_visits}")
+        
+        # Check timezone
+        if analysis.timezone_requirement:
+            tz_lower = analysis.timezone_requirement.lower()
+            if "us" in tz_lower and ("pst" in tz_lower or "est" in tz_lower):
+                # Check if significant overlap is required
+                if "business hours" in tz_lower or "9am" in tz_lower or "9 am" in tz_lower:
+                    issues.append(f"Timezone requirement: {analysis.timezone_requirement}")
+        
+        # Check red flags
+        for flag in analysis.red_flags:
+            flag_lower = flag.lower()
+            if any(keyword in flag_lower for keyword in ["citizen", "relocate", "onsite", "visa"]):
+                issues.append(f"Red flag: {flag}")
+        
+        is_compatible = len(issues) == 0
+        return is_compatible, issues
+    
+    def clear_cache(self, older_than_days: int = 7):
+        """Clear cached analyses older than specified days"""
+        from datetime import timedelta
+        
+        cutoff = datetime.now() - timedelta(days=older_than_days)
+        cleared = 0
+        
+        for cache_file in self._cache_dir.glob("*.json"):
+            mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+            if mtime < cutoff:
+                cache_file.unlink()
+                cleared += 1
+        
+        if cleared > 0:
+            logger.info(f"Cleared {cleared} cached job analyses")
+        return cleared
+
+
+# Global instance
+_job_analysis_service: Optional[JobAnalysisService] = None
+
+
+def get_job_analysis_service() -> JobAnalysisService:
+    """Get or create the job analysis service"""
+    global _job_analysis_service
+    if _job_analysis_service is None:
+        _job_analysis_service = JobAnalysisService()
+    return _job_analysis_service

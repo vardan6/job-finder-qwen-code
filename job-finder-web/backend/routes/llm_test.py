@@ -2,14 +2,35 @@
 LLM Test Endpoint - Test AI provider connectivity
 
 LAZY LOADING: LiteLLM is imported only when endpoint is called
+Uses run_in_executor to avoid blocking the async event loop
 """
 from fastapi import APIRouter, Form
 from typing import Optional
 import time
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Thread pool for running blocking LLM calls
+executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _blocking_llm_completion(model: str, prompt: str):
+    """
+    Run blocking LiteLLM completion in a thread.
+    This function is synchronous and blocks only the thread, not the event loop.
+    """
+    from litellm import completion
+    
+    response = completion(
+        model=model,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    return response
 
 
 @router.post("/test")
@@ -21,9 +42,9 @@ async def test_llm(
     Test LLM connection with a simple prompt
 
     Returns the response and timing information
+    
+    Uses run_in_executor to avoid blocking the async event loop.
     """
-    # LAZY IMPORT - Only import LiteLLM when endpoint is actually called
-    from litellm import completion
     import os
     from backend.config import OLLAMA_URL, DEFAULT_LLM_MODEL
 
@@ -38,18 +59,18 @@ async def test_llm(
         # - "nvidia_nim/meta/llama3-70b-instruct" (LiteLLM prefix format from frontend)
         # - "openai/gpt-oss-120b" (OpenAI provider with NVIDIA base)
         # - "meta/llama3-70b-instruct" (raw model name, need to detect provider)
-        
+
         # First check if model has a provider prefix
         parts = model.split("/", 1) if "/" in model else [model, ""]
         potential_provider = parts[0]
         model_suffix = parts[1] if len(parts) > 1 else ""
-        
+
         # Known LiteLLM provider prefixes
-        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim"]
-        
+        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim", "groq"]
+
         provider_name = None
         raw_model_name = model
-        
+
         if potential_provider in litellm_providers:
             # Model has explicit provider prefix - use as-is
             provider_name = potential_provider
@@ -59,7 +80,7 @@ async def test_llm(
             # No provider prefix - use as potential provider
             provider_name = potential_provider
             raw_model_name = model
-        
+
         logger.info(f"Testing model: {model}, provider: {provider_name}")
 
         # Check if using Ollama
@@ -80,14 +101,17 @@ async def test_llm(
         litellm_model = model
         logger.info(f"Using LiteLLM model: {litellm_model}")
 
-        # Call LLM
-        response = completion(
-            model=litellm_model,
-            messages=[{"role": "user", "content": prompt}]
+        # Run blocking LLM call in thread pool to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            executor,
+            _blocking_llm_completion,
+            litellm_model,
+            prompt
         )
-        
+
         elapsed_ms = int((time.time() - start_time) * 1000)
-        
+
         return {
             "success": True,
             "response": response.choices[0].message.content,
@@ -95,7 +119,7 @@ async def test_llm(
             "time_ms": elapsed_ms,
             "tokens_used": response.usage.total_tokens if hasattr(response, 'usage') else None
         }
-        
+
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
         return {

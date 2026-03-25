@@ -2,10 +2,6 @@
 
 {% block title %}AI Chat - Job Finder{% endblock %}
 
-{% block extra_head %}
-<link rel="stylesheet" href="/static/css/chat.css">
-{% endblock %}
-
 {% block content %}
 <div class="chat-page">
     <div class="chat-workspace">
@@ -14,13 +10,13 @@
             <!-- Header -->
             <header class="chat-page-header">
                 <div class="chat-header-content">
-                    <p style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 0;">AI Workspace</p>
-                    <h1>AI Chat Assistant</h1>
-                    <p style="font-size: 0.875rem; color: #64748b; margin: 0.25rem 0 0 0;">Talk to any configured model with a cleaner, focused workspace.</p>
+                    <p class="chat-eyebrow">AI Workspace</p>
+                    <h1 class="chat-page-title">AI Chat Assistant</h1>
+                    <p class="chat-page-subtitle">Talk to any configured model with a cleaner, focused workspace.</p>
                 </div>
                 <div class="chat-header-actions">
                     <div class="chat-active-model" id="activeModelSummary">
-                        <span>Active model</span>
+                        <span class="chat-active-label">Active model</span>
                         <strong id="activeModelName">Choose a model</strong>
                     </div>
                     <button class="btn btn-outline-secondary" type="button" onclick="clearConversation()">
@@ -384,6 +380,19 @@ function updateModelSummary() {
     modelDetailText.textContent = `Using ${providerName} with the ${modelName} model for the next request.`;
 }
 
+function updateChatViewportHeight() {
+    const mainShell = document.querySelector('.chat-main-shell');
+    if (!mainShell) {
+        return;
+    }
+
+    const rect = mainShell.getBoundingClientRect();
+    const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const bottomGap = 32;
+    const availableHeight = Math.max(420, Math.floor(viewportHeight - rect.top - bottomGap));
+    mainShell.style.setProperty('--chat-main-height', `${availableHeight}px`);
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -399,9 +408,15 @@ function escapeAttribute(text) {
 }
 
 window.addEventListener('load', function() {
+    updateChatViewportHeight();
     updateModelSummary();
     syncEmptyState();
     textarea.focus();
 });
+
+window.addEventListener('resize', updateChatViewportHeight);
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateChatViewportHeight);
+}
 </script>
 {% endblock %}

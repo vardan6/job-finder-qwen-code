@@ -92,6 +92,7 @@ async def chat(
         # NVIDIA NIM requires "nvidia_nim/" prefix (not "nvidia/")
         provider_prefixes = {
             "ollama": "ollama/",
+            "groq": "",
             "nvidia": "nvidia_nim/",  # LiteLLM requires nvidia_nim/ prefix
             "nvidia_nim": "nvidia_nim/",
             "openrouter": "openrouter/",
@@ -105,6 +106,9 @@ async def chat(
         if provider.name == "ollama":
             model_name = f"ollama/{model.model_name}"
             api_base = provider.api_url or "http://localhost:11434"
+        elif provider.name == "groq":
+            model_name = model.model_name
+            api_base = provider.api_url or "https://api.groq.com/openai/v1"
         elif provider.name in ["nvidia", "nvidia_nim"]:
             # NVIDIA NIM: model stored as "meta/llama3-70b-instruct", prefix with "nvidia_nim/"
             model_name = f"nvidia_nim/{model.model_name}"

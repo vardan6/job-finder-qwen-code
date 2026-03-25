@@ -71,6 +71,12 @@
                                 {% endif %}
                             </div>
                             <div class="col-md-4 text-end">
+                                <button class="btn btn-sm btn-primary mb-1" onclick="startBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
+                                    <i class="bi bi-box-arrow-up-right"></i> Open Browser Login
+                                </button>
+                                <button class="btn btn-sm btn-success mb-1" onclick="finishBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
+                                    <i class="bi bi-check2-circle"></i> Finish Browser Login
+                                </button>
                                 <button class="btn btn-sm btn-outline-primary mb-1" onclick="testCookies({{ platform_info.account.id }})">
                                     <i class="bi bi-plug"></i> Test Connection
                                 </button>
@@ -94,8 +100,15 @@
                                 <br>
                                 <small class="text-muted">Connect your account to enable job searching</small>
                             </p>
+                            <button class="btn btn-{{ platform_info.color }} me-2 mb-2" onclick="startBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
+                                <i class="bi bi-box-arrow-up-right"></i> Open Browser Login
+                            </button>
+                            <button class="btn btn-outline-success mb-2" onclick="finishBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
+                                <i class="bi bi-check2-circle"></i> Finish Browser Login
+                            </button>
+                            <br>
                             <button class="btn btn-{{ platform_info.color }}" onclick="showCookieImporter('{{ platform_key }}', '{{ platform_info.name }}')">
-                                <i class="bi bi-link-45deg"></i> Connect {{ platform_info.name }}
+                                <i class="bi bi-link-45deg"></i> Import Cookies (Fallback)
                             </button>
                         </div>
                     {% endif %}
@@ -111,19 +124,24 @@
                     <i class="bi bi-lightbulb"></i> How to Connect
                 </div>
                 <div class="card-body">
-                    <h6>Step 1: Login Manually</h6>
+                    <h6>Step 1: Open Browser Login</h6>
                     <p class="small text-muted">
-                        Open the platform in your browser and login to your account.
+                        Click <strong>Open Browser Login</strong> to launch Playwright with a visible browser window.
                     </p>
 
-                    <h6>Step 2: Export Cookies</h6>
+                    <h6>Step 2: Login Manually</h6>
+                    <p class="small text-muted">
+                        Complete login (including 2FA/CAPTCHA if asked), then return here.
+                    </p>
+
+                    <h6>Step 3: Finish Browser Login</h6>
+                    <p class="small text-muted">
+                        Click <strong>Finish Browser Login</strong> to save encrypted cookies for reuse in searches.
+                    </p>
+
+                    <h6>Alternative: Import Cookies</h6>
                     <p class="small text-muted">
                         Use a browser extension like "EditThisCookie" or "Cookie Editor" to export your session cookies as JSON.
-                    </p>
-
-                    <h6>Step 3: Import Here</h6>
-                    <p class="small text-muted">
-                        Click "Connect" or "Update Cookies" and paste the exported JSON.
                     </p>
 
                     <div class="alert alert-warning small mb-0">
@@ -252,6 +270,49 @@ function saveCookies() {
     .then(data => {
         if (data.success) {
             alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => alert('Error: ' + error));
+}
+
+function startBrowserLogin(platform, platformName) {
+    const formData = new FormData();
+    formData.append('platform', platform);
+
+    fetch('/candidates/{{ candidate.id }}/accounts/start-browser-login', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✓ ${data.message}`);
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => alert('Error: ' + error));
+}
+
+function finishBrowserLogin(platform, platformName) {
+    const email = prompt(`Optional: enter ${platformName} account email to store (or leave blank):`) || '';
+    const formData = new FormData();
+    formData.append('platform', platform);
+    if (email.trim()) {
+        formData.append('email', email.trim());
+    }
+
+    fetch('/candidates/{{ candidate.id }}/accounts/finish-browser-login', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ ' + data.message);
             location.reload();
         } else {
             alert('Error: ' + data.message);

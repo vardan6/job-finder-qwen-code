@@ -159,6 +159,11 @@ def get_platform_accounts_router():
     return platform_accounts.router
 
 
+def get_jobs_router():
+    from backend.routes import jobs
+    return jobs.router
+
+
 # Register routes
 app.include_router(get_candidate_router(), prefix="/candidates", tags=["Candidates"])
 app.include_router(get_health_router(), prefix="/api", tags=["Health"])
@@ -171,6 +176,7 @@ app.include_router(get_chat_router(), tags=["AI Chat"])
 app.include_router(get_skills_router(), tags=["Skills"])
 app.include_router(get_preferences_router(), tags=["Preferences"])
 app.include_router(get_platform_accounts_router(), tags=["Platform Accounts"])
+app.include_router(get_jobs_router(), prefix="/jobs", tags=["Jobs"])
 
 
 if __name__ == "__main__":

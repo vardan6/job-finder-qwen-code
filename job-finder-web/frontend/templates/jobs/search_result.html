@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="bi bi-check-circle"></i> Search Complete</h1>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/jobs/" class="btn btn-primary">
+                <i class="bi bi-briefcase"></i> View All Jobs
+            </a>
+            <a href="/jobs/search" class="btn btn-secondary">
+                <i class="bi bi-search"></i> New Search
+            </a>
+        </div>
+    </div>
+
+    <!-- Search Summary -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card {% if result.success %}border-success{% else %}border-warning{% endif %}">
+                <div class="card-header {% if result.success %}bg-success text-white{% else %}bg-warning{% endif %}">
+                    <h5>
+                        {% if result.success %}
+                        <i class="bi bi-check-circle-fill"></i> Search Completed Successfully
+                        {% else %}
+                        <i class="bi bi-exclamation-triangle-fill"></i> Search Completed with Warnings
+                        {% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <h2 class="text-primary">{{ result.total_found }}</h2>
+                            <p class="text-muted">Total Found</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h2 class="text-success">{{ result.total_unique }}</h2>
+                            <p class="text-muted">Unique Jobs</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h2 class="text-warning">{{ result.total_duplicates }}</h2>
+                            <p class="text-muted">Duplicates Filtered</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h2 class="text-info">{{ result.jobs_saved }}</h2>
+                            <p class="text-muted">Saved to Database</p>
+                        </div>
+                    </div>
+
+                    {% if result.total_analyzed > 0 %}
+                    <div class="row text-center mt-3 pt-3 border-top">
+                        <div class="col-md-4">
+                            <h5 class="text-primary">{{ result.total_analyzed }}</h5>
+                            <p class="small text-muted">Jobs Analyzed with AI</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h5 class="text-muted">{{ result.platform_results.get('linkedin', 0) }}</h5>
+                            <p class="small text-muted"><i class="bi bi-linkedin"></i> LinkedIn</p>
+                        </div>
+                        <div class="col-md-4">
+                            <h5 class="text-muted">{{ result.platform_results.get('glassdoor', 0) }}</h5>
+                            <p class="small text-muted"><i class="bi bi-building"></i> Glassdoor</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Errors -->
+    {% if result.errors %}
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="alert alert-warning">
+                <h6><i class="bi bi-exclamation-triangle"></i> Warnings/Errors</h6>
+                <ul class="mb-0">
+                    {% for error in result.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Next Steps -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-arrow-right-circle"></i> Next Steps
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        <a href="/jobs/?candidate_id={{ candidate.id }}" class="list-group-item list-group-item-action">
+                            <i class="bi bi-list-ul"></i>
+                            <strong>View all jobs for {{ candidate.name }}</strong>
+                            <p class="mb-0 small text-muted">See all jobs found during this search</p>
+                        </a>
+                        <a href="/candidates/{{ candidate.id }}" class="list-group-item list-group-item-action">
+                            <i class="bi bi-person"></i>
+                            <strong>Back to {{ candidate.name }}'s profile</strong>
+                            <p class="mb-0 small text-muted">Return to candidate details</p>
+                        </a>
+                        <a href="/jobs/search" class="list-group-item list-group-item-action">
+                            <i class="bi bi-search"></i>
+                            <strong>Start another search</strong>
+                            <p class="mb-0 small text-muted">Search with different parameters</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rate Limit Status -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-speedometer2"></i> LinkedIn Rate Limit Status
+                </div>
+                <div class="card-body" id="linkedin-status">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-speedometer2"></i> Glassdoor Rate Limit Status
+                </div>
+                <div class="card-body" id="glassdoor-status">
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load rate limit status
+async function loadRateLimitStatus() {
+    try {
+        const linkedinResp = await fetch('/jobs/api/rate-limit-status?platform=linkedin');
+        const linkedinData = await linkedinResp.json();
+        document.getElementById('linkedin-status').innerHTML = `
+            <div class="row text-center">
+                <div class="col-6">
+                    <strong>Hourly:</strong><br>
+                    <span class="badge ${linkedinData.hourly_count.includes(linkedinData.max) ? 'bg-danger' : 'bg-success'}">
+                        ${linkedinData.hourly_count}
+                    </span>
+                </div>
+                <div class="col-6">
+                    <strong>Daily:</strong><br>
+                    <span class="badge ${linkedinData.daily_count.includes(linkedinData.max) ? 'bg-danger' : 'bg-success'}">
+                        ${linkedinData.daily_count}
+                    </span>
+                </div>
+            </div>
+            ${linkedinData.cooldown_remaining ? 
+                `<div class="alert alert-warning mt-2 mb-0 small">
+                    Cooldown: ${Math.floor(linkedinData.cooldown_remaining / 60)}m remaining
+                </div>` : 
+                `<div class="alert alert-success mt-2 mb-0 small">
+                    <i class="bi bi-check-circle"></i> Ready to search
+                </div>`
+            }
+        `;
+
+        const glassdoorResp = await fetch('/jobs/api/rate-limit-status?platform=glassdoor');
+        const glassdoorData = await glassdoorResp.json();
+        document.getElementById('glassdoor-status').innerHTML = `
+            <div class="row text-center">
+                <div class="col-6">
+                    <strong>Hourly:</strong><br>
+                    <span class="badge ${glassdoorData.hourly_count.includes(glassdoorData.max) ? 'bg-danger' : 'bg-success'}">
+                        ${glassdoorData.hourly_count}
+                    </span>
+                </div>
+                <div class="col-6">
+                    <strong>Daily:</strong><br>
+                    <span class="badge ${glassdoorData.daily_count.includes(glassdoorData.max) ? 'bg-danger' : 'bg-success'}">
+                        ${glassdoorData.daily_count}
+                    </span>
+                </div>
+            </div>
+            ${glassdoorData.cooldown_remaining ? 
+                `<div class="alert alert-warning mt-2 mb-0 small">
+                    Cooldown: ${Math.floor(glassdoorData.cooldown_remaining / 60)}m remaining
+                </div>` : 
+                `<div class="alert alert-success mt-2 mb-0 small">
+                    <i class="bi bi-check-circle"></i> Ready to search
+                </div>`
+            }
+        `;
+    } catch (error) {
+        console.error('Failed to load rate limit status:', error);
+    }
+}
+
+// Load on page load
+loadRateLimitStatus();
+</script>
+{% endblock %}

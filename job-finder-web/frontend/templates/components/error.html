@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Error - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="alert alert-danger shadow-sm" role="alert">
+                <h5 class="alert-heading mb-2">
+                    <i class="bi bi-exclamation-triangle"></i> Operation Failed
+                </h5>
+                <p class="mb-0">{{ error or "An unexpected error occurred." }}</p>
+            </div>
+            <a href="/jobs/search" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-clockwise"></i> Back to Search
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,14 +1,143 @@
 {% extends "base.html" %}
 
-{% block title %}Jobs - Coming Soon{% endblock %}
+{% block title %}Jobs - Job Finder{% endblock %}
 
 {% block content %}
-<div class="container text-center py-5">
-    <h1><i class="bi bi-construction"></i> Coming Soon</h1>
-    <p class="lead">Job search functionality is under development.</p>
-    <p class="text-muted">This feature will be available in Phase 3.</p>
-    <a href="/" class="btn btn-primary mt-3">
-        <i class="bi bi-house"></i> Back to Dashboard
-    </a>
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="bi bi-briefcase"></i> Jobs</h1>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/jobs/search" class="btn btn-primary">
+                <i class="bi bi-search"></i> New Search
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="/jobs/" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Candidate</label>
+                    <select name="candidate_id" class="form-select" onchange="this.form.submit()">
+                        <option value="">All Candidates</option>
+                        {% for c in candidates %}
+                        <option value="{{ c.id }}" {% if selected_candidate_id == c.id %}selected{% endif %}>
+                            {{ c.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="applied" {% if selected_status == 'applied' %}selected{% endif %}>Applied</option>
+                        <option value="interview" {% if selected_status == 'interview' %}selected{% endif %}>Interview</option>
+                        <option value="offer" {% if selected_status == 'offer' %}selected{% endif %}>Offer</option>
+                        <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Jobs Table -->
+    {% if jobs %}
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Company</th>
+                            <th>Location</th>
+                            <th>Platform</th>
+                            <th>Remote Score</th>
+                            <th>Status</th>
+                            <th>Found</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in jobs %}
+                        <tr>
+                            <td>
+                                <a href="/jobs/{{ job.id }}">
+                                    <strong>{{ job.title }}</strong>
+                                </a>
+                            </td>
+                            <td>{{ job.company }}</td>
+                            <td>{{ job.location or 'Not specified' }}</td>
+                            <td>
+                                {% if job.platform == 'linkedin' %}
+                                <span class="badge bg-primary"><i class="bi bi-linkedin"></i> LinkedIn</span>
+                                {% elif job.platform == 'glassdoor' %}
+                                <span class="badge bg-success"><i class="bi bi-building"></i> Glassdoor</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ job.platform }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if job.ai_remote_score %}
+                                    {% if job.ai_remote_score >= 80 %}
+                                    <span class="badge bg-success">{{ job.ai_remote_score }}</span>
+                                    {% elif job.ai_remote_score >= 60 %}
+                                    <span class="badge bg-warning text-dark">{{ job.ai_remote_score }}</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">{{ job.ai_remote_score }}</span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge 
+                                    {% if job.status == 'active' %}bg-primary
+                                    {% elif job.status == 'applied' %}bg-info
+                                    {% elif job.status == 'interview' %}bg-warning
+                                    {% elif job.status == 'offer' %}bg-success
+                                    {% elif job.status == 'rejected' %}bg-danger
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ job.status }}
+                                </span>
+                            </td>
+                            <td class="text-muted small">
+                                {{ job.found_at.strftime('%Y-%m-%d') if job.found_at else 'Unknown' }}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="/jobs/{{ job.id }}" class="btn btn-outline-primary">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <button class="btn btn-outline-danger" 
+                                            hx-delete="/jobs/{{ job.id }}"
+                                            hx-confirm="Delete this job?"
+                                            hx-swap="outerHTML">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="text-muted mt-3">
+        Showing {{ jobs|length }} job(s)
+    </div>
+    
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i>
+        No jobs found. Start a new job search to find opportunities!
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

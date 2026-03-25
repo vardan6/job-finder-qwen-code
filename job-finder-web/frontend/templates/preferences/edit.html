@@ -34,11 +34,10 @@
                     <div class="mb-4">
                         <label for="min_score" class="form-label">
                             <i class="bi bi-bar-chart"></i> Minimum Fit Score
-                            <span class="badge bg-info ms-2">{{ preferences.min_score }}</span>
+                            <span class="badge bg-info ms-2" id="min_score_badge">{{ preferences.min_score }}</span>
                         </label>
                         <input type="range" class="form-range" id="min_score" name="min_score" 
-                               min="0" max="100" value="{{ preferences.min_score }}"
-                               oninput="document.querySelector('#min_score + label .badge').textContent = this.value">
+                               min="0" max="100" value="{{ preferences.min_score }}">
                         <div class="d-flex justify-content-between text-muted small">
                             <span>0 (Any)</span>
                             <span>50 (Moderate)</span>
@@ -53,11 +52,10 @@
                     <div class="mb-4">
                         <label for="min_ai_remote_score" class="form-label">
                             <i class="bi bi-robot"></i> Minimum AI Remote Score
-                            <span class="badge bg-success ms-2">{{ preferences.min_ai_remote_score }}</span>
+                            <span class="badge bg-success ms-2" id="min_ai_remote_score_badge">{{ preferences.min_ai_remote_score }}</span>
                         </label>
                         <input type="range" class="form-range" id="min_ai_remote_score" name="min_ai_remote_score" 
-                               min="0" max="100" value="{{ preferences.min_ai_remote_score }}"
-                               oninput="document.querySelector('#min_ai_remote_score + label .badge').textContent = this.value">
+                               min="0" max="100" value="{{ preferences.min_ai_remote_score }}">
                         <div class="d-flex justify-content-between text-muted small">
                             <span>0 (Any)</span>
                             <span>50 (Some Remote)</span>
@@ -175,6 +173,29 @@
 <script>
 // Parse experience levels and check appropriate boxes
 document.addEventListener('DOMContentLoaded', function() {
+    const minScoreSlider = document.getElementById('min_score');
+    const minScoreBadge = document.getElementById('min_score_badge');
+    const minAiRemoteSlider = document.getElementById('min_ai_remote_score');
+    const minAiRemoteBadge = document.getElementById('min_ai_remote_score_badge');
+
+    const syncSliderBadge = (slider, badge) => {
+        if (slider && badge) {
+            badge.textContent = slider.value;
+        }
+    };
+
+    if (minScoreSlider && minScoreBadge) {
+        minScoreSlider.addEventListener('input', () => syncSliderBadge(minScoreSlider, minScoreBadge));
+        minScoreSlider.addEventListener('change', () => syncSliderBadge(minScoreSlider, minScoreBadge));
+        syncSliderBadge(minScoreSlider, minScoreBadge);
+    }
+
+    if (minAiRemoteSlider && minAiRemoteBadge) {
+        minAiRemoteSlider.addEventListener('input', () => syncSliderBadge(minAiRemoteSlider, minAiRemoteBadge));
+        minAiRemoteSlider.addEventListener('change', () => syncSliderBadge(minAiRemoteSlider, minAiRemoteBadge));
+        syncSliderBadge(minAiRemoteSlider, minAiRemoteBadge);
+    }
+
     try {
         const expInput = document.getElementById('experience_levels_input').value;
         const expLevels = JSON.parse(expInput || '["Senior", "Staff", "Principal", "Lead"]');

@@ -45,9 +45,14 @@ async def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
             # For Ollama, use host + model
             model_name = f"ollama/{model.model_name}"
             api_base = provider.api_url or "http://localhost:11434"
+        elif provider.name == "groq":
+            # Groq is OpenAI-compatible, but model IDs should be sent as raw Groq IDs.
+            model_name = model.model_name
+            api_base = provider.api_url or "https://api.groq.com/openai/v1"
         else:
             # For other providers, add proper prefix for LiteLLM
             provider_prefixes = {
+                "groq": "",
                 "nvidia_nim": "nvidia_nim/",
                 "nvidia": "nvidia/",
                 "openrouter": "openrouter/",
@@ -232,3 +237,102 @@ def extract_json_from_response(response: str) -> Any:
         return json.loads(json_str)
     except json.JSONDecodeError:
         return None
+
+
+async def send_message(
+    prompt: str,
+    function_name: str = "ai_chat",
+    model_override: Optional[str] = None,
+    temperature: float = 0.7,
+    db: Optional[Session] = None,
+) -> Optional[str]:
+    """
+    Send a message to an LLM using the configured model for a function.
+    
+    Args:
+        prompt: The user's prompt
+        function_name: The function name to get the model from (e.g., "job_scorer", "ai_chat")
+        model_override: Optional model identifier to override the configured model
+        temperature: Temperature for response generation
+        db: Optional database session
+    
+    Returns:
+        The LLM's response text, or None on error
+    """
+    from litellm import acompletion
+    
+    try:
+        # Use model override if provided
+        if model_override:
+            model_name = model_override
+            api_base = None
+            api_key = None
+        else:
+            # Get model from function mapping
+            if not db:
+                return None
+            
+            model = get_llm_for_function(db, function_name)
+            if not model:
+                return None
+            
+            provider = model.provider
+            if not provider:
+                return None
+            
+            # Build the model identifier
+            if provider.name == "ollama":
+                model_name = f"ollama/{model.model_name}"
+                api_base = provider.api_url or "http://localhost:11434"
+            else:
+                provider_prefixes = {
+                    "nvidia_nim": "nvidia_nim/",
+                    "nvidia": "nvidia/",
+                    "openrouter": "openrouter/",
+                    "anthropic": "anthropic/",
+                    "openai": "openai/",
+                }
+                prefix = provider_prefixes.get(provider.name, "")
+                if prefix and not model.model_name.startswith(prefix):
+                    model_name = prefix + model.model_name
+                else:
+                    model_name = model.model_name
+                
+                api_base = provider.api_url
+                if api_base and api_base.endswith('/v1'):
+                    api_base = api_base[:-3]
+            
+            # Get API key
+            api_key = None
+            if provider.api_key_encrypted and provider.name != "ollama":
+                from backend.security import decrypt_data
+                api_key = decrypt_data(provider.api_key_encrypted)
+        
+        # Build kwargs for acompletion
+        kwargs = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+        }
+        
+        if api_base:
+            kwargs["api_base"] = api_base
+        if api_key:
+            kwargs["api_key"] = api_key
+        
+        # Call LLM
+        response = await acompletion(**kwargs)
+        
+        if response and response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content
+        
+        return None
+        
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"send_message error: {e}")
+        return None
+
+
+# Lazy import for logging in send_message
+logging = __import__("logging")

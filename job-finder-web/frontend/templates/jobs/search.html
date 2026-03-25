@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}New Job Search - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="bi bi-search"></i> New Job Search</h1>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/jobs/" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Jobs
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-sliders"></i> Search Parameters
+                </div>
+                <div class="card-body">
+                    <form hx-post="/jobs/search"
+                          hx-indicator="#search-indicator"
+                          hx-timeout="300000"
+                          id="search-form">
+                        
+                        <!-- Candidate Selection -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-person"></i> Candidate
+                                <span class="text-danger">*</span>
+                            </label>
+                            <select name="candidate_id" class="form-select" required>
+                                <option value="">Select a candidate...</option>
+                                {% for c in candidates %}
+                                <option value="{{ c.id }}" {% if candidate and candidate.id == c.id %}selected{% endif %}>
+                                    {{ c.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Search Query -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-key"></i> Search Query
+                                <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" 
+                                   name="query" 
+                                   class="form-control" 
+                                   placeholder="e.g., Python Engineer, SDET, Software Developer"
+                                   required
+                                   value="{{ candidate.name if candidate else '' }}">
+                            <div class="form-text">
+                                Job titles, skills, or keywords to search for
+                            </div>
+                        </div>
+
+                        <!-- Location -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-geo-alt"></i> Location
+                            </label>
+                            <input type="text" 
+                                   name="location" 
+                                   class="form-control" 
+                                   placeholder="e.g., United States, Remote, Europe">
+                            <div class="form-text">
+                                Leave empty for worldwide search
+                            </div>
+                        </div>
+
+                        <!-- Platforms -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-grid"></i> Platforms
+                            </label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" 
+                                           type="checkbox" 
+                                           name="platforms" 
+                                           value="linkedin" 
+                                           id="platform-linkedin"
+                                           checked>
+                                    <label class="form-check-label" for="platform-linkedin">
+                                        <i class="bi bi-linkedin text-primary"></i> LinkedIn
+                                    </label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" 
+                                           type="checkbox" 
+                                           name="platforms" 
+                                           value="glassdoor" 
+                                           id="platform-glassdoor"
+                                           checked>
+                                    <label class="form-check-label" for="platform-glassdoor">
+                                        <i class="bi bi-building text-success"></i> Glassdoor
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Max Jobs -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-hash"></i> Maximum Jobs per Platform
+                            </label>
+                            <input type="number" 
+                                   name="max_jobs" 
+                                   class="form-control" 
+                                   value="20"
+                                   min="1"
+                                   max="100">
+                        </div>
+
+                        <!-- AI Analysis -->
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       name="analyze" 
+                                       id="analyze"
+                                       checked>
+                                <label class="form-check-label" for="analyze">
+                                    <i class="bi bi-robot"></i> AI Analysis
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Analyze jobs with AI to score remote-work compatibility
+                            </div>
+                        </div>
+
+                        <!-- Headless Mode -->
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       name="headless" 
+                                       id="headless">
+                                <label class="form-check-label" for="headless">
+                                    <i class="bi bi-eye-slash"></i> Headless Mode
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Run browser without visible window (faster, but more detectable)
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-search"></i> Start Job Search
+                            </button>
+                        </div>
+
+                        <!-- Loading Indicator -->
+                        <div id="search-indicator" class="htmx-indicator text-center mt-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">
+                                <i class="bi bi-info-circle"></i>
+                                This may take several minutes. We're searching jobs with ultra-conservative rate limiting to protect your accounts.
+                            </p>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Rate Limit Info -->
+            <div class="alert alert-info mt-4">
+                <h6><i class="bi bi-shield-check"></i> Ultra-Conservative Rate Limiting</h6>
+                <p class="mb-2 small">
+                    To protect your accounts, we use very conservative rate limits:
+                </p>
+                <ul class="small mb-0">
+                    <li><strong>LinkedIn:</strong> 8-15s delay between requests, max 20/hour, 100/day</li>
+                    <li><strong>Glassdoor:</strong> 10-20s delay between requests, max 10/hour, 50/day</li>
+                    <li><strong>Operating Hours:</strong> 8 AM - 10 PM only</li>
+                    <li><strong>Cooldown:</strong> 60-120 minutes on errors or CAPTCHA</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Help Sidebar -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-lightbulb"></i> Tips
+                </div>
+                <div class="card-body">
+                    <h6>Search Query</h6>
+                    <p class="small text-muted">
+                        Use specific job titles or skill combinations for better results.
+                        Example: "Staff SDET Python" or "EDA Design Automation Engineer"
+                    </p>
+
+                    <h6>Location</h6>
+                    <p class="small text-muted">
+                        For remote jobs, try "Remote", "United States", or leave empty for worldwide.
+                    </p>
+
+                    <h6>AI Analysis</h6>
+                    <p class="small text-muted">
+                        AI will score each job for remote-work compatibility and Armenia-friendliness.
+                        Requires configured LLM provider.
+                    </p>
+
+                    <h6>Rate Limits</h6>
+                    <p class="small text-muted">
+                        Search may take 5-15 minutes depending on how many jobs you request.
+                        This is intentional to protect your accounts.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

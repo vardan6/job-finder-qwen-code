@@ -37,6 +37,17 @@ DEFAULT_PROVIDERS = {
         "is_active": True,
         "models": ["llama3", "llama3.1", "mistral", "gemma", "codellama", "phi3", "glm-5:cloud", "glm-4.6:cloud", "glm-4.7:cloud"]
     },
+    "groq": {
+        "display_name": "Groq",
+        "api_url": "https://api.groq.com/openai/v1",
+        "is_active": False,
+        "models": [
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
+            "llama-3.3-70b-versatile",
+            "qwen/qwen3-32b"
+        ]
+    },
     "nvidia": {
         "display_name": "NVIDIA (NIM)",
         "api_url": "https://integrate.api.nvidia.com/v1",
@@ -394,6 +405,7 @@ async def set_model_as_default(
 @router.post("/test")
 async def test_llm_provider(
     request: Request,
+    provider_name: Optional[str] = Form(None),
     model: str = Form(...),
     prompt: str = Form(default="Hello! Please respond with 'OK' if you can read this."),
     db: Session = Depends(get_db)
@@ -421,12 +433,15 @@ async def test_llm_provider(
         model_suffix = parts[1] if len(parts) > 1 else ""
         
         # Known LiteLLM provider prefixes
-        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim"]
+        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim", "groq"]
         
         provider_name = None
         raw_model_name = model
         
-        if potential_provider in litellm_providers:
+        if provider_name:
+            raw_model_name = model
+            logger.info(f"Using explicit provider from request: {provider_name}, model: {raw_model_name}")
+        elif potential_provider in litellm_providers:
             # Model has explicit provider prefix
             provider_name = potential_provider
             raw_model_name = model_suffix  # e.g., "meta/llama3-70b-instruct"
@@ -487,6 +502,10 @@ async def test_llm_provider(
                 elif provider_name == "openai":
                     os.environ["OPENAI_API_KEY"] = api_key
                     logger.info("Set OPENAI_API_KEY")
+                elif provider_name == "groq":
+                    os.environ["OPENAI_API_KEY"] = api_key
+                    os.environ["OPENAI_API_BASE"] = provider.api_url or "https://api.groq.com/openai/v1"
+                    logger.info(f"Set OPENAI_API_KEY and OPENAI_API_BASE={os.environ['OPENAI_API_BASE']}")
                 elif provider_name == "nvidia" or provider_name == "nvidia_nim":
                     os.environ["NVIDIA_NIM_API_KEY"] = api_key
                     # Set NVIDIA API base URL - ensure trailing slash for consistency
@@ -515,9 +534,13 @@ async def test_llm_provider(
                     "time_ms": 0
                 })
 
-        # For nvidia_nim prefix, use the model as-is (LiteLLM handles it)
-        # The frontend already sends "nvidia_nim/meta/llama3-70b-instruct"
-        litellm_model = model
+        # Groq uses raw OpenAI-compatible model IDs against Groq's API base.
+        if provider_name == "groq":
+            litellm_model = raw_model_name
+        else:
+            # For nvidia_nim prefix, use the model as-is (LiteLLM handles it)
+            # The frontend already sends "nvidia_nim/meta/llama3-70b-instruct"
+            litellm_model = model
         
         logger.info(f"Calling completion API with model: {litellm_model}")
 

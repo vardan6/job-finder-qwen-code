@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}{{ job.title }} at {{ job.company }} - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>{{ job.title }}</h1>
+            <h4 class="text-muted">{{ job.company }}</h4>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="/jobs/{{ job.id }}/apply" class="btn btn-primary">
+                <i class="bi bi-send"></i> Apply
+            </a>
+            <a href="{{ job.original_url }}" target="_blank" class="btn btn-outline-primary">
+                <i class="bi bi-box-arrow-up-right"></i> Original Posting
+            </a>
+            <a href="/jobs/" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Main Content -->
+        <div class="col-md-8">
+            <!-- Job Details -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-info-circle"></i> Job Details
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Location:</dt>
+                        <dd class="col-sm-8">{{ job.location or 'Not specified' }}</dd>
+
+                        <dt class="col-sm-4">Platform:</dt>
+                        <dd class="col-sm-8">
+                            {% if job.platform == 'linkedin' %}
+                            <span class="badge bg-primary"><i class="bi bi-linkedin"></i> LinkedIn</span>
+                            {% elif job.platform == 'glassdoor' %}
+                            <span class="badge bg-success"><i class="bi bi-building"></i> Glassdoor</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ job.platform }}</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-4">Status:</dt>
+                        <dd class="col-sm-8">
+                            <span class="badge 
+                                {% if job.status == 'active' %}bg-primary
+                                {% elif job.status == 'applied' %}bg-info
+                                {% elif job.status == 'interview' %}bg-warning
+                                {% elif job.status == 'offer' %}bg-success
+                                {% elif job.status == 'rejected' %}bg-danger
+                                {% else %}bg-secondary{% endif %}">
+                                {{ job.status }}
+                            </span>
+                        </dd>
+
+                        <dt class="col-sm-4">Found:</dt>
+                        <dd class="col-sm-8">
+                            {{ job.found_at.strftime('%Y-%m-%d %H:%M') if job.found_at else 'Unknown' }}
+                        </dd>
+
+                        {% if job.posted_date %}
+                        <dt class="col-sm-4">Posted:</dt>
+                        <dd class="col-sm-8">
+                            {{ job.posted_date.strftime('%Y-%m-%d') }}
+                        </dd>
+                        {% endif %}
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Job Description -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-file-text"></i> Job Description
+                </div>
+                <div class="card-body">
+                    {% if description %}
+                    <div class="job-description">
+                        {{ description | replace('\n', '<br>') | safe }}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle"></i>
+                        Full description not available. 
+                        <a href="{{ job.original_url }}" target="_blank">View on {{ job.platform }}</a>
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- AI Analysis -->
+            {% if ai_analysis %}
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-robot"></i> AI Analysis
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <div class="display-4 
+                            {% if ai_analysis.remote_score >= 80 %}text-success
+                            {% elif ai_analysis.remote_score >= 60 %}text-warning
+                            {% else %}text-danger{% endif %}">
+                            {{ ai_analysis.remote_score }}
+                        </div>
+                        <p class="text-muted">Remote Work Score</p>
+                    </div>
+
+                    {% if ai_analysis.custom_fit_score %}
+                    <hr>
+                    <div class="mb-3">
+                        <strong>Custom Fit Score:</strong>
+                        <div class="progress">
+                            <div class="progress-bar 
+                                {% if ai_analysis.custom_fit_score >= 80 %}bg-success
+                                {% elif ai_analysis.custom_fit_score >= 60 %}bg-warning
+                                {% else %}bg-danger{% endif %}"
+                                 role="progressbar"
+                                 style="width: {{ ai_analysis.custom_fit_score }}%">
+                                {{ ai_analysis.custom_fit_score }}%
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Update Status -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-pencil"></i> Update Status
+                </div>
+                <div class="card-body">
+                    <form hx-post="/jobs/{{ job.id }}/status"
+                          hx-swap="outerHTML"
+                          hx-on::after-request="this.reset()">
+                        <select name="status" class="form-select mb-3" required>
+                            <option value="active" {% if job.status == 'active' %}selected{% endif %}>Active</option>
+                            <option value="interested" {% if job.status == 'interested' %}selected{% endif %}>Interested</option>
+                            <option value="applied" {% if job.status == 'applied' %}selected{% endif %}>Applied</option>
+                            <option value="interview" {% if job.status == 'interview' %}selected{% endif %}>Interview</option>
+                            <option value="offer" {% if job.status == 'offer' %}selected{% endif %}>Offer</option>
+                            <option value="rejected" {% if job.status == 'rejected' %}selected{% endif %}>Rejected</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-check"></i> Update
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-gear"></i> Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-danger"
+                                hx-delete="/jobs/{{ job.id }}"
+                                hx-confirm="Are you sure you want to delete this job?">
+                            <i class="bi bi-trash"></i> Delete Job
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.job-description {
+    line-height: 1.8;
+    font-size: 0.95rem;
+}
+
+.job-description h1,
+.job-description h2,
+.job-description h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.job-description ul,
+.job-description ol {
+    margin-bottom: 1rem;
+    padding-left: 2rem;
+}
+
+.job-description p {
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
