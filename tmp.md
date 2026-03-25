@@ -40,6 +40,6 @@ As a first step we need to create several documents containing initial informati
 
 ## Usefull Prompt templates
  - please save whatever is needed for next time properly continue in this project because I am going to close this cli
- - Please review the plans documents where we store and current implementation and update if we implemented some additional things in the plans
+ - Please review the plans documents, check what is missing compared to the current implementation. Update plans to reflect the current implementation and plan changes.
 
  
