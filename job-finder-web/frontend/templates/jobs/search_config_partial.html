@@ -1,0 +1,507 @@
+<!-- Search Configuration Panel (HTMX Partial) -->
+<div class="row">
+    <!-- Search Preview Card -->
+    <div class="col-12 mb-4">
+        <div class="card search-preview-card shadow">
+            <div class="card-body py-4">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h4 class="mb-3">
+                            <i class="bi bi-magic"></i> Auto-Generated Search
+                        </h4>
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <div class="stat-badge bg-light">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span>{{ job_titles_count }} Job Titles</span>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="stat-badge bg-light">
+                                    <i class="bi bi-star"></i>
+                                    <span>{{ skills_count }} Skills</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                        <a href="/candidates/{{ candidate_id }}/edit" class="btn btn-light btn-sm">
+                            <i class="bi bi-pencil"></i> Edit Profile
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Search Parameters -->
+    <div class="col-lg-8">
+        <!-- Search Query Card -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <i class="bi bi-key"></i> Search Query
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    <i class="bi bi-info-circle"></i>
+                    Auto-generated from candidate's preferred job titles
+                </p>
+                <div class="alert alert-light border mb-3">
+                    <strong><i class="bi bi-search"></i></strong>
+                    <span class="ms-2">{{ query }}</span>
+                </div>
+                
+                <!-- Platform Status Cards -->
+                <div class="row g-3 mb-3">
+                    {% for platform in platform_status %}
+                    <div class="col-md-6">
+                        <div class="card platform-card {{ 'connected' if platform.connected else 'disconnected' }} p-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    {% if platform.platform == 'linkedin' %}
+                                        <i class="bi bi-linkedin text-primary fs-4"></i>
+                                    {% else %}
+                                        <i class="bi bi-building text-success fs-4"></i>
+                                    {% endif %}
+                                    <span class="ms-2 fw-bold text-capitalize">{{ platform.platform }}</span>
+                                    <br>
+                                    <small class="{{ 'text-success' if platform.connected else 'text-danger' }}">
+                                        {% if platform.connected %}
+                                            <i class="bi bi-check-circle"></i> Connected
+                                        {% else %}
+                                            <i class="bi bi-x-circle"></i> Not Connected
+                                        {% endif %}
+                                    </small>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" 
+                                           type="checkbox" 
+                                           name="platforms" 
+                                           value="{{ platform.platform }}"
+                                           id="platform-{{ platform.platform }}"
+                                           {% if platform.connected %}checked{% else %}disabled{% endif %}>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Location & Remote Settings -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">
+                            <i class="bi bi-geo-alt"></i> Location
+                        </label>
+                        <input type="text" 
+                               name="location" 
+                               class="form-control" 
+                               value="{{ location }}"
+                               id="locationInput">
+                        <small class="text-muted">Target job location or "Remote"</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">
+                            <i class="bi bi-house-door"></i> Remote Only
+                        </label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" 
+                                   type="checkbox" 
+                                   name="remote_only" 
+                                   id="remoteOnlyToggle"
+                                   {% if remote_only %}checked{% endif %}>
+                            <label class="form-check-label" for="remoteOnlyToggle">
+                                {% if remote_only %}Enabled{% else %}Disabled{% endif %}
+                            </label>
+                        </div>
+                        <small class="text-muted">From candidate preferences</small>
+                    </div>
+                </div>
+
+                <!-- AI Analysis Toggle -->
+                <div class="card bg-light border-0 mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <i class="bi bi-robot text-primary"></i>
+                                <strong class="ms-2">AI Job Analysis</strong>
+                                <br>
+                                <small class="text-muted">
+                                    {% if llm_configured %}
+                                        <span class="text-success">
+                                            <i class="bi bi-check-circle"></i> LLM configured ({{ skills_count }} skills for matching)
+                                        </span>
+                                    {% else %}
+                                        <span class="text-warning">
+                                            <i class="bi bi-exclamation-circle"></i> No LLM provider configured
+                                        </span>
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" 
+                                       type="checkbox" 
+                                       name="analyze" 
+                                       id="analyzeToggle"
+                                       {% if analyze_with_ai %}checked{% else %}disabled{% endif %}>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Max Jobs -->
+                <div class="mb-3">
+                    <label class="form-label">
+                        <i class="bi bi-hash"></i> Maximum Jobs per Platform
+                    </label>
+                    <input type="number" 
+                           name="max_jobs" 
+                           class="form-control" 
+                           value="{{ max_jobs }}"
+                           min="1" 
+                           max="100"
+                           id="maxJobsInput">
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Options (Collapsible) -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <button class="btn btn-link text-decoration-none p-0" 
+                        type="button" 
+                        data-bs-toggle="collapse" 
+                        data-bs-target="#advancedOptions"
+                        aria-expanded="false">
+                    <i class="bi bi-sliders"></i> Advanced Options
+                    <i class="bi bi-chevron-down float-end"></i>
+                </button>
+            </div>
+            <div id="advancedOptions" class="collapse">
+                <div class="card-body">
+                    <!-- Custom Query Override -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="bi bi-key"></i> Custom Search Query
+                        </label>
+                        <textarea name="query" 
+                                  class="form-control" 
+                                  rows="3"
+                                  id="customQueryInput"
+                                  placeholder="Override the auto-generated query...">{{ query }}</textarea>
+                        <small class="text-muted">Comma-separated job titles or keywords</small>
+                    </div>
+
+                    <!-- Headless Mode -->
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               name="headless" 
+                               id="headlessToggle">
+                        <label class="form-check-label" for="headlessToggle">
+                            <i class="bi bi-eye-slash"></i> Headless Mode
+                        </label>
+                        <br>
+                        <small class="text-muted">Run browser without visible window (faster, but more detectable)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Button -->
+        <div class="d-grid gap-2 mb-4">
+            <button type="button" 
+                    class="btn btn-primary btn-search-lg"
+                    onclick="startSearch()"
+                    data-bs-toggle="modal" 
+                    data-bs-target="#confirmSearchModal">
+                <i class="bi bi-search"></i> Start Job Search
+            </button>
+        </div>
+    </div>
+
+    <!-- Info Sidebar -->
+    <div class="col-lg-4">
+        <!-- Candidate Summary -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <i class="bi bi-person-circle"></i> Candidate Summary
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">{{ candidate_name }}</h5>
+                <dl class="small mb-0">
+                    <dt class="mt-2">Job Titles:</dt>
+                    <dd>{{ job_titles_count }} active</dd>
+                    
+                    <dt class="mt-2">Skills:</dt>
+                    <dd>{{ skills_count }} enabled</dd>
+                    
+                    <dt class="mt-2">Location:</dt>
+                    <dd>{{ location }}</dd>
+                    
+                    <dt class="mt-2">Remote Only:</dt>
+                    <dd>{% if remote_only %}Yes{% else %}No{% endif %}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- Tips Card -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white">
+                <i class="bi bi-lightbulb"></i> Tips
+            </div>
+            <div class="card-body">
+                <h6 class="small fw-bold">Search Strategy</h6>
+                <p class="small text-muted mb-2">
+                    The search uses your candidate profile to automatically build the optimal query.
+                </p>
+                
+                <h6 class="small fw-bold">Remote Jobs</h6>
+                <p class="small text-muted mb-2">
+                    LinkedIn remote filter is automatically applied. AI analysis helps identify remote-friendly postings.
+                </p>
+                
+                <h6 class="small fw-bold">Rate Limits</h6>
+                <p class="small text-muted mb-0">
+                    Search may take 5-15 minutes. This is intentional to protect your accounts from detection.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden Form Data (for submission) -->
+<form id="searchForm" 
+      hx-post="/jobs/search" 
+      hx-indicator="#searchIndicator"
+      hx-timeout="300000"
+      style="display: none;">
+    <input type="hidden" name="candidate_id" value="{{ candidate_id }}">
+    <input type="hidden" name="query" id="hiddenQuery" value="{{ query }}">
+    <input type="hidden" name="location" id="hiddenLocation" value="{{ location }}">
+    <input type="hidden" name="remote_only" id="hiddenRemoteOnly" value="{{ 'true' if remote_only else 'false' }}">
+    <input type="hidden" name="max_jobs" id="hiddenMaxJobs" value="{{ max_jobs }}">
+    <input type="hidden" name="analyze" id="hiddenAnalyze" value="{{ 'true' if analyze_with_ai else 'false' }}">
+    <input type="hidden" name="headless" id="hiddenHeadless" value="false">
+    <!-- Platforms will be added dynamically -->
+</form>
+
+<!-- Search Confirmation Modal -->
+<div class="modal fade" id="confirmSearchModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-search"></i> Confirm Job Search
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Search Summary:</h6>
+                <ul class="list-unstyled">
+                    <li><strong>Candidate:</strong> {{ candidate_name }}</li>
+                    <li><strong>Query:</strong> <span id="modalQuery">{{ query }}</span></li>
+                    <li><strong>Location:</strong> <span id="modalLocation">{{ location }}</span></li>
+                    <li><strong>Remote Only:</strong> <span id="modalRemote">{% if remote_only %}Yes{% else %}No{% endif %}</span></li>
+                    <li><strong>Platforms:</strong> <span id="modalPlatforms">Selected above</span></li>
+                    <li><strong>Max Jobs:</strong> <span id="modalMaxJobs">{{ max_jobs }} per platform</span></li>
+                    <li><strong>AI Analysis:</strong> <span id="modalAI">{% if analyze_with_ai %}Enabled{% else %}Disabled{% endif %}</span></li>
+                </ul>
+                
+                <div class="alert alert-warning mt-3">
+                    <i class="bi bi-clock"></i>
+                    <strong>Estimated Time:</strong> 5-15 minutes depending on max jobs and platform response.
+                </div>
+                
+                <p class="small text-muted mb-0">
+                    The search will run with ultra-conservative rate limiting to protect your accounts.
+                    Do not close this page until the search completes.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitSearch()">
+                    <i class="bi bi-search"></i> Start Search
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search Progress Modal -->
+<div class="modal fade" id="searchProgressModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <span class="spinner-border spinner-border-sm text-primary me-2" id="progressSpinner" role="status"></span>
+                    <span id="progressTitle">Searching Jobs...</span>
+                </h5>
+            </div>
+            <div class="modal-body">
+                <div id="progressLog"
+                     class="search-progress-log">
+                    <span class="text-muted">Starting search...</span>
+                </div>
+            </div>
+            <div class="modal-footer" id="progressFooter">
+                <small class="text-muted me-auto">Please do not close this page</small>
+                <a id="progressViewResults" href="#" class="btn btn-primary d-none">
+                    <i class="bi bi-list-ul"></i> View Results
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function startSearch() {
+    // Update hidden form fields from visible inputs
+    const customQuery = document.getElementById('customQueryInput').value;
+    const location = document.getElementById('locationInput').value;
+    const remoteOnly = document.getElementById('remoteOnlyToggle').checked;
+    const maxJobs = document.getElementById('maxJobsInput').value;
+    const analyze = document.getElementById('analyzeToggle').checked;
+    const headless = document.getElementById('headlessToggle').checked;
+    
+    // Use custom query if different from auto-generated
+    document.getElementById('hiddenQuery').value = customQuery || document.getElementById('customQueryInput').placeholder;
+    document.getElementById('hiddenLocation').value = location;
+    document.getElementById('hiddenRemoteOnly').value = remoteOnly ? 'true' : 'false';
+    document.getElementById('hiddenMaxJobs').value = maxJobs;
+    document.getElementById('hiddenAnalyze').value = analyze ? 'true' : 'false';
+    document.getElementById('hiddenHeadless').value = headless ? 'true' : 'false';
+    
+    // Update modal display
+    document.getElementById('modalQuery').textContent = document.getElementById('hiddenQuery').value;
+    document.getElementById('modalLocation').textContent = location;
+    document.getElementById('modalRemote').textContent = remoteOnly ? 'Yes' : 'No';
+    document.getElementById('modalMaxJobs').textContent = maxJobs + ' per platform';
+    document.getElementById('modalAI').textContent = analyze ? 'Enabled' : 'Disabled';
+    
+    // Get selected platforms
+    const selectedPlatforms = [];
+    document.querySelectorAll('input[name="platforms"]:checked').forEach(cb => {
+        selectedPlatforms.push(cb.value);
+    });
+    document.getElementById('modalPlatforms').textContent = selectedPlatforms.join(', ') || 'None selected';
+    
+    // Store platforms for submission
+    window.selectedPlatforms = selectedPlatforms;
+}
+
+function submitSearch() {
+    // Close confirmation modal
+    const confirmModal = bootstrap.Modal.getInstance(document.getElementById('confirmSearchModal'));
+    confirmModal.hide();
+
+    // Reset and show progress modal
+    const log = document.getElementById('progressLog');
+    log.innerHTML = '<span class="text-muted">Connecting...</span>';
+    document.getElementById('progressTitle').textContent = 'Searching Jobs...';
+    document.getElementById('progressSpinner').classList.remove('d-none');
+    document.getElementById('progressViewResults').classList.add('d-none');
+    document.querySelector('#progressFooter small').textContent = 'Please do not close this page';
+
+    const progressModal = new bootstrap.Modal(document.getElementById('searchProgressModal'));
+    progressModal.show();
+
+    // Build form data
+    const formData = new FormData();
+    formData.append('candidate_id', document.getElementById('searchForm').querySelector('[name=candidate_id]').value);
+    formData.append('query', document.getElementById('hiddenQuery').value);
+    formData.append('location', document.getElementById('hiddenLocation').value);
+    formData.append('remote_only', document.getElementById('hiddenRemoteOnly').value);
+    formData.append('max_jobs', document.getElementById('hiddenMaxJobs').value);
+    formData.append('analyze', document.getElementById('hiddenAnalyze').value);
+    formData.append('headless', document.getElementById('hiddenHeadless').value);
+    (window.selectedPlatforms || []).forEach(p => formData.append('platforms', p));
+
+    // POST to start search, then open SSE stream
+    fetch('/jobs/search/start', { method: 'POST', body: formData })
+        .then(res => {
+            if (!res.ok) return res.json().then(d => { throw new Error(d.error || res.statusText); });
+            return res.json();
+        })
+        .then(data => {
+            appendLog(log, 'Search started (id: ' + data.search_id + ')');
+            openProgressStream(data.search_id, log);
+        })
+        .catch(err => {
+            appendLog(log, 'ERROR: ' + err.message, 'text-danger');
+            document.getElementById('progressTitle').textContent = 'Search Failed';
+            document.getElementById('progressSpinner').classList.add('d-none');
+            document.querySelector('#progressFooter small').textContent = '';
+        });
+}
+
+function appendLog(log, text, cssClass) {
+    const line = document.createElement('div');
+    if (cssClass) line.className = cssClass;
+    line.textContent = text;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+function openProgressStream(searchId, log) {
+    const es = new EventSource('/jobs/search/stream/' + searchId);
+
+    es.onmessage = function(event) {
+        if (event.data === '[DONE]') {
+            es.close();
+            return;
+        }
+        try {
+            const payload = JSON.parse(event.data);
+            if (payload.done) {
+                // Final result
+                es.close();
+                const r = payload.result || {};
+                appendLog(log, '');
+                appendLog(log,
+                    'DONE — ' + (r.jobs_saved || 0) + ' saved, ' +
+                    (r.total_duplicates || 0) + ' duplicates, ' +
+                    (r.total_analyzed || 0) + ' AI-analyzed',
+                    'text-success fw-bold'
+                );
+                if (r.errors && r.errors.length) {
+                    r.errors.forEach(e => appendLog(log, 'Warning: ' + e, 'text-warning'));
+                }
+                document.getElementById('progressTitle').textContent = 'Search Complete';
+                document.getElementById('progressSpinner').classList.add('d-none');
+                document.querySelector('#progressFooter small').textContent = '';
+
+                // Show View Results button
+                const candidateId = document.getElementById('searchForm').querySelector('[name=candidate_id]').value;
+                const btn = document.getElementById('progressViewResults');
+                btn.href = '/jobs/?candidate_id=' + candidateId;
+                btn.classList.remove('d-none');
+            } else if (payload.msg) {
+                appendLog(log, payload.msg);
+            }
+        } catch(e) {
+            appendLog(log, event.data);
+        }
+    };
+
+    es.onerror = function() {
+        es.close();
+        appendLog(log, 'Connection lost or search ended.', 'text-warning');
+        document.getElementById('progressSpinner').classList.add('d-none');
+    };
+}
+
+// Auto-update query in modal when custom query changes
+document.addEventListener('DOMContentLoaded', function() {
+    const customQueryInput = document.getElementById('customQueryInput');
+    if (customQueryInput) {
+        customQueryInput.addEventListener('input', function() {
+            if (this.value) {
+                document.getElementById('modalQuery').textContent = this.value;
+            }
+        });
+    }
+});
+</script>

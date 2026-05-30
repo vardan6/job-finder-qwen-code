@@ -13,7 +13,7 @@ from pathlib import Path
 import logging
 
 # Import config first (lightweight)
-from backend.config import DEBUG, HOST, PORT
+from backend.config import DEBUG, HOST, PORT  # noqa: E402
 
 # Setup logging immediately
 from backend.logging_config import setup_logging
@@ -21,6 +21,23 @@ logger = setup_logging(DEBUG)
 
 # Import database dependency
 from backend.database import get_db
+
+# Import routers
+from backend.routes import (
+    get_candidates_router,
+    get_health_router,
+    get_llm_router,
+    get_llm_config_router,
+    get_documents_router,
+    get_candidate_parser_router,
+    get_llm_functions_router,
+    get_chat_router,
+    get_skills_router,
+    get_preferences_router,
+    get_platform_accounts_router,
+    get_jobs_router,
+)
+from backend.routes.skills_manager import router as get_skills_manager_router
 
 logger.info("Starting Job Finder Web App...")
 
@@ -33,9 +50,16 @@ app = FastAPI(
 )
 
 # CORS middleware
+import os
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else [
+    f"http://localhost:{PORT}",
+    f"http://127.0.0.1:{PORT}",
+    f"http://0.0.0.0:{PORT}",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,13 +80,41 @@ logger.info("FastAPI app created")
 async def startup_event():
     """Run on application startup - lazy initialization"""
     logger.info(f"Initializing database...")
-    
+
     # Import and initialize database (imports all models)
     from backend.database import init_db
-    init_db()
-    
+    try:
+        init_db()
+    except Exception as e:
+        logger.error(f"FATAL: Database initialization failed: {e}")
+        raise
+
     logger.info("Database initialized")
+
+    # Pre-import LiteLLM in a thread – its first import is very heavy (10-30s)
+    # and would block the event loop if triggered by the first user request.
+    import asyncio
+    asyncio.get_event_loop().run_in_executor(None, lambda: __import__("litellm"))
+    logger.info("LiteLLM pre-import scheduled in background thread")
+    
+    # Initialize dedicated LLM thread pool
+    from backend.services.llm_executor import llm_executor
+    logger.info(f"LLM thread pool initialized with {llm_executor._max_workers} workers")
+
     logger.info(f"Job Finder Web App ready on http://{HOST}:{PORT}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    from backend.database import engine
+    engine.dispose()
+    
+    # Shutdown LLM thread pool
+    from backend.services.llm_executor import shutdown_llm_executor
+    shutdown_llm_executor()
+    
+    logger.info("Application shutdown complete")
 
 
 # Error handlers
@@ -74,6 +126,37 @@ async def not_found_handler(request: Request, exc: HTTPException):
 @app.exception_handler(500)
 async def internal_error_handler(request: Request, exc: Exception):
     logger.error(f"Internal error: {exc}")
+    return templates.TemplateResponse("errors/500.html", {"request": request}, status_code=500)
+
+
+@app.exception_handler(Exception)
+async def api_exception_handler(request: Request, exc: Exception):
+    """
+    Global exception handler for API routes.
+    Returns JSON for API requests, HTML for browser requests.
+    """
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    
+    # Check if this is an API request (expects JSON)
+    accept_header = request.headers.get("accept", "")
+    content_type_header = request.headers.get("content-type", "")
+    
+    # If request sends JSON or expects JSON back, return JSON error
+    if "application/json" in content_type_header or "application/json" in accept_header:
+        from fastapi.responses import JSONResponse
+        error_message = str(exc)
+        # Provide more helpful error message for common issues
+        if "timeout" in error_message.lower():
+            error_message = "Request timed out. The AI service may be slow or unavailable."
+        elif "connection" in error_message.lower() or "refused" in error_message.lower():
+            error_message = "Could not connect to backend service."
+        
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"Server error: {error_message}"}
+        )
+    
+    # Otherwise return HTML error page
     return templates.TemplateResponse("errors/500.html", {"request": request}, status_code=500)
 
 
@@ -174,6 +257,7 @@ app.include_router(get_candidate_parser_router(), prefix="/candidates", tags=["C
 app.include_router(get_llm_functions_router(), tags=["LLM Functions"])
 app.include_router(get_chat_router(), tags=["AI Chat"])
 app.include_router(get_skills_router(), tags=["Skills"])
+app.include_router(get_skills_manager_router, prefix="/candidates", tags=["Skills Manager"])
 app.include_router(get_preferences_router(), tags=["Preferences"])
 app.include_router(get_platform_accounts_router(), tags=["Platform Accounts"])
 app.include_router(get_jobs_router(), prefix="/jobs", tags=["Jobs"])

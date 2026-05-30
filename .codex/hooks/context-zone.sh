@@ -1,0 +1,1 @@
+/mnt/c/Users/vardana/Documents/Proj/my-workflow/hooks/context-zone-codex.sh

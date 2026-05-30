@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from playwright.async_api import Page
 
@@ -85,6 +85,7 @@ class LinkedInScraper:
         location: str = "",
         max_jobs: int = 20,
         cookies_path: Optional[str] = None,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> List[LinkedInJob]:
         """
         Search for jobs on LinkedIn.
@@ -104,11 +105,11 @@ class LinkedInScraper:
         page = None
         
         try:
-            # Acquire global search lock
+            # Acquire global search lock (with timeout to avoid hanging forever)
             lock = get_search_lock()
             if not lock.acquire(blocking=False):
-                logger.warning("Another search is in progress, waiting...")
-                if not lock.acquire(blocking=True):
+                logger.warning("Another search is in progress, waiting (up to 5 minutes)...")
+                if not lock.acquire_with_timeout(timeout_seconds=300):
                     return []
             
             try:
@@ -116,12 +117,16 @@ class LinkedInScraper:
                 allowed, reason = self.rate_limiter.check_rate_limit("linkedin")
                 if not allowed:
                     logger.warning(f"LinkedIn rate limited: {reason}")
+                    if progress_callback:
+                        progress_callback(f"LinkedIn: Rate limited — {reason}")
                     return []
-                
+
                 # Get browser and page
+                if progress_callback:
+                    progress_callback("LinkedIn: Launching browser...")
                 manager = await self.browser_pool.get_manager()
                 page = await manager.new_page("linkedin", cookies_path)
-                
+
                 # Build search URL
                 params = {
                     "keywords": query,
@@ -129,34 +134,42 @@ class LinkedInScraper:
                     "f_AL": "true",  # Remote filter
                     "sortBy": "R",  # Relevance
                 }
-                
+
                 url = LINKEDIN_SEARCH_URL
                 url_params = "&".join(f"{k}={v}" for k, v in params.items() if v)
                 if url_params:
                     url += f"?{url_params}"
-                
+
                 logger.info(f"Navigating to: {url}")
-                
+
                 # Navigate with human-like delay
+                if progress_callback:
+                    progress_callback("LinkedIn: Navigating to job search page...")
                 await self._human_delay(2, 4)
                 await page.goto(url, wait_until="networkidle", timeout=60000)
                 await self._human_delay(1, 2)
-                
+
                 # Check for login wall
                 if await self._is_login_wall(page):
                     logger.warning("LinkedIn login wall detected")
+                    if progress_callback:
+                        progress_callback("LinkedIn: Login wall detected — session may be expired")
                     await manager.save_cookies("linkedin", cookies_path)
                     return []
-                
+
                 # Check for CAPTCHA
                 if await self._is_captcha(page):
                     logger.error("LinkedIn CAPTCHA detected, setting cooldown")
+                    if progress_callback:
+                        progress_callback("LinkedIn: CAPTCHA detected — setting cooldown")
                     self.rate_limiter.record_failure("linkedin", "CAPTCHA detected")
                     await manager.save_cookies("linkedin", cookies_path)
                     return []
-                
+
+                if progress_callback:
+                    progress_callback("LinkedIn: Page loaded, scanning job listings...")
                 # Collect jobs from search results
-                jobs = await self._collect_jobs(page, max_jobs)
+                jobs = await self._collect_jobs(page, max_jobs, progress_callback=progress_callback)
                 logger.info(f"Collected {len(jobs)} jobs from LinkedIn")
                 
                 # Save cookies
@@ -174,7 +187,7 @@ class LinkedInScraper:
         except Exception as e:
             logger.error(f"LinkedIn search error: {e}")
             self.rate_limiter.record_failure("linkedin", str(e))
-            raise
+            # Return empty list instead of re-raising so the orchestrator can continue
         
         finally:
             if page:
@@ -182,29 +195,38 @@ class LinkedInScraper:
         
         return jobs
     
-    async def _collect_jobs(self, page: Page, max_jobs: int) -> List[LinkedInJob]:
+    async def _collect_jobs(
+        self,
+        page: Page,
+        max_jobs: int,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[LinkedInJob]:
         """Collect jobs from search results page"""
         jobs = []
         seen_urls = set()
-        
+
         # Wait for job listings to load
         try:
             await page.wait_for_selector(".job-search-card", timeout=10000)
         except Exception:
             logger.warning("No job listings found on page")
+            if progress_callback:
+                progress_callback("LinkedIn: No job listings found on page")
             return jobs
-        
+
         # Scroll through results to load more
         await self._scroll_to_load_more(page)
-        
+
         # Extract job cards
         job_cards = await page.query_selector_all(".job-search-card")
         logger.info(f"Found {len(job_cards)} job cards")
-        
+        if progress_callback:
+            progress_callback(f"LinkedIn: Found {len(job_cards)} job cards, extracting details...")
+
         for i, card in enumerate(job_cards):
             if len(jobs) >= max_jobs:
                 break
-            
+
             try:
                 # Extract job data
                 job = await self._extract_job_from_card(card, page, i)
@@ -212,14 +234,19 @@ class LinkedInScraper:
                     seen_urls.add(job.job_url)
                     jobs.append(job)
                     logger.debug(f"Extracted job: {job.title} at {job.company}")
-                
+                    if progress_callback:
+                        progress_callback(
+                            f"LinkedIn [{len(jobs)}/{min(len(job_cards), max_jobs)}]: "
+                            f"{job.title} @ {job.company}"
+                        )
+
                 # Random delay between extractions
                 await self._human_delay(0.5, 1.5)
-                
+
             except Exception as e:
                 logger.warning(f"Failed to extract job card {i}: {e}")
                 continue
-        
+
         return jobs
     
     async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[LinkedInJob]:

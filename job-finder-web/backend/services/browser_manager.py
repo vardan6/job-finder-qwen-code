@@ -93,7 +93,7 @@ class BrowserManager:
             if cookies_file.exists():
                 try:
                     from backend.security import decrypt_data
-                    encrypted = cookies_file.read_bytes()
+                    encrypted = cookies_file.read_text()
                     decrypted = decrypt_data(encrypted)
                     payload = json.loads(decrypted)
                     if isinstance(payload, dict) and isinstance(payload.get("cookies"), list):

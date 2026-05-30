@@ -34,9 +34,9 @@
 
                 <!-- Filter Toggle -->
                 <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="showCustomDocs"
+                    <input class="form-check-input" type="checkbox" id="jobTitleShowCustomDocs"
                            onchange="toggleCustomDocuments(this.checked)">
-                    <label class="form-check-label" for="showCustomDocs">
+                    <label class="form-check-label" for="jobTitleShowCustomDocs">
                         <i class="bi bi-folder2-open"></i> Show custom documents
                     </label>
                     <div class="form-text">
@@ -99,7 +99,7 @@ function loadAvailableFiles() {
             // Load toggle state from localStorage
             const savedState = localStorage.getItem(`show_custom_docs_{{ candidate.id }}`);
             showCustomDocuments = savedState === 'true';
-            document.getElementById('showCustomDocs').checked = showCustomDocuments;
+            document.getElementById('jobTitleShowCustomDocs').checked = showCustomDocuments;
 
             // Load last selection from localStorage
             const saved = localStorage.getItem(`parse_selection_{{ candidate.id }}`);
@@ -146,7 +146,7 @@ function renderFileList() {
             container.innerHTML = `
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i> All files are custom documents
-                    <button class="btn btn-sm btn-link ms-2" onclick="document.getElementById('showCustomDocs').checked = true; toggleCustomDocuments(true);">
+                    <button class="btn btn-sm btn-link ms-2" onclick="document.getElementById('jobTitleShowCustomDocs').checked = true; toggleCustomDocuments(true);">
                         Show them
                     </button>
                 </div>
@@ -383,8 +383,10 @@ function showParsingStatus() {
 
 // Initialize file list when modal opens
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize model selector for job_title_parser
-    initializeModelSelector();
+    const modelWidget = document.querySelector('#fileSelectorModal .model-selector-widget');
+    if (modelWidget && window.JobFinder) {
+        window.JobFinder.loadModelsForWidget(modelWidget);
+    }
     
     const modalEl = document.getElementById('fileSelectorModal');
     if (modalEl) {
@@ -394,73 +396,4 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Initialize model selector with current selection
-function initializeModelSelector() {
-    const selectElement = document.getElementById('model-selector-job_title_parser');
-    const statusSpan = document.getElementById('status-job_title_parser');
-    
-    if (!selectElement) return;
-    
-    // Fetch current model mapping for job_title_parser
-    fetch('/api/llm/function/job_title_parser/model')
-        .then(response => response.json())
-        .then(data => {
-            const currentModelId = data.model_id || null;
-            
-            // Load all available models
-            return fetch('/api/llm/models')
-                .then(res => res.json())
-                .then(modelsData => {
-                    // Clear and rebuild options
-                    selectElement.innerHTML = '<option value="">-- Select Model --</option>';
-                    
-                    // Populate with providers and models
-                    modelsData.providers.forEach(provider => {
-                        if (provider.models && provider.models.length > 0) {
-                            const optgroup = document.createElement('optgroup');
-                            optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
-                            
-                            provider.models.forEach(model => {
-                                const option = document.createElement('option');
-                                option.value = model.id;
-                                option.textContent = model.display_name || model.model_name;
-                                
-                                // Select the current model
-                                if (currentModelId && model.id == currentModelId) {
-                                    option.selected = true;
-                                }
-                                
-                                optgroup.appendChild(option);
-                            });
-                            
-                            selectElement.appendChild(optgroup);
-                        }
-                    });
-                    
-                    // Update status badge
-                    if (currentModelId) {
-                        statusSpan.innerHTML = `
-                            <span class="badge bg-success">
-                                <i class="bi bi-check-circle"></i> Ready
-                            </span>
-                        `;
-                    } else {
-                        statusSpan.innerHTML = `
-                            <span class="badge bg-warning text-dark">
-                                <i class="bi bi-exclamation-triangle"></i> Not configured
-                            </span>
-                        `;
-                    }
-                });
-        })
-        .catch(error => {
-            console.error('Error loading models:', error);
-            selectElement.innerHTML = '<option value="">Error loading models</option>';
-            statusSpan.innerHTML = `
-                <span class="badge bg-danger">
-                    <i class="bi bi-x-circle"></i> Error
-                </span>
-            `;
-        });
-}
 </script>

@@ -81,7 +81,7 @@ async def save_preferences(
                 preferences.experience_levels = json.dumps(exp_levels)
             else:
                 preferences.experience_levels = json.dumps(["Senior", "Staff", "Principal", "Lead"])
-        except:
+        except (json.JSONDecodeError, TypeError):
             preferences.experience_levels = json.dumps(["Senior", "Staff", "Principal", "Lead"])
         
         db.commit()

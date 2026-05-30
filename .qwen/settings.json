@@ -3,7 +3,8 @@
     "allow": [
       "Read(//home/vardana/.qwen/**)",
       "Read(//home/vardana/**)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(tail *)"
     ]
   },
   "$version": 3

@@ -1,0 +1,10 @@
+{
+	"folders": [
+		{
+			"name": "job-finder-qwen-code",
+			"uri": "vscode-remote://wsl+ubuntu-24.04/mnt/c/Users/Vardana/Documents/Proj/job-finder-qwen-code"
+		}
+	],
+	"remoteAuthority": "wsl+Ubuntu-24.04",
+	"settings": {}
+}

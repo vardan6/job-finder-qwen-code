@@ -48,7 +48,8 @@ async def parse_document_content(db: Session, document: CandidateDocument) -> bo
             raise ValueError(f"No parse prompt found for document type: {document_type}")
 
         # Read the document content
-        file_path = Path("data") / document.file_path
+        from backend.config import DATA_DIR
+        file_path = DATA_DIR / document.file_path
         if not file_path.exists():
             raise ValueError(f"Document file not found: {file_path}")
 

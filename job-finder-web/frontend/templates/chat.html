@@ -347,7 +347,9 @@ function setComposerState(isBusy) {
 }
 
 function syncEmptyState() {
-    emptyState.hidden = messagesContainer.children.length > 0;
+    const hasMessages = messagesContainer.children.length > 0;
+    emptyState.hidden = hasMessages;
+    transcript.classList.toggle('is-scrollable', hasMessages);
 }
 
 function showValidation(message) {

@@ -1,0 +1,589 @@
+<!-- Skills Manager Modal - Matches Job Titles Modal Exactly -->
+<div class="modal fade" id="skillsManagerModal" tabindex="-1" aria-labelledby="skillsManagerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="skillsManagerModalLabel">
+                    <i class="bi bi-collection"></i> Skills Manager - {{ candidate.name }}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Parse Status Messages -->
+                <div id="skillsParseStatus" class="mb-3"></div>
+
+                <!-- File Selection Panel -->
+                <div id="skillsFilePanel">
+                    <!-- Model Selector -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-cpu"></i> AI Model
+                        </label>
+                        <div class="model-selector-widget" data-function="skill_extractor">
+                            <select class="form-select form-select-sm"
+                                    style="min-width: 180px;"
+                                    onchange="onModelSelectorChange('skill_extractor', this.value)"
+                                    id="model-selector-skill_extractor">
+                                <option value="">-- Select Model --</option>
+                            </select>
+                            <span class="model-selector-status ms-2" id="status-skill_extractor">
+                                <span class="badge bg-secondary">
+                                    <i class="bi bi-hourglass-split"></i> Loading...
+                                </span>
+                            </span>
+                        </div>
+                        <div class="form-text mt-1">
+                            <i class="bi bi-info-circle"></i> This model will be used for extracting skills
+                        </div>
+                    </div>
+
+                    <!-- Protect Existing Skills -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-shield-check"></i> Protect Existing Skills
+                        </label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="protectImportantSkills" checked>
+                            <label class="form-check-label" for="protectImportantSkills">
+                                <strong>Mark skills to preserve</strong>
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i> Checked skills will NOT be overwritten
+                                </div>
+                            </label>
+                        </div>
+                        <div id="existingSkillsList" class="mt-2" style="max-height: 150px; overflow-y: auto;">
+                            <div class="text-center text-muted py-2">
+                                <small>Loading existing skills...</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Parse Mode -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-arrow-repeat"></i> Parse Mode
+                        </label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="parseMode" id="parseModeMerge" value="merge" checked>
+                            <label class="form-check-label" for="parseModeMerge">
+                                <strong>Merge with existing skills</strong>
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i> Add new skills, skip duplicates
+                                </div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="parseMode" id="parseModeOverwrite" value="overwrite">
+                            <label class="form-check-label" for="parseModeOverwrite">
+                                <strong class="text-danger">Overwrite all existing skills</strong>
+                                <div class="form-text text-danger">
+                                    <i class="bi bi-exclamation-triangle"></i> Deletes all current skills (except protected)
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- File Selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-files"></i> Select Files
+                        </label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="skillsShowCustomDocs"
+                                   onchange="toggleSkillsCustomDocuments(this.checked)">
+                            <label class="form-check-label" for="skillsShowCustomDocs">
+                                <i class="bi bi-folder2-open"></i> Show custom documents
+                            </label>
+                            <div class="form-text">
+                                Custom documents may not have structured skills data
+                            </div>
+                        </div>
+                        <div id="skillsFileList" class="list-group">
+                            <div class="text-center text-muted py-4">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mb-0 mt-2">Loading files...</p>
+                            </div>
+                        </div>
+                        <!-- Quick Actions -->
+                        <div class="btn-group mt-3">
+                            <button class="btn btn-sm btn-outline-primary" onclick="skillsSelectAllFiles()">
+                                <i class="bi bi-check-all"></i> Select All
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="skillsClearSelection()">
+                                <i class="bi bi-x-lg"></i> Clear
+                            </button>
+                            <span class="badge bg-secondary ms-2 d-flex align-items-center" id="skillsFileCountBadge">
+                                0 files selected
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading Indicator -->
+                <div id="skillsParseIndicator" class="text-center py-5" style="display: none;">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5>AI is Parsing Documents...</h5>
+                    <p class="text-muted" id="skillsParseStatusMessage">
+                        <i class="bi bi-robot"></i> This may take 30-60 seconds
+                    </p>
+                    <div class="progress mt-3" style="height: 5px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                    </div>
+                </div>
+
+                <!-- Parsed Skills Panel -->
+                <div id="skillsParsedPanel" style="display: none;">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Review and edit</strong> the extracted skills below.
+                        Uncheck skills to discard, adjust categories, or add new skills manually.
+                        Click "Save to Candidate" when done.
+                    </div>
+
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 10%" class="text-center">Keep</th>
+                                <th style="width: 35%">Skill Name</th>
+                                <th style="width: 20%">Category</th>
+                                <th style="width: 25%">Years</th>
+                                <th style="width: 10%">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="skillsParsedTable">
+                            <!-- Rows added dynamically -->
+                        </tbody>
+                    </table>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="skillsAddManualRow()">
+                            <i class="bi bi-plus-circle"></i> Add Manual Skill
+                        </button>
+                        <button class="btn btn-success btn-sm" onclick="skillsSaveParsed()">
+                            <i class="bi bi-check-circle"></i> Save to Candidate
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="skillsDiscardParsed()">
+                            <i class="bi bi-x-circle"></i> Discard
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-primary" onclick="skillsParseSelectedFiles()">
+                    <i class="bi bi-magic"></i> Parse <span id="skillsFileCount">0</span> File(s)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Skills file selection state
+let skillsAvailableFiles = [];
+let skillsSelectedFileIds = [];
+let skillsShowCustomDocuments = false;
+let skillsExtractedData = [];
+let skillsProtectedSkillIds = [];  // IDs of skills to preserve
+
+// Load existing skills for protection
+function loadExistingSkills() {
+    fetch('/candidates/{{ candidate.id }}/skills')
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('existingSkillsList');
+            skillsProtectedSkillIds = [];  // Reset
+            
+            if (!data.skills || data.skills.length === 0) {
+                container.innerHTML = '<small class="text-muted">No existing skills to protect</small>';
+                return;
+            }
+            
+            container.innerHTML = data.skills.map(skill => `
+                <div class="form-check">
+                    <input class="form-check-input skill-protect-checkbox" type="checkbox" value="${skill.id}" id="protect-skill-${skill.id}">
+                    <label class="form-check-label small" for="protect-skill-${skill.id}">
+                        ${skill.skill_name}
+                        ${skill.category === 'required' ? '<span class="badge bg-primary ms-1">Required</span>' : ''}
+                    </label>
+                </div>
+            `).join('');
+            
+            // Add event listeners
+            document.querySelectorAll('.skill-protect-checkbox').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const id = parseInt(this.value);
+                    if (this.checked) {
+                        skillsProtectedSkillIds.push(id);
+                    } else {
+                        skillsProtectedSkillIds = skillsProtectedSkillIds.filter(x => x !== id);
+                    }
+                });
+            });
+        })
+        .catch(error => {
+            console.error('Error loading skills:', error);
+            document.getElementById('existingSkillsList').innerHTML = '<small class="text-danger">Error loading skills</small>';
+        });
+}
+
+// Load files when modal opens
+document.getElementById('skillsManagerModal').addEventListener('show.bs.modal', function() {
+    loadSkillsFiles();
+    loadExistingSkills();
+    setTimeout(function() {
+        const widget = document.querySelector('#skillsManagerModal .model-selector-widget');
+        if (widget && window.JobFinder) window.JobFinder.loadModelsForWidget(widget);
+    }, 100);
+});
+
+// Load available files
+function loadSkillsFiles() {
+    fetch('/candidates/{{ candidate.id }}/documents')
+        .then(response => response.json())
+        .then(data => {
+            skillsAvailableFiles = data.documents;
+            
+            const savedState = localStorage.getItem('skills_show_custom_docs_{{ candidate.id }}');
+            skillsShowCustomDocuments = savedState === 'true';
+            document.getElementById('skillsShowCustomDocs').checked = skillsShowCustomDocuments;
+            
+            const saved = localStorage.getItem('skills_parse_selection_{{ candidate.id }}');
+            if (saved) {
+                try { skillsSelectedFileIds = JSON.parse(saved); } catch (e) { skillsSelectedFileIds = []; }
+            } else {
+                const visible = getSkillsVisibleFiles();
+                skillsSelectedFileIds = visible.map(f => f.id);
+            }
+            
+            renderSkillsFileList();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('skillsFileList').innerHTML = '<div class="alert alert-danger">Error loading files</div>';
+        });
+}
+
+// Get visible files
+function getSkillsVisibleFiles() {
+    return skillsShowCustomDocuments ? skillsAvailableFiles : skillsAvailableFiles.filter(f => f.document_type !== 'custom');
+}
+
+// Toggle custom docs
+function toggleSkillsCustomDocuments(show) {
+    skillsShowCustomDocuments = show;
+    localStorage.setItem('skills_show_custom_docs_{{ candidate.id }}', show ? 'true' : 'false');
+    renderSkillsFileList();
+}
+
+// Render file list
+function renderSkillsFileList() {
+    const container = document.getElementById('skillsFileList');
+    const files = getSkillsVisibleFiles();
+    
+    if (files.length === 0) {
+        container.innerHTML = '<div class="alert alert-warning">No files available</div>';
+        updateSkillsFileCount();
+        return;
+    }
+    
+    container.innerHTML = files.map(file => {
+        const checked = skillsSelectedFileIds.includes(file.id) ? 'checked' : '';
+        const badges = {
+            'profile': '<span class="badge bg-info">Profile</span>',
+            'resume': '<span class="badge bg-success">Resume</span>',
+            'job_titles': '<span class="badge bg-primary">Job Titles</span>'
+        };
+        const badge = badges[file.document_type] || '<span class="badge bg-light text-dark">Custom</span>';
+        
+        return `
+            <label class="list-group-item list-group-item-action">
+                <div class="d-flex align-items-start">
+                    <input type="checkbox" class="form-check-input me-3 mt-1" value="${file.id}" ${checked}
+                           onchange="toggleSkillsFileSelection(${file.id}, this.checked)">
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between mb-1">
+                            <strong class="text-primary">${file.filename}</strong>
+                            <span class="badge bg-secondary">${formatSkillsSize(file.file_size || 0)}</span>
+                        </div>
+                        <div class="text-muted small">${badge}</div>
+                    </div>
+                </div>
+            </label>
+        `;
+    }).join('');
+    
+    updateSkillsFileCount();
+}
+
+// Toggle file selection
+function toggleSkillsFileSelection(id, selected) {
+    if (selected) {
+        if (!skillsSelectedFileIds.includes(id)) skillsSelectedFileIds.push(id);
+    } else {
+        skillsSelectedFileIds = skillsSelectedFileIds.filter(x => x !== id);
+    }
+    localStorage.setItem('skills_parse_selection_{{ candidate.id }}', JSON.stringify(skillsSelectedFileIds));
+    updateSkillsFileCount();
+}
+
+// Select all
+function skillsSelectAllFiles() {
+    skillsSelectedFileIds = getSkillsVisibleFiles().map(f => f.id);
+    localStorage.setItem('skills_parse_selection_{{ candidate.id }}', JSON.stringify(skillsSelectedFileIds));
+    renderSkillsFileList();
+}
+
+// Clear selection
+function skillsClearSelection() {
+    skillsSelectedFileIds = [];
+    localStorage.setItem('skills_parse_selection_{{ candidate.id }}', JSON.stringify(skillsSelectedFileIds));
+    renderSkillsFileList();
+}
+
+// Update count
+function updateSkillsFileCount() {
+    const count = skillsSelectedFileIds.length;
+    document.getElementById('skillsFileCount').textContent = count;
+    document.getElementById('skillsFileCountBadge').textContent = count + ' selected';
+}
+
+// Format size
+function formatSkillsSize(bytes) {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Parse selected files
+function skillsParseSelectedFiles() {
+    if (skillsSelectedFileIds.length === 0) {
+        alert('Please select at least one file');
+        return;
+    }
+
+    const modelSelect = document.getElementById('model-selector-skill_extractor');
+    if (!modelSelect.value) {
+        alert('Please select an AI model');
+        return;
+    }
+
+    const parseMode = document.querySelector('input[name="parseMode"]:checked').value;
+    const protectCheckbox = document.getElementById('protectImportantSkills');
+    const shouldProtect = protectCheckbox.checked;
+
+    // Hide file panel, show loading indicator
+    document.getElementById('skillsFilePanel').style.display = 'none';
+    document.getElementById('skillsParseIndicator').style.display = 'block';
+    document.getElementById('skillsParsedPanel').style.display = 'none';
+    document.getElementById('skillsParseStatus').innerHTML = '';
+
+    // Update status message
+    const statusMsg = document.getElementById('skillsParseStatusMessage');
+    statusMsg.innerHTML = '<i class="bi bi-robot"></i> Loading documents...';
+
+    fetch('/candidates/{{ candidate.id }}/skills/parse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            document_ids: skillsSelectedFileIds,
+            parse_mode: parseMode,
+            protected_skill_ids: shouldProtect ? skillsProtectedSkillIds : []
+        })
+    })
+    .then(async response => {
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            // Server returned HTML (likely an error page)
+            const text = await response.text();
+            throw new Error('Server returned HTML instead of JSON. This usually means a server error occurred. Check the logs for details.');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Hide loading indicator
+        document.getElementById('skillsParseIndicator').style.display = 'none';
+
+        if (data.success) {
+            skillsExtractedData = data.skills || [];
+
+            // Show status message
+            const statusDiv = document.getElementById('skillsParseStatus');
+            statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ' + data.message + '</div>';
+
+            // Show parsed result panel with content
+            showSkillsParsedResult(data);
+            document.getElementById('skillsParsedPanel').style.display = 'block';
+        } else {
+            // Show error and return to file selection
+            const statusDiv = document.getElementById('skillsParseStatus');
+            statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + data.message + '</div>';
+            document.getElementById('skillsFilePanel').style.display = 'block';
+        }
+    })
+    .catch(error => {
+        // Hide loading indicator
+        document.getElementById('skillsParseIndicator').style.display = 'none';
+
+        // Show error and return to file selection
+        const statusDiv = document.getElementById('skillsParseStatus');
+        let errorMessage = error.message || String(error);
+        
+        // Provide more helpful error message
+        if (errorMessage.includes('HTML')) {
+            errorMessage = 'Server error occurred. The LLM may have timed out or failed. Please check the application logs and try again.';
+        } else if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+            errorMessage = 'Request timed out. The AI is taking too long to respond. Try again or check your LLM configuration.';
+        }
+        
+        statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + escapeHtml(errorMessage) + '</div>';
+        document.getElementById('skillsFilePanel').style.display = 'block';
+        console.error('Skills parse error:', error);
+    });
+}
+
+// Show parsed result
+function showSkillsParsedResult(data) {
+    const tbody = document.getElementById('skillsParsedTable');
+    tbody.innerHTML = '';
+    
+    if (!skillsExtractedData || skillsExtractedData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4"><i class="bi bi-info-circle"></i> No new skills found to add</td></tr>';
+        return;
+    }
+    
+    skillsExtractedData.forEach((skill, i) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="text-center">
+                <input type="checkbox" class="form-check-input skill-keep-checkbox" checked data-index="${i}">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm skill-name-input" value="${skill.skill_name}" data-index="${i}">
+            </td>
+            <td>
+                <select class="form-select form-select-sm skill-category-select" data-index="${i}">
+                    <option value="required" ${skill.category === 'required' ? 'selected' : ''}>Required</option>
+                    <option value="preferred" ${skill.category !== 'required' ? 'selected' : ''}>Preferred</option>
+                </select>
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm skill-years-input" value="${skill.years_experience || ''}" placeholder="Years" data-index="${i}">
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Add manual row
+function skillsAddManualRow() {
+    const tbody = document.getElementById('skillsParsedTable');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td class="text-center">
+            <input type="checkbox" class="form-check-input skill-keep-checkbox" checked>
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm skill-name-input" placeholder="Skill name">
+        </td>
+        <td>
+            <select class="form-select form-select-sm skill-category-select">
+                <option value="required">Required</option>
+                <option value="preferred" selected>Preferred</option>
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm skill-years-input" placeholder="Years">
+        </td>
+        <td>
+            <button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(row);
+}
+
+// Save parsed skills
+function skillsSaveParsed() {
+    const rows = document.querySelectorAll('#skillsParsedTable tr');
+    const skillsToSave = [];
+    
+    rows.forEach(row => {
+        const checkbox = row.querySelector('.skill-keep-checkbox');
+        if (!checkbox.checked) return;
+        
+        const nameInput = row.querySelector('.skill-name-input');
+        const categorySelect = row.querySelector('.skill-category-select');
+        const yearsInput = row.querySelector('.skill-years-input');
+        
+        const name = nameInput.value.trim();
+        if (!name) return;
+        
+        skillsToSave.push({
+            skill_name: name,
+            category: categorySelect.value,
+            years_experience: yearsInput.value ? parseInt(yearsInput.value) : null,
+            is_enabled: true
+        });
+    });
+    
+    if (skillsToSave.length === 0) {
+        alert('Please select at least one skill');
+        return;
+    }
+    
+    const parseMode = document.querySelector('input[name="parseMode"]:checked').value;
+    const protectCheckbox = document.getElementById('protectImportantSkills');
+    const shouldProtect = protectCheckbox.checked;
+    const saveBtn = document.querySelector('#skillsParsedPanel .btn-success');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+    
+    fetch('/candidates/{{ candidate.id }}/skills/bulk-save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            skills: skillsToSave,
+            clear_existing: parseMode === 'overwrite',
+            protected_skill_ids: shouldProtect ? skillsProtectedSkillIds : []
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save to Candidate';
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save to Candidate';
+    });
+}
+
+// Discard parsed
+function skillsDiscardParsed() {
+    document.getElementById('skillsParsedPanel').style.display = 'none';
+    document.getElementById('skillsFilePanel').style.display = 'block';
+    document.getElementById('skillsParseStatus').innerHTML = '';
+}
+</script>

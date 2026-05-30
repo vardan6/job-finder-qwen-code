@@ -14,11 +14,11 @@ import uuid
 # Project root
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# Files to copy
+# Files to copy from the repository reference-material area
 FILES_TO_COPY = {
-    "linkedin-profile.md": "profile",
-    "prefered-job-titles.md": "job_titles",
-    "cover-letter.md": "cover_letter",
+    "docs/reference/linkedin-profile.md": "profile",
+    "docs/reference/prefered-job-titles.md": "job_titles",
+    "docs/reference/cover-letter.md": "cover_letter",
 }
 
 def calculate_file_hash(file_path: Path) -> str:
@@ -48,8 +48,8 @@ def copy_files_to_candidate(candidate_id: int = 1):
         candidate_folder = Path(candidate.folder_path) / "documents"
         candidate_folder.mkdir(parents=True, exist_ok=True)
         
-        for filename, doc_type in FILES_TO_COPY.items():
-            source = PROJECT_ROOT / filename
+        for relative_path, doc_type in FILES_TO_COPY.items():
+            source = PROJECT_ROOT / relative_path
             if not source.exists():
                 print(f"⚠️  File not found: {source}")
                 continue
@@ -74,14 +74,14 @@ def copy_files_to_candidate(candidate_id: int = 1):
             ).first()
             
             if existing:
-                print(f"⚠️  Skipping {filename} - duplicate already exists")
+                print(f"⚠️  Skipping {source.name} - duplicate already exists")
                 dest.unlink()  # Remove the duplicate
                 continue
             
             # Create database record
             document = CandidateDocument(
                 candidate_id=candidate_id,
-                filename=filename,
+                filename=source.name,
                 file_path=str(dest.relative_to(DATA_DIR)),
                 file_hash=file_hash,
                 file_size=file_size,
@@ -92,7 +92,7 @@ def copy_files_to_candidate(candidate_id: int = 1):
             )
             
             db.add(document)
-            print(f"✅ Copied: {filename} → {doc_type}")
+            print(f"✅ Copied: {source.name} → {doc_type}")
         
         db.commit()
         print("-" * 60)

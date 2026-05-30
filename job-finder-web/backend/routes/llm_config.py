@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from pathlib import Path
+import asyncio
 import time
 
 from backend.database import get_db
@@ -519,12 +520,12 @@ async def test_llm_provider(
         else:
             logger.warning(f"Provider {db_provider_name} not found in database, trying without API key")
 
-        # Check if using Ollama
+        # Check if using Ollama - use async request to avoid blocking
         if model.startswith("ollama/"):
             import requests
             try:
                 requests.get(OLLAMA_URL, timeout=2)
-            except Exception as e:
+            except (requests.ConnectionError, requests.Timeout):
                 return templates.TemplateResponse("settings/llm_test_result.html", {
                     "request": request,
                     "success": False,
@@ -533,6 +534,8 @@ async def test_llm_provider(
                     "model": model,
                     "time_ms": 0
                 })
+            except Exception:
+                pass  # Continue even if health check fails
 
         # Groq uses raw OpenAI-compatible model IDs against Groq's API base.
         if provider_name == "groq":
@@ -544,9 +547,19 @@ async def test_llm_provider(
         
         logger.info(f"Calling completion API with model: {litellm_model}")
 
-        response = completion(
-            model=litellm_model,
-            messages=[{"role": "user", "content": prompt}]
+        # Use dedicated LLM thread pool instead of asyncio.to_thread()
+        from backend.services.llm_executor import get_llm_executor
+        
+        loop = asyncio.get_event_loop()
+        executor = get_llm_executor()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                executor,
+                completion,
+                litellm_model,
+                [{"role": "user", "content": prompt}],
+            ),
+            timeout=120.0  # 2 minute timeout
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)

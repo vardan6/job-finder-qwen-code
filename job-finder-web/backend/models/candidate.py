@@ -1,6 +1,8 @@
 """
 Candidate Model - Represents a job seeker
 """
+import uuid
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
 from sqlalchemy.orm import relationship
 

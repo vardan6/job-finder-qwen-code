@@ -2,20 +2,16 @@
 LLM Test Endpoint - Test AI provider connectivity
 
 LAZY LOADING: LiteLLM is imported only when endpoint is called
-Uses run_in_executor to avoid blocking the async event loop
+Uses dedicated LLM thread pool to avoid blocking the event loop.
 """
 from fastapi import APIRouter, Form
 from typing import Optional
 import time
 import logging
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Thread pool for running blocking LLM calls
-executor = ThreadPoolExecutor(max_workers=4)
 
 
 def _blocking_llm_completion(model: str, prompt: str):
@@ -89,7 +85,7 @@ async def test_llm(
             import requests
             try:
                 requests.get(OLLAMA_URL, timeout=2)
-            except:
+            except (requests.ConnectionError, requests.Timeout):
                 return {
                     "success": False,
                     "error": f"Cannot connect to Ollama at {OLLAMA_URL}. Is it running?",
@@ -101,13 +97,19 @@ async def test_llm(
         litellm_model = model
         logger.info(f"Using LiteLLM model: {litellm_model}")
 
-        # Run blocking LLM call in thread pool to avoid blocking event loop
+        # Run LLM call in dedicated thread pool (not the default one)
+        from backend.services.llm_executor import get_llm_executor
+        
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            executor,
-            _blocking_llm_completion,
-            litellm_model,
-            prompt
+        executor = get_llm_executor()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                executor,
+                _blocking_llm_completion,
+                litellm_model,
+                prompt
+            ),
+            timeout=120.0  # 2 minute timeout
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)

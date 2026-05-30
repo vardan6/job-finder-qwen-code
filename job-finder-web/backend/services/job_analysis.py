@@ -117,7 +117,7 @@ Analyze the following job posting and provide a structured assessment.
 **Output Format:**
 Provide your analysis in valid JSON format with this exact structure:
 
-{
+{{
   "remote_score": <integer 0-100>,
   "remote_type": "<Fully Remote|Hybrid|Onsite|Unknown>",
   "location_requirement": "<Worldwide|US Only|EU Only|Specific Country|...>",
@@ -131,7 +131,7 @@ Provide your analysis in valid JSON format with this exact structure:
   "red_flags": ["flag1", "flag2", ...],
   "summary": "<2-3 sentence summary>",
   "recommendation": "<Apply|Consider|Skip>"
-}
+}}
 
 **Job Posting:**
 {job_description}
@@ -147,7 +147,8 @@ class JobAnalysisService:
     """Service for AI-powered job analysis"""
     
     def __init__(self):
-        self._cache_dir = Path("data/job_analysis_cache")
+        from backend.config import DATA_DIR
+        self._cache_dir = DATA_DIR / "job_analysis_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
     
     def _get_cache_key(self, description: str, skills: List[str]) -> str:
