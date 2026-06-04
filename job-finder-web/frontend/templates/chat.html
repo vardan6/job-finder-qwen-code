@@ -2,44 +2,205 @@
 
 {% block title %}AI Chat - Job Finder{% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/chat.css">
+{% endblock %}
+
 {% block content %}
 <div class="chat-page">
     <div class="chat-workspace">
-        <!-- Main Chat Area -->
-        <main class="chat-main-shell">
-            <!-- Header -->
-            <header class="chat-page-header">
-                <div class="chat-header-content">
-                    <p class="chat-eyebrow">AI Workspace</p>
-                    <h1 class="chat-page-title">AI Chat Assistant</h1>
-                    <p class="chat-page-subtitle">Talk to any configured model with a cleaner, focused workspace.</p>
-                </div>
-                <div class="chat-header-actions">
-                    <div class="chat-active-model" id="activeModelSummary">
-                        <span class="chat-active-label">Active model</span>
-                        <strong id="activeModelName">Choose a model</strong>
+        <aside class="chat-sidebar-shell">
+            <div class="chat-sidebar-card">
+                <div class="chat-sidebar-head">
+                    <div>
+                        <p class="chat-sidebar-kicker">Sessions</p>
+                        <h2>Chats</h2>
                     </div>
-                    <button class="btn btn-outline-secondary" type="button" onclick="clearConversation()">
-                        <i class="bi bi-trash3"></i> Clear Chat
-                    </button>
+                    <div class="chat-sidebar-actions">
+                        <button
+                            class="chat-icon-btn"
+                            type="button"
+                            onclick="loadSessionList()"
+                            title="Refresh sessions"
+                            aria-label="Refresh sessions"
+                            data-bs-toggle="tooltip"
+                            data-bs-placement="top"
+                        >
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                        <button
+                            class="chat-icon-btn chat-icon-btn-primary"
+                            type="button"
+                            onclick="startNewChat()"
+                            title="Start new chat"
+                            aria-label="Start new chat"
+                            data-bs-toggle="tooltip"
+                            data-bs-placement="top"
+                        >
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-session-controls">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Session filter">
+                        <button id="sessionFilterActiveBtn" type="button" class="btn btn-outline-secondary active" onclick="setSessionFilter('active')">Active</button>
+                        <button id="sessionFilterArchivedBtn" type="button" class="btn btn-outline-secondary" onclick="setSessionFilter('archived')">Archived</button>
+                    </div>
+                    <input id="sessionSearchInput" class="form-control form-control-sm" type="search" placeholder="Search chats..." aria-label="Search sessions">
+                </div>
+                <div class="chat-session-utility">
+                    <p id="activeSessionSummary" class="chat-sidebar-note">
+                        Start a new message to create a saved chat.
+                    </p>
+                </div>
+
+                <div id="sessionListEmpty" class="chat-sidebar-note">
+                    Saved chats will appear here after the first message.
+                </div>
+                <div id="sessionList" class="chat-session-list"></div>
+            </div>
+        </aside>
+
+        <button
+            id="chatLayoutResizer"
+            class="chat-layout-resizer"
+            type="button"
+            role="separator"
+            aria-label="Resize sessions sidebar"
+            aria-orientation="vertical"
+            aria-valuemin="240"
+            aria-valuemax="520"
+            aria-valuenow="320"
+            title="Drag to resize sessions sidebar"
+        ></button>
+
+        <main class="chat-main-shell">
+            <header class="chat-page-header">
+                <div class="chat-header-main">
+                    <div class="chat-header-content">
+                        <p class="chat-eyebrow" id="sessionModeKicker">General Chat</p>
+                        <h1 class="chat-page-title" id="chatSessionHeading">New chat</h1>
+                    </div>
+                    <div class="chat-toolbar">
+                        <div class="chat-model-picker chat-toolbar-model">
+                            <label for="modelSelect">Model</label>
+                            <select id="modelSelect" class="form-select">
+                                <option value="">Select a model</option>
+                                {% for item in chat_models %}
+                                    <option
+                                        value="{{ item.provider_config_id }}"
+                                        data-provider-name="{{ item.provider_display }}"
+                                        data-model-name="{{ item.model_display }}"
+                                        {% if default_provider_config_id and item.provider_config_id == default_provider_config_id %}selected{% endif %}
+                                    >
+                                        {{ item.provider_display }} · {{ item.model_display }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="chat-toolbar-actions">
+                            <button class="chat-icon-btn" type="button" data-session-action="rename" onclick="renameActiveSession()" title="Rename chat" aria-label="Rename chat" data-bs-toggle="tooltip" data-bs-placement="top" disabled>
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="chat-icon-btn" type="button" data-session-action="archive" onclick="archiveActiveSession()" title="Archive chat" aria-label="Archive chat" data-bs-toggle="tooltip" data-bs-placement="top" disabled>
+                                <i class="bi bi-archive"></i>
+                            </button>
+                            <button id="copyTranscriptBtn" class="chat-icon-btn" type="button" onclick="copyFullTranscript()" title="Copy chat transcript" aria-label="Copy chat transcript" data-bs-toggle="tooltip" data-bs-placement="top">
+                                <i class="bi bi-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-status-strip">
+                    <div class="chat-status-pills">
+                        <span class="chat-status-pill" id="activeModelSummary">
+                            <span class="chat-active-label">Provider</span>
+                            <strong id="activeModelName">Choose a model</strong>
+                        </span>
+                        <span class="chat-status-pill" id="toolCapabilityPill">Tools: standard</span>
+                        <span class="chat-status-pill" id="sourceCountPill">Sources 0/0</span>
+                        <span class="chat-status-pill is-ready" id="chatReadyPill">Ready.</span>
+                    </div>
                 </div>
             </header>
 
-            <!-- Chat Area -->
+            <section class="chat-control-strip" aria-label="Chat controls">
+                <details class="chat-control-dropdown">
+                    <summary class="chat-control-summary">
+                        <div>
+                            <p class="chat-context-kicker">Candidate</p>
+                            <h2>Profile</h2>
+                        </div>
+                        <span class="chat-control-hint" id="candidateControlHint">Select profile</span>
+                    </summary>
+                    <div class="chat-control-card">
+                        <div class="chat-control-head">
+                            <label for="candidateSelect">Attach candidate</label>
+                            <button id="saveCandidateAttachmentBtn" class="btn btn-outline-secondary btn-sm chat-source-save" type="button" onclick="saveCandidateAttachment()" disabled>
+                                <i class="bi bi-person-check"></i>
+                                <span>Save</span>
+                            </button>
+                        </div>
+
+                        <select id="candidateSelect" class="form-select">
+                            <option value="">No candidate attached</option>
+                            {% for candidate in candidates %}
+                                <option value="{{ candidate.id }}">{{ candidate.name }}</option>
+                            {% endfor %}
+                        </select>
+
+                        <p id="candidateAttachmentSummary" class="chat-model-note">
+                            Start a saved chat to attach a candidate without retargeting other sessions.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="chat-control-dropdown">
+                    <summary class="chat-control-summary">
+                        <div>
+                            <p class="chat-context-kicker">Sources</p>
+                            <h2>Context</h2>
+                        </div>
+                        <span class="chat-control-hint" id="sourceControlHint">Choose inputs</span>
+                    </summary>
+                    <div class="chat-control-card">
+                        <div class="chat-control-head">
+                            <p class="chat-model-note">Available assistant sources</p>
+                            <button id="saveSourceControlsBtn" class="btn btn-outline-secondary btn-sm chat-source-save" type="button" onclick="saveSourceControls()" disabled>
+                                <i class="bi bi-sliders"></i>
+                                <span>Save</span>
+                            </button>
+                        </div>
+
+                        <p id="sourceControlsSummary" class="chat-model-note">
+                            Start a saved chat to control which sources are available to the assistant.
+                        </p>
+                        <div id="sourceControlsList" class="chat-source-list"></div>
+                    </div>
+                </details>
+            </section>
+
+            <div class="chat-provider-strip">
+                <p id="modelDetailText" class="chat-provider-note">
+                    Select the model you want to use for this conversation.
+                </p>
+                <p id="composerStatus" class="chat-provider-note">
+                    Conversation stays on this page
+                </p>
+            </div>
+
             <div class="chat-shell">
                 <div class="chat-transcript" id="chatTranscript">
-                    <!-- Validation Banner -->
                     <div id="chatValidation" class="chat-banner chat-banner-warning" hidden></div>
 
-                    <!-- Empty State -->
                     <div id="emptyState" class="chat-empty-state">
                         <div class="chat-empty-icon">
                             <i class="bi bi-stars"></i>
                         </div>
                         <h2>Start a conversation</h2>
                         <p>Select a model and ask anything about your job search, resume, or career strategy.</p>
-                        
-                        <!-- Quick Prompts -->
+
                         <div class="chat-suggestion-grid">
                             <button class="chat-suggestion-chip" type="button" data-prompt="Summarize the strongest themes across my candidate profile and job titles.">
                                 📋 Summarize my profile
@@ -56,33 +217,12 @@
                         </div>
                     </div>
 
-                    <!-- Messages Container -->
                     <div id="messagesContainer" class="chat-messages"></div>
-
-                    <!-- Loading Indicator -->
-                    <div id="loadingIndicator" class="chat-loading-row" hidden>
-                        <div class="chat-message assistant">
-                            <div class="chat-bubble">
-                                <div class="chat-message-meta">
-                                    <div class="chat-role-label">
-                                        <i class="bi bi-robot"></i>
-                                        <span>Assistant</span>
-                                    </div>
-                                    <span class="chat-meta-pill">Thinking</span>
-                                </div>
-                                <div class="chat-thinking">
-                                    <span></span><span></span><span></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
-                <!-- Input Area -->
                 <form id="chatForm" class="chat-composer" onsubmit="sendMessage(event)">
                     <div class="chat-composer-topline">
-                        <span id="composerHint"><i class="bi bi-keyboard"></i> Press Ctrl+Enter to send</span>
-                        <span id="composerStatus">Conversation stays on this page</span>
+                        <span id="composerHint"><i class="bi bi-keyboard"></i> Press Enter to send · Shift+Enter for a new line</span>
                     </div>
                     <div class="chat-composer-input">
                         <textarea
@@ -91,84 +231,135 @@
                             rows="1"
                             placeholder="Ask about resume edits, outreach drafts, role targeting, interview prep..."
                         ></textarea>
-                        <button type="submit" class="btn btn-primary chat-send-btn" id="sendBtn">
-                            <i class="bi bi-arrow-up-right"></i>
-                            <span>Send</span>
-                        </button>
+                    </div>
+                    <div class="chat-composer-footer">
+                        <div class="chat-composer-footer-left">
+                            <div class="chat-mode-segmented" role="group" aria-label="Run mode">
+                                <button type="button" class="chat-mode-btn is-active" data-mode-value="general_chat">Chat</button>
+                                <button type="button" class="chat-mode-btn" data-mode-value="agent">Agent</button>
+                            </div>
+                            <details class="chat-inline-dropdown">
+                                <summary class="chat-inline-summary">
+                                    <span>Sources</span>
+                                    <span id="inlineSourcesCount" class="chat-inline-count">0/0</span>
+                                </summary>
+                                <div class="chat-inline-dropdown-body">
+                                    <p class="chat-model-note">Choose which saved sources are available to the assistant.</p>
+                                    <div id="sourceControlsListInline" class="chat-source-list compact"></div>
+                                </div>
+                            </details>
+                            <select id="modeSelect" class="form-select chat-mode-select" aria-label="Run mode">
+                                <option value="general_chat">Chat</option>
+                                <option value="agent">Agent</option>
+                            </select>
+                        </div>
+                        <div class="chat-composer-footer-right">
+                            <button class="btn btn-outline-secondary" type="button" onclick="resendLastPrompt()">Retry response</button>
+                            <button type="submit" class="btn btn-primary chat-send-btn" id="sendBtn">
+                                <i id="sendBtnIcon" class="bi bi-send"></i>
+                                <span id="sendBtnLabel">Send</span>
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
         </main>
-
-        <!-- Context Panel -->
-        <aside class="chat-context-panel">
-            <div class="chat-context-card">
-                <div class="chat-context-head">
-                    <p class="chat-context-kicker">Model</p>
-                    <h2>Choose Model</h2>
-                </div>
-                
-                <label for="modelSelect">Select a model</label>
-                <select id="modelSelect" class="form-select form-select-lg">
-                    <option value="">Select a model</option>
-                    {% for provider in providers %}
-                        {% if provider.models %}
-                        <optgroup label="{{ provider.name|title }}">
-                            {% for model in provider.models %}
-                                {% if model.is_active %}
-                                <option
-                                    value="{{ model.id }}"
-                                    data-provider-name="{{ provider.name|title }}"
-                                    data-model-name="{{ model.display_name or model.model_name }}"
-                                    {% if default_model_id and model.id == default_model_id %}selected{% endif %}
-                                >
-                                    {{ model.display_name or model.model_name }}
-                                </option>
-                                {% endif %}
-                            {% endfor %}
-                        </optgroup>
-                        {% endif %}
-                    {% endfor %}
-                </select>
-                
-                <p class="chat-model-note" id="modelDetailText">
-                    Select the model you want to use for this conversation.
-                </p>
-                
-                <div class="chat-context-divider"></div>
-                
-                <div class="chat-context-list">
-                    <div class="chat-context-item">
-                        <span class="chat-context-label">Best for</span>
-                        <strong>Career strategy, writing, and job-search iteration</strong>
-                    </div>
-                    <div class="chat-context-item">
-                        <span class="chat-context-label">Productivity</span>
-                        <strong>Prompt starters, copy actions, and inline metadata</strong>
-                    </div>
-                    <div class="chat-context-item">
-                        <span class="chat-context-label">Context</span>
-                        <strong>Last 10 messages sent for continuity</strong>
-                    </div>
-                </div>
-            </div>
-        </aside>
     </div>
+    <button
+        id="chatHeightResizer"
+        class="chat-height-resizer"
+        type="button"
+        role="separator"
+        aria-label="Resize chat panels height"
+        aria-orientation="horizontal"
+        aria-valuemin="420"
+        aria-valuemax="1100"
+        aria-valuenow="680"
+        title="Drag to resize chat panels height"
+    ></button>
 </div>
 
 <script>
 let conversationHistory = [];
+let activeSessionId = localStorage.getItem('aiChatActiveSessionId') || '';
+let activeSessionTitle = '';
+let activeCandidateId = '';
+let activeCandidateName = '';
+let candidateAttachmentDirty = false;
+let activeSourceControls = defaultSourceControls();
+let sourceControlsDirty = false;
+let isSubmittingMessage = false;
+let activeStreamController = null;
+let isStreamingResponse = false;
+let isStreamingStopArmed = false;
+let activeTraceLog = [];
+let sessionFilter = 'active';
+let sessionSearchQuery = '';
+
+const SOURCE_CONTROL_LABELS = {
+    candidate_profile: 'Candidate profile',
+    candidate_job_titles: 'Job titles',
+    candidate_skills: 'Skills',
+    candidate_documents: 'Documents',
+    job_preferences: 'Job preferences',
+    ai_chat_history: 'Chat history',
+    settings_config: 'Settings',
+    workspace_files: 'Workspace files',
+};
 
 const textarea = document.getElementById('messageInput');
 const modelSelect = document.getElementById('modelSelect');
+const modeSelect = document.getElementById('modeSelect');
 const messagesContainer = document.getElementById('messagesContainer');
-const loadingIndicator = document.getElementById('loadingIndicator');
 const sendBtn = document.getElementById('sendBtn');
+const sendBtnIcon = document.getElementById('sendBtnIcon');
+const sendBtnLabel = document.getElementById('sendBtnLabel');
 const validationBanner = document.getElementById('chatValidation');
 const emptyState = document.getElementById('emptyState');
 const transcript = document.getElementById('chatTranscript');
 const activeModelName = document.getElementById('activeModelName');
 const modelDetailText = document.getElementById('modelDetailText');
+const composerStatus = document.getElementById('composerStatus');
+const sessionModeKicker = document.getElementById('sessionModeKicker');
+const chatSessionHeading = document.getElementById('chatSessionHeading');
+const toolCapabilityPill = document.getElementById('toolCapabilityPill');
+const sourceCountPill = document.getElementById('sourceCountPill');
+const candidateControlHint = document.getElementById('candidateControlHint');
+const sourceControlHint = document.getElementById('sourceControlHint');
+const inlineSourcesCount = document.getElementById('inlineSourcesCount');
+const sessionList = document.getElementById('sessionList');
+const sessionListEmpty = document.getElementById('sessionListEmpty');
+const activeSessionSummary = document.getElementById('activeSessionSummary');
+const candidateSelect = document.getElementById('candidateSelect');
+const candidateAttachmentSummary = document.getElementById('candidateAttachmentSummary');
+const saveCandidateAttachmentBtn = document.getElementById('saveCandidateAttachmentBtn');
+const sourceControlsSummary = document.getElementById('sourceControlsSummary');
+const sourceControlsList = document.getElementById('sourceControlsList');
+const sourceControlsListInline = document.getElementById('sourceControlsListInline');
+const saveSourceControlsBtn = document.getElementById('saveSourceControlsBtn');
+const sessionFilterActiveBtn = document.getElementById('sessionFilterActiveBtn');
+const sessionFilterArchivedBtn = document.getElementById('sessionFilterArchivedBtn');
+const sessionSearchInput = document.getElementById('sessionSearchInput');
+const chatWorkspace = document.querySelector('.chat-workspace');
+const chatLayoutResizer = document.getElementById('chatLayoutResizer');
+const chatHeightResizer = document.getElementById('chatHeightResizer');
+const renameSessionButtons = Array.from(document.querySelectorAll('[data-session-action="rename"]'));
+const archiveSessionButtons = Array.from(document.querySelectorAll('[data-session-action="archive"]'));
+const copyTranscriptBtn = document.getElementById('copyTranscriptBtn');
+const STREAM_RECOVERY_KEY = 'aiChatStreamRecoveryState';
+const CHAT_SIDEBAR_WIDTH_KEY = 'jobfinder-chat-sidebar-width';
+const CHAT_SHELL_HEIGHT_KEY = 'jobfinder-chat-shell-height';
+const CHAT_SIDEBAR_MIN = 240;
+const CHAT_SIDEBAR_MAX = 520;
+const CHAT_SHELL_HEIGHT_MIN = 420;
+const CHAT_SHELL_HEIGHT_MAX = 1100;
+const CANDIDATE_SOURCE_KEYS = new Set([
+    'candidate_profile',
+    'candidate_job_titles',
+    'candidate_skills',
+    'candidate_documents',
+    'job_preferences',
+]);
 
 textarea.addEventListener('input', function() {
     this.style.height = 'auto';
@@ -177,7 +368,11 @@ textarea.addEventListener('input', function() {
 });
 
 textarea.addEventListener('keydown', function(event) {
-    if (event.ctrlKey && event.key === 'Enter') {
+    if (event.isComposing) {
+        return;
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
         sendMessage(event);
     }
 });
@@ -185,6 +380,29 @@ textarea.addEventListener('keydown', function(event) {
 modelSelect.addEventListener('change', function() {
     updateModelSummary();
     clearValidation();
+});
+
+modeSelect.addEventListener('change', function() {
+    syncModeButtons();
+    syncModeSummary();
+    clearValidation();
+});
+
+document.querySelectorAll('.chat-mode-btn').forEach((button) => {
+    button.addEventListener('click', function() {
+        modeSelect.value = this.dataset.modeValue || 'general_chat';
+        syncModeButtons();
+        syncModeSummary();
+        clearValidation();
+    });
+});
+
+candidateSelect.addEventListener('change', function() {
+    const selectedOption = candidateSelect.options[candidateSelect.selectedIndex];
+    activeCandidateId = candidateSelect.value || '';
+    activeCandidateName = activeCandidateId ? (selectedOption ? selectedOption.text : '') : '';
+    candidateAttachmentDirty = true;
+    syncCandidateAttachmentState();
 });
 
 document.querySelectorAll('.chat-suggestion-chip').forEach((button) => {
@@ -195,121 +413,692 @@ document.querySelectorAll('.chat-suggestion-chip').forEach((button) => {
     });
 });
 
+sessionSearchInput.addEventListener('input', function() {
+    sessionSearchQuery = (this.value || '').trim().toLowerCase();
+    loadSessionList();
+});
+
 async function sendMessage(event) {
     event.preventDefault();
 
-    const message = textarea.value.trim();
-    const modelId = modelSelect.value;
-
-    if (!modelId) {
-        showValidation('Select a model before sending a message.');
-        modelSelect.focus();
+    if (isStreamingResponse) {
+        stopStreaming();
         return;
     }
 
+    const message = textarea.value.trim();
     if (!message) {
         showValidation('Enter a message before sending.');
         textarea.focus();
         return;
     }
 
-    clearValidation();
-    setComposerState(true);
-
-    addMessageToChat('user', message, {});
     textarea.value = '';
     textarea.style.height = 'auto';
+    await submitChatMessage(message);
+}
 
-    const formData = new FormData();
-    formData.append('model_id', modelId);
-    formData.append('message', message);
-    formData.append('conversation_history', JSON.stringify(conversationHistory));
+async function submitChatMessage(message) {
+    if (isSubmittingMessage) {
+        return;
+    }
+    const normalizedMessage = (message || '').trim();
+    if (!normalizedMessage) {
+        showValidation('Enter a message before sending.');
+        textarea.focus();
+        return;
+    }
+    ensureValidModelSelection(modelSelect.value);
+    const selectedProviderConfigId = modelSelect.value;
 
-    loadingIndicator.hidden = false;
+    if (!selectedProviderConfigId) {
+        showValidation('Select a model before sending a message.');
+        modelSelect.focus();
+        return;
+    }
+
+    clearValidation();
+    isSubmittingMessage = true;
+    activeStreamController = new AbortController();
+    isStreamingStopArmed = false;
+    setComposerState(true);
+    setStreamingState(true);
+    activeTraceLog = [];
+
+    localStorage.setItem(STREAM_RECOVERY_KEY, JSON.stringify({
+        session_id: activeSessionId || '',
+        mode: modeSelect.value || 'general_chat',
+        prompt: normalizedMessage,
+        started_at: Date.now(),
+    }));
+
+    const pendingUserMessage = addMessageToChat('user', normalizedMessage, {});
+    const streamingAssistant = createStreamingAssistantMessage();
+    let streamAccepted = false;
+
+    const basePayload = {
+        mode: modeSelect.value || 'general_chat',
+        message: normalizedMessage,
+        session_id: activeSessionId,
+        conversation_history: JSON.stringify(conversationHistory),
+    };
+    const buildRequestFormData = (providerConfigId) => {
+        const formData = new FormData();
+        formData.append('selected_provider_config_id', providerConfigId || '');
+        formData.append('mode', basePayload.mode);
+        formData.append('message', basePayload.message);
+        formData.append('session_id', basePayload.session_id);
+        formData.append('conversation_history', basePayload.conversation_history);
+        return formData;
+    };
+
     scrollTranscriptToBottom();
 
     try {
-        const response = await fetch('/api/chat', {
+        const sendStreamRequest = (providerConfigId) => fetch('/api/chat/stream', {
             method: 'POST',
-            body: formData
+            body: buildRequestFormData(providerConfigId),
+            signal: activeStreamController.signal,
+            headers: {
+                'Accept': 'text/event-stream',
+            },
+        });
+        let response = await sendStreamRequest(selectedProviderConfigId);
+        isStreamingStopArmed = true;
+        setComposerState(isSubmittingMessage);
+        let detail = '';
+
+        if (!response.ok) {
+            try {
+                const payload = await response.json();
+                detail = payload && payload.detail ? String(payload.detail) : '';
+            } catch (_error) {
+                detail = '';
+            }
+            if (
+                response.status === 400
+                && selectedProviderConfigId
+                && detail.includes('Configured provider could not be resolved to an active model')
+            ) {
+                response = await sendStreamRequest('');
+                isStreamingStopArmed = true;
+                setComposerState(isSubmittingMessage);
+                if (response.ok) {
+                    ensureValidModelSelection('');
+                    updateModelSummary();
+                } else {
+                    try {
+                        const retryPayload = await response.json();
+                        detail = retryPayload && retryPayload.detail ? String(retryPayload.detail) : detail;
+                    } catch (_error) {
+                        // keep prior detail
+                    }
+                }
+            }
+        }
+
+        if (!response.ok) {
+            throw new Error(detail || `Request failed with status ${response.status}`);
+        }
+        streamAccepted = true;
+
+        let streamedContent = '';
+        let completed = false;
+        await consumeEventStream(response, async (event) => {
+            if (!event || !event.type) {
+                return;
+            }
+
+            if (event.type === 'session') {
+                setActiveSessionId(event.session_id || (event.session && event.session.id) || activeSessionId);
+                setActiveSessionTitle((event.session && event.session.title) || activeSessionTitle);
+                setActiveCandidateAttachment(
+                    event.session && event.session.attached_candidate_id,
+                    event.session && event.session.attached_candidate_name,
+                    false
+                );
+                setActiveSourceControls((event.session && event.session.source_controls) || activeSourceControls, false);
+                return;
+            }
+
+            if (event.type === 'chunk') {
+                streamedContent += event.delta || '';
+                updateStreamingAssistantMessage(streamingAssistant, streamedContent);
+                return;
+            }
+
+            if (event.type === 'trace') {
+                activeTraceLog.push(event);
+                updateStreamingAssistantMessage(streamingAssistant, streamedContent, { traces: activeTraceLog });
+                return;
+            }
+
+            if (event.type === 'tool_activity') {
+                activeTraceLog.push(event);
+                updateStreamingAssistantMessage(streamingAssistant, streamedContent, { traces: activeTraceLog });
+                return;
+            }
+
+            if (event.type === 'interaction_required') {
+                completed = true;
+                finalizeStreamingAssistantMessage(
+                    streamingAssistant,
+                    streamedContent || 'This run needs your input before continuing.',
+                    {},
+                    { retryPrompt: normalizedMessage, interaction: event.interaction || null, traces: activeTraceLog }
+                );
+                return;
+            }
+
+            if (event.type === 'done') {
+                completed = true;
+                const finalMessage = event.message || streamedContent;
+                setActiveSessionId(event.session_id || (event.session && event.session.id) || activeSessionId);
+                setActiveSessionTitle((event.session && event.session.title) || activeSessionTitle);
+                setActiveCandidateAttachment(
+                    event.session && event.session.attached_candidate_id,
+                    event.session && event.session.attached_candidate_name,
+                    false
+                );
+                setActiveSourceControls((event.session && event.session.source_controls) || activeSourceControls, false);
+                finalizeStreamingAssistantMessage(
+                    streamingAssistant,
+                    finalMessage,
+                    event.meta || {},
+                    { retryPrompt: normalizedMessage, diagnostics: event.diagnostics || null, traces: activeTraceLog }
+                );
+                conversationHistory = event.conversation || [];
+                await loadSessionList();
+                return;
+            }
+
+            if (event.type === 'error') {
+                throw new Error(event.message || 'Error sending message');
+            }
         });
 
-        const data = await response.json();
-
-        if (data.success) {
-            addMessageToChat('assistant', data.message, data.meta || {});
-            conversationHistory = data.conversation || [];
-        } else {
-            addMessageToChat('error', data.message || 'Error sending message', {});
+        if (!completed) {
+            throw new Error('Streaming response ended before completion.');
         }
     } catch (error) {
-        addMessageToChat('error', 'Network error: ' + error.message, {});
+        const wasAborted = Boolean(activeStreamController && activeStreamController.signal && activeStreamController.signal.aborted)
+            || (error && error.name === 'AbortError')
+            || Boolean(error && typeof error.message === 'string' && /abort/i.test(error.message));
+        if (wasAborted) {
+            finalizeStreamingAssistantMessage(
+                streamingAssistant,
+                'Response stopped.',
+                {},
+                { retryPrompt: normalizedMessage, traces: activeTraceLog }
+            );
+        } else {
+            streamingAssistant.messageDiv.remove();
+            if (!streamAccepted && pendingUserMessage && pendingUserMessage.messageDiv) {
+                pendingUserMessage.messageDiv.remove();
+            }
+            addMessageToChat('error', 'Network error: ' + error.message, {});
+        }
     } finally {
-        loadingIndicator.hidden = true;
+        isSubmittingMessage = false;
+        isStreamingStopArmed = false;
+        activeStreamController = null;
+        setStreamingState(false);
+        localStorage.removeItem(STREAM_RECOVERY_KEY);
         setComposerState(false);
         textarea.focus();
         scrollTranscriptToBottom();
     }
 }
 
-function addMessageToChat(role, content, meta) {
-    const messageDiv = document.createElement('article');
-    messageDiv.className = `chat-message ${role}`;
-
-    const selectedOption = modelSelect.options[modelSelect.selectedIndex];
-    const providerName = meta.provider || (selectedOption ? selectedOption.dataset.providerName : 'AI');
-    const modelName = meta.model || (selectedOption ? selectedOption.dataset.modelName : 'Assistant');
-    const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    let headerLabel = 'You';
-    let icon = 'bi-person-circle';
-    let metaHtml = `<span>${timeLabel}</span>`;
-    let actionsHtml = '';
-
-    if (role === 'assistant') {
-        headerLabel = `${providerName} · ${modelName}`;
-        icon = 'bi-robot';
-        const pills = [];
-        pills.push(`<span class="chat-meta-pill">${timeLabel}</span>`);
-        if (meta.time_ms) {
-            pills.push(`<span class="chat-meta-pill">${meta.time_ms} ms</span>`);
-        }
-        if (meta.tokens_used) {
-            pills.push(`<span class="chat-meta-pill">${meta.tokens_used} tokens</span>`);
-        }
-        metaHtml = pills.join(' ');
-        actionsHtml = `
-            <button class="chat-copy-btn" type="button" onclick="copyMessage(this)" data-content="${escapeAttribute(content)}">
-                <i class="bi bi-clipboard"></i>
-                <span>Copy</span>
-            </button>
-        `;
-    } else if (role === 'error') {
-        headerLabel = 'Error';
-        icon = 'bi-exclamation-octagon';
-    }
-
-    messageDiv.innerHTML = `
-        <div class="chat-bubble">
-            <div class="chat-message-meta">
-                <div class="chat-role-label">
-                    <i class="bi ${icon}"></i>
-                    <span>${escapeHtml(headerLabel)}</span>
-                </div>
-                <div class="chat-meta-group">${metaHtml}</div>
-            </div>
-            <div class="chat-message-content">${formatContent(content)}</div>
-            ${actionsHtml ? `<div class="chat-message-actions">${actionsHtml}</div>` : ''}
-        </div>
-    `;
-
-    messagesContainer.appendChild(messageDiv);
+function addMessageToChat(role, content, meta, options = {}) {
+    const parts = createMessageParts(role, meta, options);
+    updateMessageContent(parts.contentDiv, content);
+    updateMessageActions(parts.actionsDiv, role, content, options);
+    messagesContainer.appendChild(parts.messageDiv);
     syncEmptyState();
+    scrollTranscriptToBottom();
+    return parts;
+}
+
+function createStreamingAssistantMessage() {
+    const parts = createMessageParts('assistant', {}, { streaming: true });
+    parts.messageDiv.classList.add('is-streaming');
+    updateStreamingAssistantMessage(parts, '');
+    messagesContainer.appendChild(parts.messageDiv);
+    syncEmptyState();
+    scrollTranscriptToBottom();
+    return parts;
+}
+
+function updateStreamingAssistantMessage(parts, content, options = {}) {
+    const streamingStatus = content
+        ? 'Responding'
+        : (Array.isArray(options.traces) && options.traces.length > 0 ? 'Working' : 'Thinking');
+    parts.messageDiv.classList.add('is-streaming');
+    updateMessageMeta(parts.metaGroup, 'assistant', {}, { ...options, streaming: true, streamingStatus });
+    updateMessageContent(parts.contentDiv, content, true, { streamingStatus });
+    updateAuxiliaryBlocks(parts.auxDiv, options);
+    updateMessageFooter(parts.footerDiv, 'assistant', {}, options);
+    parts.actionsDiv.innerHTML = '';
     scrollTranscriptToBottom();
 }
 
-function formatContent(content) {
-    return escapeHtml(content).replace(/\n/g, '<br>');
+function finalizeStreamingAssistantMessage(parts, content, meta, options = {}) {
+    parts.messageDiv.classList.remove('is-streaming');
+    if (parts.labelText) {
+        parts.labelText.textContent = messageHeaderLabel('assistant', meta);
+    }
+    updateMessageMeta(parts.metaGroup, 'assistant', meta, options);
+    updateMessageContent(parts.contentDiv, content);
+    updateAuxiliaryBlocks(parts.auxDiv, options);
+    updateMessageFooter(parts.footerDiv, 'assistant', meta, options);
+    updateMessageActions(parts.actionsDiv, 'assistant', content, options);
+    scrollTranscriptToBottom();
+}
+
+function createMessageParts(role, meta, options = {}) {
+    const messageDiv = document.createElement('article');
+    messageDiv.className = `chat-message ${role}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'chat-message-meta';
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'chat-role-label';
+
+    const icon = document.createElement('i');
+    icon.className = `bi ${messageIcon(role)}`;
+    roleLabel.appendChild(icon);
+
+    const labelText = document.createElement('span');
+    labelText.textContent = messageHeaderLabel(role, meta);
+    roleLabel.appendChild(labelText);
+
+    const metaGroup = document.createElement('div');
+    metaGroup.className = 'chat-meta-group';
+    updateMessageMeta(metaGroup, role, meta, options);
+
+    metaRow.appendChild(roleLabel);
+    metaRow.appendChild(metaGroup);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'chat-message-content';
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'chat-message-actions';
+
+    const auxDiv = document.createElement('div');
+    auxDiv.className = 'chat-message-aux';
+
+    const footerDiv = document.createElement('div');
+    footerDiv.className = 'chat-message-footer';
+    updateMessageFooter(footerDiv, role, meta, options);
+
+    bubble.appendChild(metaRow);
+    bubble.appendChild(contentDiv);
+    bubble.appendChild(auxDiv);
+    bubble.appendChild(footerDiv);
+    bubble.appendChild(actionsDiv);
+    messageDiv.appendChild(bubble);
+
+    return { messageDiv, contentDiv, actionsDiv, metaGroup, auxDiv, footerDiv, labelText };
+}
+
+function updateAuxiliaryBlocks(auxDiv, options = {}) {
+    if (!auxDiv) {
+        return;
+    }
+    auxDiv.innerHTML = '';
+
+    const traces = Array.isArray(options.traces) ? options.traces : [];
+    if (traces.length > 0) {
+        const traceDetails = document.createElement('details');
+        traceDetails.className = 'chat-debug-block';
+        const traceSummary = document.createElement('summary');
+        traceSummary.textContent = `Tool activity (${traces.length})`;
+        traceDetails.appendChild(traceSummary);
+        const traceList = document.createElement('div');
+        traceList.className = 'chat-debug-list';
+        traces.forEach((item) => {
+            const line = document.createElement('p');
+            line.textContent = `${item.tool || item.stage || 'trace'}: ${item.message || item.status || 'update'}`;
+            traceList.appendChild(line);
+        });
+        traceDetails.appendChild(traceList);
+        auxDiv.appendChild(traceDetails);
+    }
+
+    if (options.diagnostics) {
+        const diagnostics = options.diagnostics;
+        const diagDetails = document.createElement('details');
+        diagDetails.className = 'chat-debug-block';
+        const diagSummary = document.createElement('summary');
+        diagSummary.textContent = 'Context diagnostics';
+        diagDetails.appendChild(diagSummary);
+        const diagBody = document.createElement('div');
+        diagBody.className = 'chat-debug-list';
+        const sourceKeys = Array.isArray(diagnostics.enabled_source_keys) ? diagnostics.enabled_source_keys.join(', ') : 'none';
+        diagBody.innerHTML = `
+            <p>Run mode: ${escapeHtml(diagnostics.run_mode || 'general_chat')}</p>
+            <p>Enabled sources: ${escapeHtml(sourceKeys || 'none')}</p>
+            <p>Candidate context: ${(diagnostics.retrieval && diagnostics.retrieval.candidate_context_enabled) ? 'enabled' : 'disabled'}</p>
+        `;
+        diagDetails.appendChild(diagBody);
+        auxDiv.appendChild(diagDetails);
+    }
+
+    if (options.interaction) {
+        const card = document.createElement('div');
+        card.className = 'chat-interaction-card';
+        const title = escapeHtml(options.interaction.title || 'Action required');
+        const prompt = escapeHtml(options.interaction.prompt || 'This run requires additional input.');
+        const optionButtons = (Array.isArray(options.interaction.options) ? options.interaction.options : []).map((label) => `
+            <button type="button" class="chat-copy-btn" onclick="injectPromptFromInteraction('${escapeAttribute(label)}')">${escapeHtml(label)}</button>
+        `).join('');
+        card.innerHTML = `<strong>${title}</strong><p>${prompt}</p><div class="chat-interaction-actions">${optionButtons}</div>`;
+        auxDiv.appendChild(card);
+    }
+}
+
+function messageIcon(role) {
+    if (role === 'assistant') {
+        return 'bi-robot';
+    }
+    if (role === 'error') {
+        return 'bi-exclamation-octagon';
+    }
+    return 'bi-person-circle';
+}
+
+function messageHeaderLabel(role, meta) {
+    if (role === 'assistant') {
+        const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+        const providerName = meta.provider || (selectedOption ? selectedOption.dataset.providerName : 'AI');
+        const modelName = meta.model || (selectedOption ? selectedOption.dataset.modelName : 'Assistant');
+        return `${providerName} · ${modelName}`;
+    }
+    if (role === 'error') {
+        return 'Error';
+    }
+    return 'You';
+}
+
+function updateMessageMeta(metaGroup, role, meta, options = {}) {
+    const timestamp = options.timestamp ? new Date(options.timestamp * 1000) : new Date();
+    const timeLabel = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (role === 'assistant') {
+        const pills = [];
+        if (options.streaming) {
+            pills.push(`<span class="chat-meta-pill">${escapeHtml(options.streamingStatus || 'Thinking')}</span>`);
+        }
+        pills.push(`<span class="chat-meta-pill">${timeLabel}</span>`);
+        metaGroup.innerHTML = pills.join(' ');
+        return;
+    }
+
+    metaGroup.innerHTML = `<span>${timeLabel}</span>`;
+}
+
+function updateMessageFooter(footerDiv, role, meta, options = {}) {
+    if (!footerDiv) {
+        return;
+    }
+
+    if (role !== 'assistant') {
+        footerDiv.innerHTML = '';
+        footerDiv.hidden = true;
+        return;
+    }
+
+    const stats = [];
+    if (meta.provider) {
+        stats.push(escapeHtml(meta.provider));
+    }
+    if (meta.model) {
+        stats.push(escapeHtml(meta.model));
+    }
+    if (meta.time_ms) {
+        stats.push(`${escapeHtml(String(meta.time_ms))} ms`);
+    }
+
+    const usageParts = assistantUsageParts(meta);
+    usageParts.forEach((part) => {
+        stats.push(escapeHtml(part));
+    });
+    if (!usageParts.length && meta.tokens_used) {
+        stats.push(`${escapeHtml(String(meta.tokens_used))} tokens`);
+    }
+
+    const fallbackLabel = assistantFallbackLabel(meta);
+    if (fallbackLabel) {
+        stats.push(escapeHtml(fallbackLabel));
+    }
+
+    if (!stats.length) {
+        footerDiv.innerHTML = '';
+        footerDiv.hidden = true;
+        return;
+    }
+
+    footerDiv.hidden = false;
+    footerDiv.innerHTML = `<div class="chat-message-stats">${stats.join('<span class="chat-footer-separator">·</span>')}</div>`;
+}
+
+function updateMessageContent(contentDiv, content, isStreaming = false, options = {}) {
+    const normalizedContent = normalizeMessageContent(content);
+    contentDiv.innerHTML = '';
+
+    if (isStreaming && !normalizedContent) {
+        const pending = document.createElement('div');
+        pending.className = 'chat-inline-pending';
+
+        const label = document.createElement('span');
+        label.className = 'chat-inline-pending-label';
+        label.textContent = options.streamingStatus || 'Thinking';
+        pending.appendChild(label);
+
+        const dots = document.createElement('span');
+        dots.className = 'chat-thinking';
+        dots.setAttribute('aria-hidden', 'true');
+        dots.innerHTML = '<span></span><span></span><span></span>';
+        pending.appendChild(dots);
+
+        contentDiv.appendChild(pending);
+        return;
+    }
+
+    contentDiv.textContent = normalizedContent;
+
+    if (isStreaming) {
+        const cursor = document.createElement('span');
+        cursor.className = 'chat-stream-cursor';
+        cursor.setAttribute('aria-hidden', 'true');
+        contentDiv.appendChild(cursor);
+    }
+}
+
+function updateMessageActions(actionsDiv, role, content, options = {}) {
+    if (role === 'user') {
+        actionsDiv.innerHTML = `
+            <button class="chat-copy-btn" type="button" onclick="retryMessage(this)" data-retry-prompt="${escapeAttribute(content)}">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Resend</span>
+            </button>
+        `;
+        return;
+    }
+
+    if (role !== 'assistant') {
+        actionsDiv.innerHTML = '';
+        return;
+    }
+
+    const retryButton = options.retryPrompt
+        ? `
+            <button class="chat-copy-btn" type="button" onclick="retryMessage(this)" data-retry-prompt="${escapeAttribute(options.retryPrompt)}">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Resend</span>
+            </button>
+        `
+        : '';
+
+    actionsDiv.innerHTML = `
+        ${retryButton}
+        <button class="chat-copy-btn" type="button" onclick="copyMessage(this)" data-content="${escapeAttribute(content)}">
+            <i class="bi bi-clipboard"></i>
+            <span>Copy</span>
+        </button>
+    `;
+}
+
+async function consumeEventStream(response, onEvent) {
+    if (!response.body) {
+        throw new Error('Streaming response body is unavailable.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done }).replace(/\r\n/g, '\n');
+
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+            const rawEvent = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 2);
+            if (rawEvent) {
+                const payload = parseEventPayload(rawEvent);
+                if (payload) {
+                    await onEvent(payload);
+                }
+            }
+            boundary = buffer.indexOf('\n\n');
+        }
+
+        if (done) {
+            break;
+        }
+    }
+
+    const tailPayload = parseEventPayload(buffer.trim());
+    if (tailPayload) {
+        await onEvent(tailPayload);
+    }
+}
+
+function parseEventPayload(rawEvent) {
+    if (!rawEvent) {
+        return null;
+    }
+
+    const payload = rawEvent
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trim())
+        .join('\n');
+
+    if (!payload) {
+        return null;
+    }
+
+    return JSON.parse(payload);
+}
+
+function normalizeMessageContent(content) {
+    if (content === null || content === undefined) {
+        return '';
+    }
+    return typeof content === 'string' ? content : String(content);
+}
+
+function formatCompactTokens(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) {
+        return '';
+    }
+    if (number >= 10000) {
+        return `${Math.round(number / 1000)}K`;
+    }
+    if (number >= 1000) {
+        return `${(number / 1000).toFixed(1)}K`;
+    }
+    return String(Math.round(number));
+}
+
+function formatTokensPerSecond(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
+        return '';
+    }
+    if (number >= 10) {
+        return `${Math.round(number)} tok/s`;
+    }
+    return `${number.toFixed(1)} tok/s`;
+}
+
+function assistantUsageSnapshot(meta = {}) {
+    const usage = (meta && typeof meta.usage_metadata === 'object' && meta.usage_metadata) || {};
+    const responseMeta = (meta && typeof meta.response_metadata === 'object' && meta.response_metadata) || {};
+
+    let inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? usage.input_token_details?.total_tokens ?? null;
+    let outputTokens = usage.completion_tokens ?? usage.output_tokens ?? usage.output_token_details?.total_tokens ?? null;
+    let totalTokens = usage.total_tokens ?? meta.tokens_used ?? null;
+
+    if (inputTokens == null) {
+        inputTokens = responseMeta.prompt_eval_count ?? null;
+    }
+    if (outputTokens == null) {
+        outputTokens = responseMeta.eval_count ?? null;
+    }
+    if (totalTokens == null && inputTokens != null && outputTokens != null) {
+        totalTokens = Number(inputTokens) + Number(outputTokens);
+    }
+
+    let tokensPerSecond = null;
+    if (outputTokens != null) {
+        if (Number(responseMeta.eval_duration) > 0) {
+            tokensPerSecond = Number(outputTokens) / (Number(responseMeta.eval_duration) / 1e9);
+        } else if (Number(meta.time_ms) > 0) {
+            tokensPerSecond = Number(outputTokens) / (Number(meta.time_ms) / 1000);
+        }
+    }
+
+    return { inputTokens, outputTokens, totalTokens, tokensPerSecond };
+}
+
+function assistantUsageParts(meta = {}) {
+    const { inputTokens, outputTokens, totalTokens, tokensPerSecond } = assistantUsageSnapshot(meta);
+    const parts = [];
+    if (inputTokens != null) {
+        parts.push(`↑${formatCompactTokens(inputTokens)}`);
+    }
+    if (outputTokens != null) {
+        parts.push(`↓${formatCompactTokens(outputTokens)} tok`);
+    } else if (inputTokens == null && totalTokens != null) {
+        parts.push(`${formatCompactTokens(totalTokens)} tokens`);
+    }
+    const tokPerSec = formatTokensPerSecond(tokensPerSecond);
+    if (tokPerSec) {
+        parts.push(tokPerSec);
+    }
+    return parts;
+}
+
+function assistantFallbackLabel(meta = {}) {
+    if (!meta || !meta.fallback_used) {
+        return '';
+    }
+    const requested = String(meta.requested_provider_name || meta.requested_provider_config_id || '').trim();
+    if (!requested) {
+        return 'Fallback used';
+    }
+    return `Fallback from ${requested}`;
 }
 
 function copyMessage(button) {
@@ -326,30 +1115,128 @@ function copyMessage(button) {
     });
 }
 
+function retryMessage(button) {
+    const prompt = button.dataset.retryPrompt || '';
+    if (!prompt) {
+        showValidation('Could not determine which prompt to retry.');
+        return;
+    }
+    submitChatMessage(prompt);
+}
+
+function injectPromptFromInteraction(text) {
+    textarea.value = text || '';
+    textarea.dispatchEvent(new Event('input'));
+    textarea.focus();
+}
+
+function handleLocalSlashCommand(input) {
+    const normalizedInput = (input || '').trim();
+    if (!normalizedInput) {
+        showValidation('Enter a message before sending.');
+        return;
+    }
+    const [command] = normalizedInput.split(/\s+/, 1);
+    const normalized = (command || '').toLowerCase();
+    const mode = modeLabel(modeSelect.value || 'general_chat');
+    const sessionLabel = activeSessionTitle || (activeSessionId ? 'Active session' : 'No active session');
+
+    addMessageToChat('user', normalizedInput, {});
+
+    if (normalized === '/context') {
+        const enabledSources = Object.entries(activeSourceControls || {}).filter(([, enabled]) => Boolean(enabled)).map(([key]) => sourceControlLabel(key));
+        addMessageToChat('assistant', `Session: ${sessionLabel}\nRun mode: ${mode}\nCandidate: ${activeCandidateName || 'none'}\nEnabled sources: ${enabledSources.join(', ') || 'none'}`, {}, {
+            diagnostics: {
+                run_mode: modeSelect.value || 'general_chat',
+                enabled_source_keys: enabledSources,
+                retrieval: { candidate_context_enabled: Boolean(activeCandidateId) },
+            },
+        });
+        return;
+    }
+
+    if (normalized === '/tool-activity') {
+        const traces = activeTraceLog.length > 0 ? activeTraceLog : [{ tool: 'local', message: 'No tool activity captured yet for this session.' }];
+        addMessageToChat('assistant', 'Recent tool activity snapshot.', {}, { traces });
+        return;
+    }
+
+    if (normalized === '/tools') {
+        addMessageToChat('assistant', 'Available local slash commands: /context, /tool-activity, /plan, /tools', {});
+        return;
+    }
+
+    if (normalized === '/plan') {
+        addMessageToChat('assistant', 'Planning run paused pending clarification.', {}, {
+            interaction: {
+                title: 'Clarification required',
+                prompt: 'Choose planning scope before I continue.',
+                options: ['Plan this message only', 'Plan the whole current session'],
+            },
+        });
+        return;
+    }
+
+    addMessageToChat('assistant', `Unknown slash command: ${normalized}. Try /tools.`, {});
+}
+
 function clearConversation() {
     if (!confirm('Clear the conversation history?')) {
         return;
     }
 
-    conversationHistory = [];
-    messagesContainer.innerHTML = '';
-    loadingIndicator.hidden = true;
-    clearValidation();
-    syncEmptyState();
+    setActiveSessionId('');
+    resetChatView();
+    loadSessionList();
+    textarea.focus();
+}
+
+function startNewChat() {
+    setActiveSessionId('');
+    setActiveSessionTitle('');
+    modeSelect.value = 'general_chat';
+    syncModeButtons();
+    resetChatView();
+    loadSessionList();
     textarea.focus();
 }
 
 function setComposerState(isBusy) {
     textarea.disabled = isBusy;
     modelSelect.disabled = isBusy;
-    sendBtn.disabled = isBusy;
-    sendBtn.querySelector('span').textContent = isBusy ? 'Sending' : 'Send';
+    modeSelect.disabled = isBusy;
+    document.querySelectorAll('.chat-mode-btn').forEach((button) => {
+        button.disabled = isBusy;
+    });
+    sendBtn.disabled = isStreamingResponse ? !isStreamingStopArmed : isBusy;
+    sendBtn.classList.toggle('btn-danger', isStreamingResponse);
+    sendBtn.classList.toggle('btn-primary', !isStreamingResponse);
+    sendBtnIcon.className = isStreamingResponse ? 'bi bi-stop-circle' : 'bi bi-send';
+    sendBtnLabel.textContent = isStreamingResponse
+        ? (isStreamingStopArmed ? 'Stop' : 'Starting...')
+        : (isBusy ? 'Sending' : 'Send');
+}
+
+function setStreamingState(isStreaming) {
+    isStreamingResponse = Boolean(isStreaming);
+    setComposerState(isSubmittingMessage);
+}
+
+function stopStreaming() {
+    if (activeStreamController) {
+        activeStreamController.abort();
+    }
 }
 
 function syncEmptyState() {
     const hasMessages = messagesContainer.children.length > 0;
     emptyState.hidden = hasMessages;
     transcript.classList.toggle('is-scrollable', hasMessages);
+    composerStatus.textContent = activeSessionId
+        ? 'Messages are being saved to the active AI session'
+        : 'Start a message to create a persisted AI session';
+    copyTranscriptBtn.disabled = !hasMessages;
+    syncModeSummary();
 }
 
 function showValidation(message) {
@@ -367,12 +1254,37 @@ function scrollTranscriptToBottom() {
     transcript.scrollTop = transcript.scrollHeight;
 }
 
+function ensureValidModelSelection(preferredValue = '') {
+    const requested = String(preferredValue || '').trim();
+    const options = Array.from(modelSelect.options || []);
+    const configuredOptions = options.filter((option) => option.value);
+
+    if (!configuredOptions.length) {
+        modelSelect.value = '';
+        return false;
+    }
+
+    if (requested) {
+        const matching = configuredOptions.find((option) => option.value === requested);
+        if (matching) {
+            modelSelect.value = requested;
+            return true;
+        }
+    }
+
+    if (!modelSelect.value || !configuredOptions.some((option) => option.value === modelSelect.value)) {
+        modelSelect.value = configuredOptions[0].value;
+    }
+    return Boolean(modelSelect.value);
+}
+
 function updateModelSummary() {
     const selectedOption = modelSelect.options[modelSelect.selectedIndex];
 
     if (!selectedOption || !selectedOption.value) {
         activeModelName.textContent = 'Choose a model';
         modelDetailText.textContent = 'Select the model you want to use for this conversation.';
+        toolCapabilityPill.textContent = 'Tools: unavailable';
         return;
     }
 
@@ -380,6 +1292,564 @@ function updateModelSummary() {
     const modelName = selectedOption.dataset.modelName || selectedOption.text;
     activeModelName.textContent = `${providerName} · ${modelName}`;
     modelDetailText.textContent = `Using ${providerName} with the ${modelName} model for the next request.`;
+    toolCapabilityPill.textContent = modeSelect.value === 'general_chat' ? 'Tools: standard' : 'Tools: supported';
+}
+
+function modeLabel(mode) {
+    const labels = {
+        general_chat: 'Chat',
+        agent: 'Agent',
+    };
+    return labels[mode] || 'Chat';
+}
+
+function normalizeSessionMode(mode) {
+    const normalized = String(mode || '').trim();
+    if (normalized === 'agent') {
+        return 'agent';
+    }
+    if (normalized === 'intent' || normalized === 'planning_shell') {
+        return 'agent';
+    }
+    return 'general_chat';
+}
+
+function syncModeSummary() {
+    const mode = modeSelect.value || 'general_chat';
+    const label = modeLabel(mode);
+    sessionModeKicker.textContent = label;
+    chatSessionHeading.textContent = activeSessionTitle || 'New chat';
+    toolCapabilityPill.textContent = mode === 'general_chat' ? 'Tools: standard' : 'Tools: supported';
+    if (activeSessionId) {
+        composerStatus.textContent = `Run mode: ${label} · saved on ${activeSessionTitle || 'active session'}`;
+        return;
+    }
+    composerStatus.textContent = `Run mode: ${label} · start a message to create a persisted AI session`;
+}
+
+function setActiveSessionId(sessionId) {
+    activeSessionId = sessionId || '';
+    if (activeSessionId) {
+        localStorage.setItem('aiChatActiveSessionId', activeSessionId);
+    } else {
+        localStorage.removeItem('aiChatActiveSessionId');
+    }
+    syncSessionActions();
+    syncEmptyState();
+}
+
+function setActiveSessionTitle(title) {
+    activeSessionTitle = title || '';
+    chatSessionHeading.textContent = activeSessionTitle || 'New chat';
+    syncSessionActions();
+}
+
+function setActiveCandidateAttachment(candidateId, candidateName, isDirty = false) {
+    activeCandidateId = candidateId === null || candidateId === undefined ? '' : String(candidateId);
+    activeCandidateName = candidateName || '';
+    candidateAttachmentDirty = Boolean(isDirty);
+    candidateSelect.value = activeCandidateId;
+    syncCandidateAttachmentState();
+}
+
+function defaultSourceControls() {
+    return {
+        candidate_profile: true,
+        candidate_job_titles: true,
+        candidate_skills: true,
+        candidate_documents: true,
+        job_preferences: false,
+        ai_chat_history: false,
+        settings_config: false,
+        workspace_files: true,
+    };
+}
+
+function sourceControlLabel(key) {
+    return SOURCE_CONTROL_LABELS[key] || key.replace(/_/g, ' ');
+}
+
+function setActiveSourceControls(sourceControls, isDirty = false) {
+    activeSourceControls = { ...defaultSourceControls(), ...(sourceControls || {}) };
+    sourceControlsDirty = Boolean(isDirty);
+    renderSourceControls();
+}
+
+function syncCandidateAttachmentState() {
+    const hasActiveSession = Boolean(activeSessionId);
+    candidateSelect.disabled = !hasActiveSession;
+    saveCandidateAttachmentBtn.disabled = !hasActiveSession || !candidateAttachmentDirty;
+    candidateAttachmentSummary.textContent = hasActiveSession
+        ? (activeCandidateId
+            ? `Attached candidate: ${activeCandidateName || 'Selected candidate'}.`
+            : `No candidate attached to ${activeSessionTitle || 'this chat'}.`)
+        : 'Start a saved chat to attach a candidate without retargeting other sessions.';
+}
+
+async function saveCandidateAttachment() {
+    if (!activeSessionId) {
+        return;
+    }
+
+    const nextCandidateId = candidateSelect.value ? Number(candidateSelect.value) : null;
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(activeSessionId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attached_candidate_id: nextCandidateId }),
+        });
+        if (!response.ok) {
+            showValidation('Could not update the attached candidate for this AI session.');
+            return;
+        }
+        const data = await response.json();
+        setActiveCandidateAttachment(
+            data.session && data.session.meta && data.session.meta.attached_candidate_id,
+            data.session && data.session.meta && data.session.meta.attached_candidate_name,
+            false
+        );
+        await loadSessionList();
+    } catch (error) {
+        showValidation('Could not update the attached candidate for this AI session.');
+    }
+}
+
+function renderSourceControls() {
+    const hasActiveSession = Boolean(activeSessionId);
+    const hasAttachedCandidate = Boolean(activeCandidateId);
+    const controls = activeSourceControls || defaultSourceControls();
+
+    sourceControlsList.innerHTML = '';
+    sourceControlsListInline.innerHTML = '';
+    Object.entries(controls).forEach(([key, value]) => {
+        const buildItem = () => {
+            const label = document.createElement('label');
+            label.className = 'chat-source-item';
+
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = Boolean(value);
+            input.disabled = !hasActiveSession || (CANDIDATE_SOURCE_KEYS.has(key) && !hasAttachedCandidate);
+            input.dataset.sourceKey = key;
+            input.addEventListener('change', function() {
+                activeSourceControls = {
+                    ...activeSourceControls,
+                    [key]: this.checked,
+                };
+                sourceControlsDirty = true;
+                renderSourceControls();
+            });
+
+            const text = document.createElement('span');
+            text.textContent = sourceControlLabel(key);
+
+            label.appendChild(input);
+            label.appendChild(text);
+            return label;
+        };
+
+        sourceControlsList.appendChild(buildItem());
+        sourceControlsListInline.appendChild(buildItem());
+    });
+
+    syncSourceControlsState();
+}
+
+function syncSourceControlsState() {
+    const hasActiveSession = Boolean(activeSessionId);
+    const hasAttachedCandidate = Boolean(activeCandidateId);
+    const totalCount = Object.keys(activeSourceControls || {}).length;
+    const enabledCount = Object.values(activeSourceControls || {}).filter(Boolean).length;
+    const countLabel = `${enabledCount}/${totalCount}`;
+
+    sourceControlsSummary.textContent = hasActiveSession
+        ? (hasAttachedCandidate
+            ? `${enabledCount} sources enabled for ${activeSessionTitle || 'this chat'}.`
+            : `${enabledCount} sources enabled. Attach a candidate to use candidate-specific context.`)
+        : 'Start a saved chat to control which sources are available to the assistant.';
+    sourceCountPill.textContent = `Sources ${countLabel}`;
+    inlineSourcesCount.textContent = countLabel;
+    sourceControlHint.textContent = hasActiveSession ? `${enabledCount} enabled` : 'Choose inputs';
+    saveSourceControlsBtn.disabled = !hasActiveSession || !sourceControlsDirty;
+}
+
+async function saveSourceControls() {
+    if (!activeSessionId) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(activeSessionId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source_controls: activeSourceControls }),
+        });
+        if (!response.ok) {
+            showValidation('Could not update the source controls for this AI session.');
+            return;
+        }
+        const data = await response.json();
+        setActiveSourceControls((data.session && data.session.source_controls) || activeSourceControls, false);
+    } catch (error) {
+        showValidation('Could not update the source controls for this AI session.');
+    }
+}
+
+function resetChatView() {
+    conversationHistory = [];
+    messagesContainer.innerHTML = '';
+    clearValidation();
+    setActiveCandidateAttachment('', '', false);
+    setActiveSourceControls(defaultSourceControls(), false);
+    syncEmptyState();
+}
+
+function renderPersistedSession(session) {
+    resetChatView();
+    setActiveSessionTitle(session.title || '');
+    setActiveCandidateAttachment(
+        session.attached_candidate_id ?? (session.meta && session.meta.attached_candidate_id),
+        session.attached_candidate_name || (session.meta && session.meta.attached_candidate_name) || '',
+        false
+    );
+    setActiveSourceControls(session.source_controls || (session.meta && session.meta.source_controls) || defaultSourceControls(), false);
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    let lastUserPrompt = '';
+    conversationHistory = messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+    }));
+    modeSelect.value = normalizeSessionMode(session.mode);
+    syncModeButtons();
+    syncModeSummary();
+
+    ensureValidModelSelection(session.meta && (session.meta.selected_provider_config_id || session.meta.selected_model_id));
+    updateModelSummary();
+
+    messages.forEach((message) => {
+        if (message.role === 'user') {
+            lastUserPrompt = message.content || '';
+        }
+        const options = { timestamp: message.created_at };
+        if (message.role === 'assistant' && lastUserPrompt) {
+            options.retryPrompt = lastUserPrompt;
+        }
+        addMessageToChat(message.role, message.content, message.meta || {}, options);
+    });
+}
+
+function syncSessionActions() {
+    const hasActiveSession = Boolean(activeSessionId);
+    renameSessionButtons.forEach((button) => {
+        button.disabled = !hasActiveSession;
+    });
+    archiveSessionButtons.forEach((button) => {
+        button.disabled = !hasActiveSession;
+    });
+    copyTranscriptBtn.disabled = conversationHistory.length === 0;
+    activeSessionSummary.textContent = hasActiveSession
+        ? `Active session: ${activeSessionTitle || 'Untitled chat'}`
+        : 'Start a new message to create a saved chat.';
+    candidateControlHint.textContent = activeCandidateName || 'Select profile';
+    syncCandidateAttachmentState();
+    syncSourceControlsState();
+    syncModeSummary();
+}
+
+function syncModeButtons() {
+    const activeMode = modeSelect.value || 'general_chat';
+    document.querySelectorAll('.chat-mode-btn').forEach((button) => {
+        button.classList.toggle('is-active', (button.dataset.modeValue || '') === activeMode);
+    });
+    updateModelSummary();
+}
+
+function resendLastPrompt() {
+    const lastUserMessage = [...conversationHistory].reverse().find((message) => message.role === 'user');
+    if (!lastUserMessage || !lastUserMessage.content) {
+        showValidation('No previous user message is available to resend.');
+        return;
+    }
+    submitChatMessage(lastUserMessage.content);
+}
+
+async function copyFullTranscript() {
+    if (!conversationHistory.length) {
+        showValidation('There is no conversation to copy yet.');
+        return;
+    }
+
+    const lines = conversationHistory.map((message) => {
+        const label = message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System';
+        return `${label}:\n${message.content || ''}`;
+    });
+    const transcriptText = lines.join('\n\n');
+    try {
+        await navigator.clipboard.writeText(transcriptText);
+    } catch (_error) {
+        showValidation('Could not copy the full chat transcript.');
+    }
+}
+
+function formatSessionUpdated(updatedAt) {
+    if (!updatedAt) {
+        return 'No activity yet';
+    }
+    return new Date(updatedAt * 1000).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function renderSessionList(sessions) {
+    const items = (Array.isArray(sessions) ? sessions : []).filter((session) => {
+        if (!sessionSearchQuery) {
+            return true;
+        }
+        const title = (session.title || '').toLowerCase();
+        const preview = (session.last_message || '').toLowerCase();
+        return title.includes(sessionSearchQuery) || preview.includes(sessionSearchQuery);
+    });
+    sessionList.innerHTML = '';
+    sessionListEmpty.hidden = items.length > 0;
+    sessionListEmpty.textContent = sessionFilter === 'archived'
+        ? 'No archived chats matched this filter.'
+        : 'Saved chats will appear here after the first message.';
+
+    items.forEach((session) => {
+        const item = document.createElement('div');
+        item.className = 'chat-session-item';
+        if (session.id === activeSessionId) {
+            item.classList.add('is-active');
+        }
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'chat-session-item-body';
+        button.addEventListener('click', () => {
+            selectSession(session.id);
+        });
+
+        const title = document.createElement('strong');
+        title.className = 'chat-session-title';
+        title.textContent = session.title || 'Untitled chat';
+
+        const preview = document.createElement('span');
+        preview.className = 'chat-session-preview';
+        preview.textContent = session.last_message || 'No messages yet';
+
+        const meta = document.createElement('span');
+        meta.className = 'chat-session-meta';
+        meta.textContent = formatSessionUpdated(session.updated_at);
+
+        button.appendChild(title);
+        button.appendChild(preview);
+        button.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'chat-session-item-actions';
+
+        if (session.archived_at) {
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'chat-session-action-btn';
+            restore.title = 'Restore chat';
+            restore.setAttribute('aria-label', 'Restore chat');
+            restore.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i>';
+            restore.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await restoreSession(session.id);
+            });
+            actions.appendChild(restore);
+        } else {
+            const archive = document.createElement('button');
+            archive.type = 'button';
+            archive.className = 'chat-session-action-btn';
+            archive.title = 'Archive chat';
+            archive.setAttribute('aria-label', 'Archive chat');
+            archive.innerHTML = '<i class="bi bi-archive"></i>';
+            archive.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await archiveSession(session.id);
+            });
+            actions.appendChild(archive);
+        }
+
+        const purge = document.createElement('button');
+        purge.type = 'button';
+        purge.className = 'chat-session-action-btn is-danger';
+        purge.title = 'Delete chat';
+        purge.setAttribute('aria-label', 'Delete chat');
+        purge.innerHTML = '<i class="bi bi-trash"></i>';
+        purge.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            await deleteSession(session.id, session.title || 'Untitled chat');
+        });
+        actions.appendChild(purge);
+
+        item.appendChild(button);
+        item.appendChild(actions);
+        sessionList.appendChild(item);
+    });
+}
+
+async function loadSessionList() {
+    try {
+        const includeArchived = sessionFilter === 'archived';
+        const archivedOnly = sessionFilter === 'archived';
+        const response = await fetch(`/api/ai/sessions?limit=40&include_archived=${includeArchived ? 'true' : 'false'}&archived_only=${archivedOnly ? 'true' : 'false'}`);
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        renderSessionList(data.sessions || []);
+    } catch (error) {
+        showValidation('Could not load saved AI sessions.');
+    }
+}
+
+function setSessionFilter(nextFilter) {
+    sessionFilter = nextFilter === 'archived' ? 'archived' : 'active';
+    sessionFilterActiveBtn.classList.toggle('active', sessionFilter === 'active');
+    sessionFilterArchivedBtn.classList.toggle('active', sessionFilter === 'archived');
+    if (sessionFilter === 'archived' && activeSessionId) {
+        setActiveSessionId('');
+        setActiveSessionTitle('');
+        resetChatView();
+    }
+    loadSessionList();
+}
+
+async function renameActiveSession() {
+    if (!activeSessionId) {
+        return;
+    }
+
+    const nextTitle = prompt('Rename this chat session:', activeSessionTitle || 'New chat');
+    if (!nextTitle || !nextTitle.trim()) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(activeSessionId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: nextTitle.trim() }),
+        });
+        if (!response.ok) {
+            showValidation('Could not rename the active AI session.');
+            return;
+        }
+        const data = await response.json();
+        setActiveSessionTitle((data.session && data.session.title) || nextTitle.trim());
+        await loadSessionList();
+    } catch (error) {
+        showValidation('Could not rename the active AI session.');
+    }
+}
+
+async function archiveActiveSession() {
+    if (!activeSessionId) {
+        return;
+    }
+    await archiveSession(activeSessionId, { isActiveSession: true });
+}
+
+async function archiveSession(sessionId, options = {}) {
+    const isActiveSession = Boolean(options.isActiveSession) || sessionId === activeSessionId;
+    if (!confirm('Archive this chat session? It will disappear from the active list.')) {
+        return;
+    }
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(sessionId)}/archive`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            showValidation('Could not archive the AI session.');
+            return;
+        }
+        if (isActiveSession) {
+            startNewChat();
+        }
+        await loadSessionList();
+    } catch (error) {
+        showValidation('Could not archive the AI session.');
+    }
+}
+
+async function restoreSession(sessionId) {
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(sessionId)}/restore`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            showValidation('Could not restore the archived AI session.');
+            return;
+        }
+        if (sessionFilter === 'archived') {
+            await loadSessionList();
+            return;
+        }
+        await loadSessionList();
+    } catch (error) {
+        showValidation('Could not restore the archived AI session.');
+    }
+}
+
+async function deleteSession(sessionId, sessionTitle = 'this chat') {
+    const label = sessionTitle && sessionTitle.trim() ? sessionTitle.trim() : 'this chat';
+    if (!confirm(`Delete "${label}" permanently? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            showValidation('Could not delete the AI session.');
+            return;
+        }
+        if (sessionId === activeSessionId) {
+            startNewChat();
+        } else {
+            await loadSessionList();
+        }
+    } catch (error) {
+        showValidation('Could not delete the AI session.');
+    }
+}
+
+async function selectSession(sessionId) {
+    setActiveSessionId(sessionId);
+    await loadActiveSession();
+    await loadSessionList();
+    textarea.focus();
+}
+
+async function loadActiveSession() {
+    if (!activeSessionId) {
+        syncEmptyState();
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(activeSessionId)}`);
+        if (!response.ok) {
+            setActiveSessionId('');
+            resetChatView();
+            return;
+        }
+
+        const data = await response.json();
+        if (data.session) {
+            renderPersistedSession(data.session);
+        }
+    } catch (error) {
+        showValidation('Could not load the previous AI session.');
+    }
 }
 
 function updateChatViewportHeight() {
@@ -393,6 +1863,187 @@ function updateChatViewportHeight() {
     const bottomGap = 32;
     const availableHeight = Math.max(420, Math.floor(viewportHeight - rect.top - bottomGap));
     mainShell.style.setProperty('--chat-main-height', `${availableHeight}px`);
+    chatWorkspace?.style.setProperty('--chat-shell-height-viewport', `${Math.min(availableHeight, CHAT_SHELL_HEIGHT_MAX)}px`);
+}
+
+function clampChatSidebarWidth(value) {
+    return Math.max(CHAT_SIDEBAR_MIN, Math.min(CHAT_SIDEBAR_MAX, Number(value) || 320));
+}
+
+function setChatSidebarWidth(width, persist = true) {
+    const nextWidth = clampChatSidebarWidth(width);
+    chatWorkspace?.style.setProperty('--chat-sidebar-width', `${nextWidth}px`);
+    chatLayoutResizer?.setAttribute('aria-valuenow', String(nextWidth));
+    if (persist) {
+        try {
+            window.localStorage.setItem(CHAT_SIDEBAR_WIDTH_KEY, String(nextWidth));
+        } catch (_error) {
+            // Keep resize active for the current page when storage is unavailable.
+        }
+    }
+}
+
+function restoreChatSidebarWidth() {
+    let storedWidth = 320;
+    try {
+        storedWidth = window.localStorage.getItem(CHAT_SIDEBAR_WIDTH_KEY) || storedWidth;
+    } catch (_error) {
+        // Keep the default width.
+    }
+    setChatSidebarWidth(storedWidth, false);
+}
+
+function updateChatSidebarWidthFromPointer(event) {
+    if (!chatWorkspace) {
+        return;
+    }
+    const shellRect = chatWorkspace.getBoundingClientRect();
+    const nextWidth = event.clientX - shellRect.left;
+    setChatSidebarWidth(nextWidth);
+}
+
+function bindChatLayoutResizer() {
+    if (!chatLayoutResizer || !chatWorkspace) {
+        return;
+    }
+
+    restoreChatSidebarWidth();
+    chatLayoutResizer.addEventListener('pointerdown', (event) => {
+        if (window.matchMedia('(max-width: 1180px)').matches) {
+            return;
+        }
+        event.preventDefault();
+        chatLayoutResizer.setPointerCapture(event.pointerId);
+        chatWorkspace.classList.add('is-resizing');
+        updateChatSidebarWidthFromPointer(event);
+    });
+
+    chatLayoutResizer.addEventListener('pointermove', (event) => {
+        if (!chatLayoutResizer.hasPointerCapture(event.pointerId)) {
+            return;
+        }
+        updateChatSidebarWidthFromPointer(event);
+    });
+
+    chatLayoutResizer.addEventListener('pointerup', (event) => {
+        if (chatLayoutResizer.hasPointerCapture(event.pointerId)) {
+            chatLayoutResizer.releasePointerCapture(event.pointerId);
+        }
+        chatWorkspace.classList.remove('is-resizing');
+    });
+
+    chatLayoutResizer.addEventListener('pointercancel', () => {
+        chatWorkspace.classList.remove('is-resizing');
+    });
+
+    chatLayoutResizer.addEventListener('lostpointercapture', () => {
+        chatWorkspace.classList.remove('is-resizing');
+    });
+
+    chatLayoutResizer.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const currentWidth = Number(chatLayoutResizer.getAttribute('aria-valuenow')) || 320;
+        if (event.key === 'Home') {
+            setChatSidebarWidth(CHAT_SIDEBAR_MIN);
+        } else if (event.key === 'End') {
+            setChatSidebarWidth(CHAT_SIDEBAR_MAX);
+        } else {
+            setChatSidebarWidth(currentWidth + (event.key === 'ArrowRight' ? 24 : -24));
+        }
+    });
+}
+
+function clampChatShellHeight(value) {
+    return Math.max(CHAT_SHELL_HEIGHT_MIN, Math.min(CHAT_SHELL_HEIGHT_MAX, Number(value) || 680));
+}
+
+function setChatShellHeight(height, persist = true) {
+    const nextHeight = clampChatShellHeight(height);
+    chatWorkspace?.style.setProperty('--chat-shell-height', `${nextHeight}px`);
+    chatHeightResizer?.setAttribute('aria-valuenow', String(nextHeight));
+    if (persist) {
+        try {
+            window.localStorage.setItem(CHAT_SHELL_HEIGHT_KEY, String(nextHeight));
+        } catch (_error) {
+            // Height resizing still works for the current page when storage is unavailable.
+        }
+    }
+}
+
+function restoreChatShellHeight() {
+    let storedHeight = 680;
+    try {
+        storedHeight = window.localStorage.getItem(CHAT_SHELL_HEIGHT_KEY) || storedHeight;
+    } catch (_error) {
+        // Keep the default height.
+    }
+    setChatShellHeight(storedHeight, false);
+}
+
+function updateChatShellHeightFromPointer(event) {
+    if (!chatWorkspace) {
+        return;
+    }
+    const shellRect = chatWorkspace.getBoundingClientRect();
+    const nextHeight = event.clientY - shellRect.top;
+    setChatShellHeight(nextHeight);
+}
+
+function bindChatHeightResizer() {
+    if (!chatHeightResizer || !chatWorkspace) {
+        return;
+    }
+
+    restoreChatShellHeight();
+    chatHeightResizer.addEventListener('pointerdown', (event) => {
+        if (window.matchMedia('(max-width: 1180px)').matches) {
+            return;
+        }
+        event.preventDefault();
+        chatHeightResizer.setPointerCapture(event.pointerId);
+        chatWorkspace.classList.add('is-height-resizing');
+        updateChatShellHeightFromPointer(event);
+    });
+
+    chatHeightResizer.addEventListener('pointermove', (event) => {
+        if (!chatHeightResizer.hasPointerCapture(event.pointerId)) {
+            return;
+        }
+        updateChatShellHeightFromPointer(event);
+    });
+
+    chatHeightResizer.addEventListener('pointerup', (event) => {
+        if (chatHeightResizer.hasPointerCapture(event.pointerId)) {
+            chatHeightResizer.releasePointerCapture(event.pointerId);
+        }
+        chatWorkspace.classList.remove('is-height-resizing');
+    });
+
+    chatHeightResizer.addEventListener('pointercancel', () => {
+        chatWorkspace.classList.remove('is-height-resizing');
+    });
+
+    chatHeightResizer.addEventListener('lostpointercapture', () => {
+        chatWorkspace.classList.remove('is-height-resizing');
+    });
+
+    chatHeightResizer.addEventListener('keydown', (event) => {
+        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        const currentHeight = Number(chatHeightResizer.getAttribute('aria-valuenow')) || 680;
+        if (event.key === 'Home') {
+            setChatShellHeight(CHAT_SHELL_HEIGHT_MIN);
+        } else if (event.key === 'End') {
+            setChatShellHeight(CHAT_SHELL_HEIGHT_MAX);
+        } else {
+            setChatShellHeight(currentHeight + (event.key === 'ArrowDown' ? 32 : -32));
+        }
+    });
 }
 
 function escapeHtml(text) {
@@ -410,9 +2061,30 @@ function escapeAttribute(text) {
 }
 
 window.addEventListener('load', function() {
+    bindChatLayoutResizer();
+    bindChatHeightResizer();
     updateChatViewportHeight();
+    ensureValidModelSelection();
     updateModelSummary();
+    syncModeButtons();
+    syncModeSummary();
     syncEmptyState();
+    renderSourceControls();
+    loadSessionList();
+    loadActiveSession();
+
+    const recoveryRaw = localStorage.getItem(STREAM_RECOVERY_KEY);
+    if (recoveryRaw) {
+        try {
+            const recovery = JSON.parse(recoveryRaw);
+            if (recovery && recovery.prompt) {
+                showValidation(`Recovered interrupted stream from reload: "${recovery.prompt}". Open the active session transcript to continue.`);
+            }
+        } catch (_error) {
+            localStorage.removeItem(STREAM_RECOVERY_KEY);
+        }
+    }
+
     textarea.focus();
 });
 

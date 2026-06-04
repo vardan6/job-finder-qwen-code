@@ -160,6 +160,23 @@ class TestCaching:
             await svc.analyze_job("desc", ["Python"], use_cache=False)
             mock_llm.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_calls_send_message_with_candidate_analysis_routing(self, tmp_path):
+        svc = JobAnalysisService()
+        svc._cache_dir = tmp_path
+
+        fake_db = object()
+        with patch(
+            "backend.services.job_analysis.send_message",
+            new_callable=AsyncMock,
+            return_value=VALID_LLM_RESPONSE,
+        ) as mock_llm:
+            await svc.analyze_job("desc", ["Python"], use_cache=False, db=fake_db)
+
+        _, kwargs = mock_llm.call_args
+        assert kwargs["db"] is fake_db
+        assert kwargs["routing_purpose"] == "candidate_analysis"
+
 
 # ---------------------------------------------------------------------------
 # Armenia compatibility

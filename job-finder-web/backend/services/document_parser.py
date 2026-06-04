@@ -12,9 +12,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.models.document import CandidateDocument, DocumentParsePrompt, DocumentSection
-from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.models.supporting import CandidateJobTitle
-from backend.services.llm_service import get_llm_for_function, call_llm, extract_json_from_response
+from backend.services.llm_service import send_message, extract_json_from_response
 
 
 async def parse_document_content(db: Session, document: CandidateDocument) -> bool:
@@ -60,22 +59,13 @@ async def parse_document_content(db: Session, document: CandidateDocument) -> bo
 
         # Get the LLM model for this function
         function_name = f"{document_type}_parser"
-        model = get_llm_for_function(db, function_name)
-
-        if not model:
-            # Fall back to default Ollama model
-            ollama = db.query(LLMProvider).filter(LLMProvider.name == "ollama").first()
-            if ollama:
-                model = db.query(LLMModel).filter(
-                    LLMModel.provider_id == ollama.id,
-                    LLMModel.is_default_for_provider == True
-                ).first()
-
-        if not model:
-            raise ValueError("No LLM model configured for parsing")
-
-        # Call the LLM (native async)
-        result = await call_llm(db, model, full_prompt)
+        # Call the LLM (native async) via shared routing-purpose resolver.
+        result = await send_message(
+            full_prompt,
+            function_name=function_name,
+            db=db,
+            routing_purpose="document_analysis",
+        )
 
         if not result:
             raise ValueError("LLM returned empty response")

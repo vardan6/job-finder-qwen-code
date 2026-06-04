@@ -223,6 +223,7 @@ class JobSearchService:
                         analysis = await self.analysis_service.analyze_job(
                             job.description,
                             candidate_skills,
+                            db=self.db,
                         )
 
                         # Update job with analysis results

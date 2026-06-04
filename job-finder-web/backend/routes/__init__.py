@@ -14,6 +14,10 @@ from backend.routes.skills_manager import router as get_skills_manager_router
 from backend.routes.preferences import router as get_preferences_router
 from backend.routes.platform_accounts import router as get_platform_accounts_router
 from backend.routes.jobs import router as get_jobs_router
+from backend.routes.ai_settings import router as get_ai_settings_router
+from backend.routes.ai_secrets import router as get_ai_secrets_router
+from backend.routes.ai_sessions import router as get_ai_sessions_router
+from backend.routes.ai_tools import router as get_ai_tools_router
 
 __all__ = [
     'get_candidates_router',
@@ -29,4 +33,8 @@ __all__ = [
     'get_preferences_router',
     'get_platform_accounts_router',
     'get_jobs_router',
+    'get_ai_settings_router',
+    'get_ai_secrets_router',
+    'get_ai_sessions_router',
+    'get_ai_tools_router',
 ]

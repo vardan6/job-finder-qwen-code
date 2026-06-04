@@ -4,13 +4,14 @@ Job Finder Web App - Main Application
 Optimized for fast startup - lazy imports for heavy modules
 """
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pathlib import Path
 import logging
+import os
 
 # Import config first (lightweight)
 from backend.config import DEBUG, HOST, PORT  # noqa: E402
@@ -36,6 +37,10 @@ from backend.routes import (
     get_preferences_router,
     get_platform_accounts_router,
     get_jobs_router,
+    get_ai_settings_router,
+    get_ai_secrets_router,
+    get_ai_sessions_router,
+    get_ai_tools_router,
 )
 from backend.routes.skills_manager import router as get_skills_manager_router
 
@@ -101,7 +106,8 @@ async def startup_event():
     from backend.services.llm_executor import llm_executor
     logger.info(f"LLM thread pool initialized with {llm_executor._max_workers} workers")
 
-    logger.info(f"Job Finder Web App ready on http://{HOST}:{PORT}")
+    actual_port = os.getenv("JOB_FINDER_ACTUAL_PORT", str(PORT))
+    logger.info(f"Job Finder Web App ready on http://{HOST}:{actual_port}")
 
 
 @app.on_event("shutdown")
@@ -183,6 +189,12 @@ async def root(request: Request, db: Session = Depends(get_db)):
     })
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    # Avoid repetitive browser-side 404 noise when no icon file is configured yet.
+    return Response(status_code=204)
+
+
 # Import routes on-demand (not at startup)
 def get_candidate_router():
     from backend.routes import candidates
@@ -247,6 +259,26 @@ def get_jobs_router():
     return jobs.router
 
 
+def get_ai_settings_router():
+    from backend.routes import ai_settings
+    return ai_settings.router
+
+
+def get_ai_secrets_router():
+    from backend.routes import ai_secrets
+    return ai_secrets.router
+
+
+def get_ai_sessions_router():
+    from backend.routes import ai_sessions
+    return ai_sessions.router
+
+
+def get_ai_tools_router():
+    from backend.routes import ai_tools
+    return ai_tools.router
+
+
 # Register routes
 app.include_router(get_candidate_router(), prefix="/candidates", tags=["Candidates"])
 app.include_router(get_health_router(), prefix="/api", tags=["Health"])
@@ -261,6 +293,10 @@ app.include_router(get_skills_manager_router, prefix="/candidates", tags=["Skill
 app.include_router(get_preferences_router(), tags=["Preferences"])
 app.include_router(get_platform_accounts_router(), tags=["Platform Accounts"])
 app.include_router(get_jobs_router(), prefix="/jobs", tags=["Jobs"])
+app.include_router(get_ai_settings_router(), tags=["AI Settings"])
+app.include_router(get_ai_secrets_router(), tags=["AI Secrets"])
+app.include_router(get_ai_sessions_router(), tags=["AI Sessions"])
+app.include_router(get_ai_tools_router(), tags=["AI Tools"])
 
 
 if __name__ == "__main__":

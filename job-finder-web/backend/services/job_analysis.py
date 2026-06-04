@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from sqlalchemy.orm import Session
+
 from backend.services.llm_service import send_message
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,7 @@ class JobAnalysisService:
         candidate_skills: List[str],
         use_cache: bool = True,
         model_name: Optional[str] = None,
+        db: Optional[Session] = None,
     ) -> JobAnalysis:
         """
         Analyze a job posting using AI.
@@ -218,6 +221,8 @@ class JobAnalysisService:
                 function_name="job_scorer",
                 model_override=model_name,
                 temperature=0.1,  # Low temperature for consistent analysis
+                db=db,
+                routing_purpose="candidate_analysis",
             )
             
             # Parse JSON response

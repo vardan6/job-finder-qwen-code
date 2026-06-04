@@ -6,6 +6,7 @@ Run this file to start the application.
 """
 import sys
 import socket
+import os
 from pathlib import Path
 
 # Add backend to path
@@ -58,6 +59,9 @@ if __name__ == "__main__":
     print("")
     print("Press CTRL+C to stop the application")
     print("")
+
+    # Let app startup logs report the actual bind port chosen here.
+    os.environ["JOB_FINDER_ACTUAL_PORT"] = str(actual_port)
 
     uvicorn.run(
         "backend.app:app",

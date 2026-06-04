@@ -10,29 +10,28 @@ import time
 import logging
 import asyncio
 
+from backend.services.ai_routing import resolve_configured_provider_selection
+from backend.services.llm_service import _build_completion_kwargs
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _blocking_llm_completion(model: str, prompt: str):
+def _blocking_llm_completion(kwargs: dict):
     """
     Run blocking LiteLLM completion in a thread.
     This function is synchronous and blocks only the thread, not the event loop.
     """
     from litellm import completion
-    
-    response = completion(
-        model=model,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    
-    return response
+
+    return completion(**kwargs)
 
 
 @router.post("/test")
 async def test_llm(
     prompt: str = Form(..., description="Test prompt to send to LLM"),
-    model: Optional[str] = Form(None, description="Model to use")
+    model: Optional[str] = Form(None, description="Model to use"),
+    provider_id: Optional[str] = Form(None, description="Configured provider id")
 ):
     """
     Test LLM connection with a simple prompt
@@ -41,7 +40,6 @@ async def test_llm(
     
     Uses run_in_executor to avoid blocking the async event loop.
     """
-    import os
     from backend.config import OLLAMA_URL, DEFAULT_LLM_MODEL
 
     if not model:
@@ -50,37 +48,29 @@ async def test_llm(
     start_time = time.time()
 
     try:
-        # Extract provider name from model
-        # Model can come in formats:
-        # - "nvidia_nim/meta/llama3-70b-instruct" (LiteLLM prefix format from frontend)
-        # - "openai/gpt-oss-120b" (OpenAI provider with NVIDIA base)
-        # - "meta/llama3-70b-instruct" (raw model name, need to detect provider)
-
-        # First check if model has a provider prefix
-        parts = model.split("/", 1) if "/" in model else [model, ""]
-        potential_provider = parts[0]
-        model_suffix = parts[1] if len(parts) > 1 else ""
-
-        # Known LiteLLM provider prefixes
-        litellm_providers = ["ollama", "openai", "openrouter", "anthropic", "nvidia_nim", "groq"]
-
-        provider_name = None
-        raw_model_name = model
-
-        if potential_provider in litellm_providers:
-            # Model has explicit provider prefix - use as-is
-            provider_name = potential_provider
-            raw_model_name = model_suffix
-            logger.info(f"Detected provider prefix: {provider_name}, model: {raw_model_name}")
+        if provider_id:
+            selection = resolve_configured_provider_selection(provider_id)
+            configured_model = selection.model
+            configured_provider = selection.provider
+            litellm_model = model or configured_model.model_name
+            kwargs = _build_completion_kwargs(
+                configured_provider,
+                configured_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
         else:
-            # No provider prefix - use as potential provider
-            provider_name = potential_provider
-            raw_model_name = model
+            litellm_model = model
+            kwargs = {
+                "model": litellm_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+            }
 
-        logger.info(f"Testing model: {model}, provider: {provider_name}")
+        logger.info(f"Testing model: {litellm_model}")
 
         # Check if using Ollama
-        if model.startswith("ollama/"):
+        if litellm_model.startswith("ollama/"):
             # Verify Ollama is running
             import requests
             try:
@@ -92,10 +82,7 @@ async def test_llm(
                     "hint": "Run 'ollama serve' in another terminal"
                 }
 
-        # For models with explicit provider prefix (like nvidia_nim/), use as-is
-        # LiteLLM will handle the routing correctly
-        litellm_model = model
-        logger.info(f"Using LiteLLM model: {litellm_model}")
+        logger.info(f"Using LiteLLM model: {kwargs['model']}")
 
         # Run LLM call in dedicated thread pool (not the default one)
         from backend.services.llm_executor import get_llm_executor
@@ -106,8 +93,7 @@ async def test_llm(
             loop.run_in_executor(
                 executor,
                 _blocking_llm_completion,
-                litellm_model,
-                prompt
+                kwargs,
             ),
             timeout=120.0  # 2 minute timeout
         )
@@ -127,9 +113,9 @@ async def test_llm(
         return {
             "success": False,
             "error": str(e),
-            "model": model,
+            "model": kwargs["model"] if "kwargs" in locals() else model,
             "time_ms": elapsed_ms,
-            "hint": get_error_hint(e, model)
+            "hint": get_error_hint(e, kwargs["model"] if "kwargs" in locals() else model or "")
         }
 
 

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.models.document import LLMFunctionMapping
+from backend.services.ai_routing import resolve_chat_model_selection
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,20 @@ _PROVIDER_PREFIXES = {
     "openrouter": "openrouter/",
     "anthropic": "anthropic/",
     "openai": "openai/",
+    "openai_compatible": "openai/",
 }
+
+
+def _normalize_api_base(provider_name: str, api_base: str | None) -> str | None:
+    """
+    Normalize provider API bases without changing semantic path prefixes.
+
+    Many OpenAI-compatible providers require a specific base path (often `/v1`).
+    Rewriting that path can cause 404s. Keep user-configured paths intact.
+    """
+    if not api_base:
+        return None
+    return api_base.strip() or None
 
 
 def get_llm_for_function(db: Session, function_name: str) -> Optional[LLMModel]:
@@ -52,21 +66,23 @@ def _build_completion_kwargs(
     temperature: float = 0.7,
 ) -> dict:
     """Build kwargs dict for litellm.completion from provider + model."""
-    if provider.name == "ollama":
-        model_name = f"ollama/{model.model_name}"
-        api_base = provider.api_url or "http://localhost:11434"
-    elif provider.name == "groq":
-        model_name = model.model_name
-        api_base = provider.api_url or "https://api.groq.com/openai/v1"
+    provider_name = str(getattr(provider, "name", "") or "").strip().lower()
+    provider_api_url = getattr(provider, "api_url", None)
+    model_name_raw = str(getattr(model, "model_name", "") or "").strip()
+
+    if provider_name == "ollama":
+        model_name = f"ollama/{model_name_raw}"
+        api_base = provider_api_url or "http://localhost:11434"
+    elif provider_name == "groq":
+        model_name = model_name_raw
+        api_base = provider_api_url or "https://api.groq.com/openai/v1"
     else:
-        prefix = _PROVIDER_PREFIXES.get(provider.name, "")
-        if prefix and not model.model_name.startswith(prefix):
-            model_name = prefix + model.model_name
+        prefix = _PROVIDER_PREFIXES.get(provider_name, "")
+        if prefix and not model_name_raw.startswith(prefix):
+            model_name = prefix + model_name_raw
         else:
-            model_name = model.model_name
-        api_base = provider.api_url
-        if api_base and api_base.endswith("/v1"):
-            api_base = api_base[:-3]
+            model_name = model_name_raw
+        api_base = provider_api_url
 
     kwargs: dict = {
         "model": model_name,
@@ -74,18 +90,21 @@ def _build_completion_kwargs(
         "temperature": temperature,
     }
 
-    if api_base:
-        kwargs["api_base"] = api_base
+    normalized_api_base = _normalize_api_base(provider.name, api_base)
+    if normalized_api_base:
+        kwargs["api_base"] = normalized_api_base
 
     # Authentication
-    if hasattr(provider, "auth_method") and provider.auth_method == "claude_code_oauth":
+    if getattr(provider, "api_key", None) and provider_name != "ollama":
+        kwargs["api_key"] = provider.api_key
+    elif hasattr(provider, "auth_method") and provider.auth_method == "claude_code_oauth":
         from backend.utils.claude_code_auth import get_valid_oauth_token
         access_token, error = get_valid_oauth_token(provider)
         if not access_token:
             logger.warning(f"OAuth token error: {error}")
         else:
             kwargs["api_key"] = access_token
-    elif provider.api_key_encrypted and provider.name != "ollama":
+    elif getattr(provider, "api_key_encrypted", None) and provider_name != "ollama":
         from backend.security import decrypt_data
         api_key = decrypt_data(provider.api_key_encrypted)
         if api_key:
@@ -100,15 +119,20 @@ def _build_completion_kwargs(
 
 async def _async_completion(timeout: float, **kwargs) -> Optional[str]:
     """Run LiteLLM async completion with a timeout."""
-    from litellm import acompletion
-
-    response = await asyncio.wait_for(
-        acompletion(**kwargs),
-        timeout=timeout,
-    )
+    response = await _async_completion_response(timeout, **kwargs)
     if response and response.choices and len(response.choices) > 0:
         return response.choices[0].message.content
     return None
+
+
+async def _async_completion_response(timeout: float, **kwargs) -> Any:
+    """Run LiteLLM async completion with a timeout and return the raw response."""
+    from litellm import acompletion
+
+    return await asyncio.wait_for(
+        acompletion(**kwargs),
+        timeout=timeout,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +175,7 @@ async def send_message(
     model_override: Optional[str] = None,
     temperature: float = 0.7,
     db: Optional[Session] = None,
+    routing_purpose: Optional[str] = None,
 ) -> Optional[str]:
     """
     Send a message to an LLM using the configured model for a function.
@@ -169,11 +194,24 @@ async def send_message(
         else:
             if not db:
                 return None
-            model = get_llm_for_function(db, function_name)
-            if not model or not model.provider:
+            model = None
+            provider = None
+            if routing_purpose:
+                try:
+                    selection = resolve_chat_model_selection(db, purpose=routing_purpose)
+                    model = selection.model
+                    provider = selection.provider
+                except Exception:
+                    model = None
+                    provider = None
+
+            if not model or not provider:
+                model = get_llm_for_function(db, function_name)
+                provider = model.provider if model else None
+            if not model or not provider:
                 return None
             kwargs = _build_completion_kwargs(
-                model.provider, model,
+                provider, model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
             )
@@ -242,7 +280,19 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
 
         # Try configured model first
         if db:
-            model = get_llm_for_function(db, "skill_extractor")
+            model = None
+            provider = None
+            try:
+                selection = resolve_chat_model_selection(db, purpose="candidate_analysis")
+                model = selection.model
+                provider = selection.provider
+            except Exception:
+                model = None
+                provider = None
+
+            if not model:
+                model = get_llm_for_function(db, "skill_extractor")
+                provider = model.provider if model else None
             if not model:
                 ollama = db.query(LLMProvider).filter(LLMProvider.name == "ollama").first()
                 if ollama:
@@ -250,8 +300,17 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
                         LLMModel.provider_id == ollama.id,
                         LLMModel.is_default_for_provider == True
                     ).first()
+                    provider = model.provider if model else None
             if model:
-                result_text = await call_llm(db, model, prompt)
+                if provider:
+                    kwargs = _build_completion_kwargs(
+                        provider,
+                        model,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    result_text = await _async_completion(LLM_TIMEOUT_SECONDS, **kwargs)
+                else:
+                    result_text = await call_llm(db, model, prompt)
 
         # Fallback to direct Ollama call
         if not result_text:

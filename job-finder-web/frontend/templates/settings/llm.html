@@ -1,339 +1,1316 @@
 {% extends "base.html" %}
 
-{% block title %}LLM Configuration - Job Finder{% endblock %}
+{% block title %}AI Settings - Job Finder{% endblock %}
+
+{% block extra_head %}
+<style>
+    .llm-settings-page {
+        max-width: 1320px;
+    }
+
+    .llm-settings-page .page-title {
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+
+    .llm-settings-page .card {
+        border: 1px solid #d9dee5;
+        border-radius: 16px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+
+    .llm-settings-page .card-header {
+        background: #f5f7fa;
+        color: #1f2937;
+        border-bottom: 1px solid #e5eaf1;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+        padding: 0.75rem 1rem;
+    }
+
+    .llm-settings-page .card-body {
+        padding: 1rem;
+    }
+
+    .llm-settings-page .form-label {
+        font-weight: 500;
+        margin-bottom: 0.35rem;
+    }
+
+    .llm-settings-page .form-control,
+    .llm-settings-page .form-select,
+    .llm-settings-page .btn {
+        border-radius: 12px;
+    }
+
+    .llm-settings-page .provider-list-table thead th {
+        background: #f8fafc;
+        font-weight: 600;
+        font-size: 0.85rem;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+    }
+    .llm-settings-page .sortable-col {
+        cursor: pointer;
+        user-select: none;
+    }
+    .llm-settings-page .sortable-col .sort-indicator {
+        margin-left: 0.2rem;
+        color: #94a3b8;
+        font-size: 0.75rem;
+    }
+
+    .llm-settings-page .provider-list-table td,
+    .llm-settings-page .provider-list-table th {
+        padding: 0.55rem 0.4rem;
+        vertical-align: middle;
+    }
+    
+    .llm-settings-page .toolbar-btn {
+        min-width: 10.5rem;
+    }
+
+    .llm-settings-page .provider-actions {
+        display: inline-flex;
+        gap: 0.35rem;
+    }
+
+    .llm-settings-page .icon-action-btn {
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+    }
+
+    .llm-settings-page .provider-table-wrap {
+        max-height: 560px;
+        overflow: auto;
+        padding: 0 1rem 1rem;
+    }
+
+    .llm-settings-page .provider-list-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    .llm-settings-page .registry-label {
+        color: #8b98a9;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+    }
+
+    .llm-settings-page .registry-note {
+        color: #667085;
+    }
+
+    .llm-settings-page .provider-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.12rem 0.52rem;
+        border-radius: 999px;
+        border: 1px solid #d8dee8;
+        font-size: 0.73rem;
+        color: #5c6b80;
+        background: #f8fafc;
+        margin-right: 0.3rem;
+        margin-top: 0.15rem;
+    }
+
+    .llm-settings-page .enabled-pill {
+        background: #eef6ff;
+        border: 1px solid #dce9fb;
+        color: #64748b;
+        font-size: 0.74rem;
+        border-radius: 999px;
+        padding: 0.24rem 0.58rem;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container py-3">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+<div class="container py-3 llm-settings-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div>
-            <h1 class="h3 mb-1"><i class="bi bi-robot"></i> LLM Providers</h1>
-            <p class="text-muted mb-0">Configure provider credentials, defaults, and provider-specific models.</p>
+            <h1 class="page-title mb-1"><i class="bi bi-cpu"></i> AI Provider Settings</h1>
+            <p class="text-muted mb-0">Canonical provider registry, stored secrets, and purpose-based routing for the new AI foundation.</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="/settings/functions" class="btn btn-outline-primary btn-sm">
+            <a href="/settings/functions" class="btn btn-outline-primary btn-sm toolbar-btn">
                 <i class="bi bi-diagram-3"></i> Function Mappings
             </a>
-            <a href="/" class="btn btn-outline-secondary btn-sm">
+            <a href="/" class="btn btn-outline-secondary btn-sm toolbar-btn">
                 <i class="bi bi-arrow-left"></i> Dashboard
             </a>
         </div>
     </div>
 
-    {% if request.query_params.get('success') == 'saved' %}
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-check-circle-fill"></i> Provider settings saved.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    {% if request.query_params.get('success') == 'deleted' %}
-    <div class="alert alert-warning alert-dismissible fade show">
-        <i class="bi bi-trash"></i> Provider deleted.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    {% if request.query_params.get('success') == 'model_added' %}
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-plus-circle"></i> Model added.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    {% if request.query_params.get('success') == 'model_removed' %}
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-dash-circle"></i> Model removed.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    {% if request.query_params.get('success') == 'default_set' %}
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-star-fill"></i> Default model updated.
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
-    {% if request.query_params.get('error') %}
-    <div class="alert alert-danger alert-dismissible fade show">
-        <i class="bi bi-x-circle-fill"></i> {{ request.query_params.get('error') }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {% endif %}
+    <div id="llm-page-alert" class="alert d-none" role="alert"></div>
 
-    {% if default_provider %}
-    {% set default_model_obj = (default_provider.models|selectattr('is_default_for_provider')|first) if default_provider.models else None %}
-    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <i class="bi bi-star-fill text-warning"></i>
-            <strong>Default Provider:</strong> {{ default_provider.name | title }}
-            {% if default_model_obj %}
-            <span class="text-muted"> · Model <code>{{ default_model_obj.model_name }}</code></span>
-            {% endif %}
-        </div>
-        <small class="text-muted">Used as global fallback for AI calls.</small>
-    </div>
-    {% endif %}
-
-    <div class="row g-3">
-        <div class="col-lg-8">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                    <h2 class="h6 mb-0"><i class="bi bi-hdd-network"></i> Configured Providers</h2>
-                    <span class="badge bg-light text-dark">{{ providers|length }} total</span>
-                </div>
-                <div class="card-body p-0">
-                    {% if providers %}
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Provider</th>
-                                    <th>Endpoint</th>
-                                    <th>Status</th>
-                                    <th>Models</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for provider in providers %}
-                                {% set default_model_obj = (provider.models|selectattr('is_default_for_provider')|first) if provider.models else None %}
-                                <tr>
-                                    <td>
-                                        <div class="fw-semibold">{{ provider.name | title }}</div>
-                                        <div class="small text-muted">
-                                            {% if provider.is_global_default %}<span class="badge bg-warning text-dark">Global Default</span>{% endif %}
-                                            {% if provider.name == 'ollama' %}<span class="badge bg-success">Local</span>{% endif %}
-                                        </div>
-                                    </td>
-                                    <td><code class="small">{{ provider.api_url or 'N/A' }}</code></td>
-                                    <td>
-                                        {% if provider.name == 'ollama' %}
-                                        <span class="badge bg-success">Ready</span>
-                                        {% elif provider.api_key_encrypted %}
-                                        <span class="badge bg-success">API Key Set</span>
-                                        {% else %}
-                                        <span class="badge bg-warning text-dark">Missing Key</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary">{{ provider.models|length if provider.models else 0 }}</span>
-                                        {% if default_model_obj %}
-                                        <div class="small text-muted mt-1"><i class="bi bi-star-fill text-warning"></i> {{ default_model_obj.model_name }}</div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <button class="btn btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#config-{{ provider.name }}" title="Configure"><i class="bi bi-gear"></i></button>
-                                            <button class="btn btn-outline-info" data-bs-toggle="collapse" data-bs-target="#models-{{ provider.name }}" title="Manage Models"><i class="bi bi-collection"></i></button>
-                                            <button class="btn btn-outline-success" onclick="testProvider('{{ provider.name }}', '{{ default_model_obj.model_name if default_model_obj else '' }}')" title="Test"><i class="bi bi-play-circle"></i></button>
-                                            {% if not provider.is_global_default %}
-                                            <form method="POST" action="/settings/set-default" class="d-inline">
-                                                <input type="hidden" name="name" value="{{ provider.name }}">
-                                                <button type="submit" class="btn btn-outline-warning" title="Set Global Default" onclick="return confirm('Set {{ provider.name }} as global default provider?')"><i class="bi bi-star"></i></button>
-                                            </form>
-                                            {% endif %}
-                                            {% if provider.name != 'ollama' %}
-                                            <form method="POST" action="/settings/delete" class="d-inline">
-                                                <input type="hidden" name="name" value="{{ provider.name }}">
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete" onclick="return confirm('Delete provider {{ provider.name }}?')"><i class="bi bi-trash"></i></button>
-                                            </form>
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr class="bg-light-subtle">
-                                    <td colspan="5">
-                                        <div id="config-{{ provider.name }}" class="collapse">
-                                            <form method="POST" action="/settings/" class="row g-2 p-2" data-provider-config="{{ provider.name }}">
-                                                <input type="hidden" name="name" value="{{ provider.name }}">
-                                                <div class="col-md-4">
-                                                    <label class="form-label small">API Key</label>
-                                                    <input type="password" class="form-control form-control-sm" name="api_key" placeholder="Leave blank to keep current">
-                                                </div>
-                                                <div class="col-md-5">
-                                                    <label class="form-label small">API URL</label>
-                                                    <input type="text" class="form-control form-control-sm provider-api-url" name="api_url" value="{{ provider.api_url or '' }}">
-                                                </div>
-                                                <div class="col-md-3 d-flex align-items-end gap-2">
-                                                    <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox" name="is_global_default" value="on" {% if provider.is_global_default %}checked{% endif %}>
-                                                        <label class="form-check-label small">Default</label>
-                                                    </div>
-                                                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Save</button>
-                                                </div>
-                                            </form>
-                                        </div>
-
-                                        <div id="models-{{ provider.name }}" class="collapse mt-2">
-                                            <div class="p-2 border rounded bg-white">
-                                                <div class="row g-2">
-                                                    <div class="col-md-8">
-                                                        <div class="small fw-semibold mb-1">Models</div>
-                                                        {% if provider.models %}
-                                                        <div class="list-group list-group-flush border rounded">
-                                                            {% for model in provider.models if model.is_active %}
-                                                            <div class="list-group-item py-2 d-flex justify-content-between align-items-center">
-                                                                <div>
-                                                                    {% if model.is_default_for_provider %}<i class="bi bi-star-fill text-warning"></i>{% endif %}
-                                                                    <code>{{ model.model_name }}</code>
-                                                                </div>
-                                                                <div class="btn-group btn-group-sm">
-                                                                    {% if not model.is_default_for_provider %}
-                                                                    <form method="POST" action="/settings/model/set_default" class="d-inline">
-                                                                        <input type="hidden" name="model_id" value="{{ model.id }}">
-                                                                        <button type="submit" class="btn btn-outline-warning" title="Set default"><i class="bi bi-star"></i></button>
-                                                                    </form>
-                                                                    {% endif %}
-                                                                    {% if provider.models|length > 1 %}
-                                                                    <form method="POST" action="/settings/model/remove" class="d-inline">
-                                                                        <input type="hidden" name="model_id" value="{{ model.id }}">
-                                                                        <button type="submit" class="btn btn-outline-danger" title="Remove" onclick="return confirm('Remove model {{ model.model_name }}?')"><i class="bi bi-trash"></i></button>
-                                                                    </form>
-                                                                    {% endif %}
-                                                                </div>
-                                                            </div>
-                                                            {% endfor %}
-                                                        </div>
-                                                        {% else %}
-                                                        <p class="text-muted small mb-0">No models configured.</p>
-                                                        {% endif %}
-                                                    </div>
-                                                    <div class="col-md-4">
-                                                        <div class="small fw-semibold mb-1">Add Model</div>
-                                                        <form method="POST" action="/settings/model/add" data-provider-model-form="{{ provider.name }}">
-                                                            <input type="hidden" name="provider_id" value="{{ provider.id }}">
-                                                            <input type="text" class="form-control form-control-sm mb-2 provider-model-input" name="model_name" placeholder="model id" required>
-                                                            <button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-plus-circle"></i> Add Model</button>
-                                                        </form>
-                                                        <div class="small text-muted mt-2 provider-model-hint" data-provider-model-hint="{{ provider.name }}"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+    <div class="vstack gap-3">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="h6 mb-0"><i class="bi bi-sliders"></i> Provider Editor</h2>
+                <span id="provider-editor-pill" class="badge bg-light text-dark">New provider</span>
+            </div>
+            <div class="card-body">
+                    <div class="mb-3">
+                        <label for="provider-template" class="form-label small">Template</label>
+                        <div class="input-group input-group-sm">
+                            <select id="provider-template" class="form-select">
+                                <option value="ollama">Ollama Local</option>
+                                <option value="openrouter">OpenRouter</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="groq">Groq</option>
+                                <option value="nvidia_nim">NVIDIA NIM</option>
+                                <option value="mistral">Mistral</option>
+                                <option value="together">Together</option>
+                                <option value="cohere">Cohere</option>
+                                <option value="huggingface">HuggingFace Inference</option>
+                                <option value="lm_studio">LM Studio Local</option>
+                                <option value="openai_compatible">Custom / OpenAI-compatible</option>
+                            </select>
+                            <button id="apply-provider-template" type="button" class="btn btn-outline-secondary">Apply</button>
+                        </div>
                     </div>
-                    {% else %}
-                    <div class="p-4 text-center text-muted">No providers configured.</div>
-                    {% endif %}
+
+                    <form id="provider-form" class="row g-2">
+                        <input id="provider-id" type="hidden">
+                        <div class="col-md-6">
+                            <label for="provider-display-name" class="form-label small">Display Name</label>
+                            <input id="provider-display-name" type="text" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-type" class="form-label small">Provider Type</label>
+                            <input id="provider-type" type="text" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-auth-mode" class="form-label small">Auth Mode</label>
+                            <select id="provider-auth-mode" class="form-select form-select-sm">
+                                <option value="env_var">Environment variable</option>
+                                <option value="stored_secret">Stored secret</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-secret-ref" class="form-label small">Secret / Env Var</label>
+                            <input id="provider-secret-ref" type="text" class="form-control form-control-sm" placeholder="OPENROUTER_API_KEY">
+                        </div>
+                        <div class="col-12" id="provider-secret-value-wrap">
+                            <label for="provider-secret-value" class="form-label small">Secret Value</label>
+                            <input id="provider-secret-value" type="password" class="form-control form-control-sm" autocomplete="off" placeholder="Leave blank to keep current stored secret">
+                            <div class="form-text" id="provider-secret-status">Stored secret status will appear here.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-base-url" class="form-label small">Base URL</label>
+                            <input id="provider-base-url" type="url" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-model-id" class="form-label small">Model ID</label>
+                            <input id="provider-model-id" type="text" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-context-window" class="form-label small">Context Window</label>
+                            <input id="provider-context-window" type="number" min="0" step="1" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="provider-capabilities" class="form-label small">Capabilities</label>
+                            <input id="provider-capabilities" type="text" class="form-control form-control-sm" placeholder="chat, tools">
+                        </div>
+                        <div class="col-12 d-flex align-items-center gap-2">
+                            <div class="form-check">
+                                <input id="provider-enabled" class="form-check-input" type="checkbox" checked>
+                                <label class="form-check-label small" for="provider-enabled">Enabled</label>
+                            </div>
+                        </div>
+                        <div class="col-12 d-flex gap-2 pt-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Save Provider</button>
+                            <button id="new-provider" type="button" class="btn btn-outline-secondary btn-sm">New</button>
+                            <button id="delete-provider" type="button" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </div>
+                    </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <div class="registry-label">Registry</div>
+                        <h2 class="h4 mb-1">Configured LLMs</h2>
+                    </div>
+                    <span id="enabled-count-pill" class="enabled-pill">0 enabled</span>
+                </div>
+                <p class="registry-note mb-2">Check verifies auth, base URL, and the provider model endpoint. It does not run chat prompts or rover intent parsing. The default marker here controls the General Chat route.</p>
+                <div class="d-flex gap-2">
+                    <button id="add-example-providers" type="button" class="btn btn-light btn-sm">Add Missing Example Providers</button>
+                    <button id="save-all-settings" type="button" class="btn btn-warning btn-sm">Save Providers & Routing</button>
+                </div>
+            </div>
+            <div class="card-body p-0 pt-2">
+                <div class="provider-table-wrap">
+                    <table class="table table-hover align-middle mb-0 provider-list-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="sortable-col" data-sort-key="name">Name<span class="sort-indicator"></span></th>
+                                <th class="sortable-col" data-sort-key="type">Type<span class="sort-indicator"></span></th>
+                                <th class="sortable-col" data-sort-key="model">Model<span class="sort-indicator"></span></th>
+                                <th class="sortable-col" data-sort-key="auth">Auth<span class="sort-indicator"></span></th>
+                                <th class="sortable-col" data-sort-key="capabilities">Capabilities<span class="sort-indicator"></span></th>
+                                <th class="text-center sortable-col" data-sort-key="enabled">Enabled<span class="sort-indicator"></span></th>
+                                <th class="text-center sortable-col" data-sort-key="status">Status<span class="sort-indicator"></span></th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="provider-list">
+                            <tr><td colspan="8" class="text-center text-muted py-4">Loading providers…</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <div class="col-lg-4">
-            <div class="card shadow-sm mb-3">
-                <div class="card-header bg-success text-white">
-                    <h2 class="h6 mb-0"><i class="bi bi-activity"></i> Connection Test</h2>
-                </div>
-                <div class="card-body" id="test-results">
-                    <div class="text-center text-muted py-3">
-                        <i class="bi bi-plug display-6"></i>
-                        <p class="mt-2 mb-0">Run <strong>Test</strong> from a provider row.</p>
-                    </div>
-                </div>
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="h6 mb-0"><i class="bi bi-arrow-repeat"></i> Routing</h2>
+                <span id="routing-pill" class="badge bg-light text-dark">5 purposes</span>
             </div>
-
-            <div class="card shadow-sm">
-                <div class="card-header bg-info text-white">
-                    <h2 class="h6 mb-0"><i class="bi bi-journal-text"></i> Provider Templates</h2>
-                </div>
-                <div class="card-body">
-                    <label class="form-label small">Template</label>
-                    <select id="provider-template" class="form-select form-select-sm mb-2">
-                        <option value="">Select provider…</option>
-                        <option value="ollama">Ollama Local</option>
-                        <option value="nvidia">NVIDIA NIM</option>
-                        <option value="openrouter">OpenRouter</option>
-                        <option value="groq">Groq</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="openai">OpenAI</option>
-                    </select>
-                    <p class="small text-muted mb-2">Applies endpoint/model hints to matching provider sections in this page.</p>
-                    <button id="apply-template" type="button" class="btn btn-outline-info btn-sm w-100">Apply Template Hints</button>
-                </div>
+            <div class="card-body">
+                <p class="small text-muted">Each purpose picks one primary provider and an ordered fallback list.</p>
+                <div id="routing-editor" class="vstack gap-2"></div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block extra_scripts %}
 <script>
-const providerTemplates = {
-    ollama: { apiUrl: 'http://localhost:11434', modelHint: 'Examples: llama3, llama3.1, mistral, gemma' },
-    nvidia: { apiUrl: 'https://integrate.api.nvidia.com/v1', modelHint: 'Examples: meta/llama3-70b-instruct, qwen/qwen3-coder-480b-a35b-instruct' },
-    openrouter: { apiUrl: 'https://openrouter.ai/api/v1', modelHint: 'Examples: qwen/qwen-2.5-coder-32b-instruct:free, meta-llama/llama-3-8b-instruct:free' },
-    groq: { apiUrl: 'https://api.groq.com/openai/v1', modelHint: 'Examples: openai/gpt-oss-20b, openai/gpt-oss-120b, llama-3.3-70b-versatile' },
-    anthropic: { apiUrl: 'https://api.anthropic.com', modelHint: 'Examples: claude-3-5-sonnet-latest, claude-3-7-sonnet-latest' },
-    openai: { apiUrl: 'https://api.openai.com/v1', modelHint: 'Examples: gpt-4.1, gpt-4o, gpt-4.1-mini' }
+let ROUTING_LABELS = {
+    general_chat: 'General Chat',
+    agent: 'Agent',
+    document_analysis: 'Document Analysis',
+    candidate_analysis: 'Candidate Analysis',
+    job_matching: 'Job Matching',
 };
 
-function applyProviderHints(providerName) {
-    const configForm = document.querySelector(`[data-provider-config="${providerName}"]`);
-    const modelForm = document.querySelector(`[data-provider-model-form="${providerName}"]`);
-    const hintEl = document.querySelector(`[data-provider-model-hint="${providerName}"]`);
-    const template = providerTemplates[providerName];
-    if (!template) return;
+const PROVIDER_TEMPLATES = {
+    ollama: {
+        display_name: 'Ollama Local',
+        provider_type: 'ollama',
+        auth_mode: 'none',
+        secret_ref: '',
+        base_url: 'http://localhost:11434',
+        model_id: 'llama3:latest',
+        enabled: true,
+        capabilities: ['chat'],
+        context_window: null,
+    },
+    openrouter: {
+        display_name: 'OpenRouter',
+        provider_type: 'openrouter',
+        auth_mode: 'env_var',
+        secret_ref: 'OPENROUTER_API_KEY',
+        base_url: 'https://openrouter.ai/api/v1',
+        model_id: 'openai/gpt-4.1-mini',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 128000,
+    },
+    anthropic: {
+        display_name: 'Anthropic',
+        provider_type: 'anthropic',
+        auth_mode: 'env_var',
+        secret_ref: 'ANTHROPIC_API_KEY',
+        base_url: '',
+        model_id: 'claude-sonnet-4-0',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 200000,
+    },
+    openai: {
+        display_name: 'OpenAI',
+        provider_type: 'openai',
+        auth_mode: 'env_var',
+        secret_ref: 'OPENAI_API_KEY',
+        base_url: 'https://api.openai.com/v1',
+        model_id: 'gpt-4.1-mini',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 128000,
+    },
+    gemini: {
+        display_name: 'Google Gemini',
+        provider_type: 'gemini',
+        auth_mode: 'env_var',
+        secret_ref: 'GEMINI_API_KEY',
+        base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        model_id: 'gemini-2.5-flash',
+        enabled: true,
+        capabilities: ['chat', 'tools', 'vision'],
+        context_window: 1048576,
+    },
+    groq: {
+        display_name: 'Groq',
+        provider_type: 'groq',
+        auth_mode: 'env_var',
+        secret_ref: 'GROQ_API_KEY',
+        base_url: 'https://api.groq.com/openai/v1',
+        model_id: 'openai/gpt-oss-120b',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 131072,
+    },
+    nvidia_nim: {
+        display_name: 'NVIDIA NIM',
+        provider_type: 'nvidia_nim',
+        auth_mode: 'env_var',
+        secret_ref: 'NVIDIA_API_KEY',
+        base_url: 'https://integrate.api.nvidia.com/v1',
+        model_id: 'openai/gpt-oss-120b',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 128000,
+    },
+    mistral: {
+        display_name: 'Mistral',
+        provider_type: 'mistral',
+        auth_mode: 'env_var',
+        secret_ref: 'MISTRAL_API_KEY',
+        base_url: 'https://api.mistral.ai/v1',
+        model_id: 'mistral-medium-latest',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 128000,
+    },
+    together: {
+        display_name: 'Together',
+        provider_type: 'together',
+        auth_mode: 'env_var',
+        secret_ref: 'TOGETHER_API_KEY',
+        base_url: 'https://api.together.xyz/v1',
+        model_id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 131072,
+    },
+    cohere: {
+        display_name: 'Cohere',
+        provider_type: 'cohere',
+        auth_mode: 'env_var',
+        secret_ref: 'COHERE_API_KEY',
+        base_url: 'https://api.cohere.ai/compatibility/v1',
+        model_id: 'command-a-03-2025',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 128000,
+    },
+    huggingface: {
+        display_name: 'HuggingFace Inference',
+        provider_type: 'huggingface',
+        auth_mode: 'env_var',
+        secret_ref: 'HUGGINGFACE_API_KEY',
+        base_url: 'https://router.huggingface.co/v1',
+        model_id: 'meta-llama/Llama-3.1-8B-Instruct',
+        enabled: true,
+        capabilities: ['chat'],
+        context_window: 32768,
+    },
+    lm_studio: {
+        display_name: 'LM Studio Local',
+        provider_type: 'lm_studio',
+        auth_mode: 'none',
+        secret_ref: '',
+        base_url: 'http://localhost:1234/v1',
+        model_id: 'local-model',
+        enabled: true,
+        capabilities: ['chat', 'tools'],
+        context_window: 32768,
+    },
+    openai_compatible: {
+        display_name: 'Custom OpenAI-Compatible',
+        provider_type: 'openai_compatible',
+        auth_mode: 'env_var',
+        secret_ref: 'OPENAI_COMPATIBLE_API_KEY',
+        base_url: 'https://example.local/v1',
+        model_id: 'custom-model',
+        enabled: true,
+        capabilities: ['chat'],
+        context_window: null,
+    },
+};
 
-    if (configForm) {
-        const apiInput = configForm.querySelector('.provider-api-url');
-        if (apiInput && !apiInput.value.trim()) {
-            apiInput.value = template.apiUrl;
-        }
-    }
+const state = {
+    providers: [],
+    routing: {},
+    health: {},
+    editingProviderId: '',
+    providerSort: {
+        key: 'name',
+        direction: 'asc',
+    },
+};
 
-    if (modelForm) {
-        const modelInput = modelForm.querySelector('.provider-model-input');
-        if (modelInput) {
-            modelInput.placeholder = template.modelHint;
-        }
-    }
+const els = {
+    alert: document.getElementById('llm-page-alert'),
+    providerList: document.getElementById('provider-list'),
+    routingEditor: document.getElementById('routing-editor'),
+    editorPill: document.getElementById('provider-editor-pill'),
+    routingPill: document.getElementById('routing-pill'),
+    template: document.getElementById('provider-template'),
+    form: document.getElementById('provider-form'),
+    providerId: document.getElementById('provider-id'),
+    displayName: document.getElementById('provider-display-name'),
+    providerType: document.getElementById('provider-type'),
+    authMode: document.getElementById('provider-auth-mode'),
+    secretRef: document.getElementById('provider-secret-ref'),
+    secretValue: document.getElementById('provider-secret-value'),
+    secretValueWrap: document.getElementById('provider-secret-value-wrap'),
+    secretStatus: document.getElementById('provider-secret-status'),
+    baseUrl: document.getElementById('provider-base-url'),
+    modelId: document.getElementById('provider-model-id'),
+    contextWindow: document.getElementById('provider-context-window'),
+    capabilities: document.getElementById('provider-capabilities'),
+    enabled: document.getElementById('provider-enabled'),
+    deleteProvider: document.getElementById('delete-provider'),
+};
 
-    if (hintEl) {
-        hintEl.textContent = template.modelHint;
-    }
+function showAlert(kind, message) {
+    els.alert.className = `alert alert-${kind}`;
+    els.alert.textContent = message;
+    els.alert.classList.remove('d-none');
 }
 
-document.querySelectorAll('[data-provider-model-hint]').forEach(el => {
-    const providerName = el.getAttribute('data-provider-model-hint');
-    applyProviderHints(providerName);
-});
+function hideAlert() {
+    els.alert.className = 'alert d-none';
+    els.alert.textContent = '';
+}
 
-document.getElementById('apply-template')?.addEventListener('click', () => {
-    const providerName = document.getElementById('provider-template').value;
-    if (!providerName) return;
-    applyProviderHints(providerName);
-});
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
 
-function testProvider(name, model) {
-    let fullName;
-    if (name === 'ollama') fullName = 'ollama/' + (model || 'llama3');
-    else if (name === 'nvidia') fullName = 'nvidia_nim/' + (model || 'meta/llama3-70b-instruct');
-    else if (name === 'openrouter') fullName = 'openrouter/' + (model || 'meta-llama/llama-3-70b-instruct');
-    else if (name === 'anthropic') fullName = 'anthropic/' + (model || 'claude-3-5-sonnet-latest');
-    else if (name === 'openai') fullName = 'openai/' + (model || 'gpt-4.1-mini');
-    else if (name === 'groq') fullName = model || 'openai/gpt-oss-20b';
-    else fullName = name + '/' + (model || 'default');
+function slugify(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        || `provider-${Date.now()}`;
+}
 
-    document.getElementById('test-results').innerHTML = `
-        <div class="text-center py-4">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-3 mb-0"><strong>Testing ${fullName}...</strong></p>
-        </div>
-    `;
+function createUniqueProviderId(seedValue) {
+    const base = `provider-${slugify(seedValue || 'provider')}`;
+    if (!state.providers.some((provider) => provider.id === base)) {
+        return base;
+    }
+    let suffix = 2;
+    while (state.providers.some((provider) => provider.id === `${base}-${suffix}`)) {
+        suffix += 1;
+    }
+    return `${base}-${suffix}`;
+}
 
-    const formData = new FormData();
-    formData.append('provider_name', name);
-    formData.append('model', fullName);
-    formData.append('prompt', 'Hello! Please respond with OK if you can read this.');
+function currentProvider() {
+    return state.providers.find((provider) => provider.id === state.editingProviderId) || null;
+}
 
-    fetch('/settings/test', { method: 'POST', body: formData })
-        .then(response => response.text())
-        .then(html => { document.getElementById('test-results').innerHTML = html; })
-        .catch(error => {
-            document.getElementById('test-results').innerHTML = `
-                <div class="alert alert-danger mb-0">
-                    <i class="bi bi-x-circle-fill"></i> <strong>Test failed:</strong> ${error.message}
+function templateClone(key) {
+    return structuredClone(PROVIDER_TEMPLATES[key]);
+}
+
+function providerSummary(provider) {
+    const authMode = provider.auth_mode || 'env_var';
+    if (authMode === 'none') return 'No auth';
+    if (authMode === 'stored_secret') {
+        return provider.has_stored_secret ? `Stored secret: ${provider.secret_ref}` : `Stored secret missing: ${provider.secret_ref || 'unset'}`;
+    }
+    return `Env var: ${provider.secret_ref || 'unset'}`;
+}
+
+function healthCheckModel(provider) {
+    const providerType = String(provider.provider_type || '').trim();
+    const modelId = String(provider.model_id || '').trim();
+    if (!modelId) return '';
+    const prefixedTypes = new Set(['ollama', 'openai', 'openrouter', 'anthropic', 'nvidia_nim', 'groq']);
+    if (prefixedTypes.has(providerType)) {
+        return `${providerType}/${modelId}`;
+    }
+    return modelId;
+}
+
+function normalizeProviderDraft(provider) {
+    const capabilities = Array.isArray(provider.capabilities)
+        ? provider.capabilities
+        : String(provider.capabilities || '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
+    return {
+        id: String(provider.id || '').trim(),
+        display_name: String(provider.display_name || '').trim(),
+        provider_type: String(provider.provider_type || '').trim(),
+        auth_mode: String(provider.auth_mode || 'env_var').trim(),
+        secret_ref: String(provider.secret_ref || '').trim(),
+        base_url: String(provider.base_url || '').trim(),
+        model_id: String(provider.model_id || '').trim(),
+        enabled: provider.enabled !== false,
+        capabilities,
+        context_window: provider.context_window ? Number(provider.context_window) : null,
+        has_stored_secret: Boolean(provider.has_stored_secret),
+    };
+}
+
+function providerOptionsMarkup(selectedId) {
+    return state.providers.map((provider) => {
+        const selected = provider.id === selectedId ? 'selected' : '';
+        return `<option value="${escapeHtml(provider.id)}" ${selected}>${escapeHtml(provider.display_name || provider.id)}</option>`;
+    }).join('');
+}
+
+function normalizeRoutingRule(rule, primaryOverride = null) {
+    const primaryProviderId = String(
+        primaryOverride !== null
+            ? primaryOverride
+            : (rule && rule.primary_provider_id) || ''
+    ).trim();
+    const fallbackIds = Array.isArray(rule && rule.fallback_provider_ids)
+        ? rule.fallback_provider_ids
+        : [];
+    const validProviderIds = new Set(state.providers.map((provider) => provider.id));
+    const seen = new Set();
+    const normalizedFallbacks = fallbackIds
+        .map((item) => String(item || '').trim())
+        .filter((providerId) => providerId && providerId !== primaryProviderId && validProviderIds.has(providerId))
+        .filter((providerId) => {
+            if (seen.has(providerId)) return false;
+            seen.add(providerId);
+            return true;
+        });
+    return {
+        primary_provider_id: primaryProviderId,
+        fallback_provider_ids: normalizedFallbacks,
+        allow_runtime_override: Boolean((rule && rule.allow_runtime_override) ?? true),
+    };
+}
+
+function fallbackProviderOptionsMarkup(rule) {
+    const selectedFallbacks = new Set(rule.fallback_provider_ids || []);
+    return state.providers
+        .filter((provider) => provider.id !== rule.primary_provider_id && !selectedFallbacks.has(provider.id))
+        .map((provider) => `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.display_name || provider.id)}</option>`)
+        .join('');
+}
+
+function renderRouting() {
+    els.routingPill.textContent = `${Object.keys(ROUTING_LABELS).length} purposes`;
+    els.routingEditor.innerHTML = Object.entries(ROUTING_LABELS).map(([purpose, label]) => {
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        state.routing[purpose] = rule;
+        const fallbackRows = rule.fallback_provider_ids.map((providerId, index) => {
+            const provider = state.providers.find((item) => item.id === providerId);
+            return `
+                <div class="d-flex align-items-center gap-2 mb-1" data-fallback-item="${escapeHtml(purpose)}:${index}">
+                    <span class="badge text-bg-light">${index + 1}</span>
+                    <span class="small flex-grow-1">${escapeHtml((provider && (provider.display_name || provider.id)) || providerId)}</span>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" data-fallback-move-up="${escapeHtml(purpose)}:${index}" ${index === 0 ? 'disabled' : ''} title="Move up">↑</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" data-fallback-move-down="${escapeHtml(purpose)}:${index}" ${index === rule.fallback_provider_ids.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" data-fallback-remove="${escapeHtml(purpose)}:${index}" title="Remove fallback">×</button>
                 </div>
             `;
-        });
+        }).join('');
+        return `
+            <div class="border rounded p-2">
+                <label class="form-label small fw-semibold mb-1">${escapeHtml(label)}</label>
+                <select class="form-select form-select-sm mb-2" data-routing-purpose="${escapeHtml(purpose)}">
+                    <option value="">No provider selected</option>
+                    ${providerOptionsMarkup(rule.primary_provider_id)}
+                </select>
+                <div class="form-check form-switch mb-2">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        data-routing-runtime-override="${escapeHtml(purpose)}"
+                        ${rule.allow_runtime_override ? 'checked' : ''}
+                    >
+                    <label class="form-check-label small text-muted">Allow runtime model override</label>
+                </div>
+                <div class="small text-muted mb-1">Fallback providers (ordered)</div>
+                <div class="mb-2">${fallbackRows || '<div class="small text-muted">No fallbacks configured.</div>'}</div>
+                <div class="input-group input-group-sm">
+                    <select class="form-select" data-fallback-add-purpose="${escapeHtml(purpose)}">
+                        <option value="">Select fallback provider</option>
+                        ${fallbackProviderOptionsMarkup(rule)}
+                    </select>
+                    <button type="button" class="btn btn-outline-primary" data-fallback-add="${escapeHtml(purpose)}">Add</button>
+                </div>
+            </div>
+        `;
+    }).join('');
 }
+
+function renderProviders() {
+    if (!state.providers.length) {
+        els.providerList.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No providers configured yet.</td></tr>';
+        const enabledPill = document.getElementById('enabled-count-pill');
+        if (enabledPill) enabledPill.textContent = '0 enabled';
+        renderRouting();
+        return;
+    }
+
+    const providers = [...state.providers].sort(compareProvidersForActiveSort);
+    const defaultProviderId = generalChatPrimaryProviderId();
+    renderProviderSortIndicators();
+
+    const enabledCount = providers.filter((provider) => provider.enabled !== false).length;
+    const enabledPill = document.getElementById('enabled-count-pill');
+    if (enabledPill) enabledPill.textContent = `${enabledCount} enabled`;
+
+    els.providerList.innerHTML = providers.map((provider) => `
+        <tr>
+            <td>
+                <div class="fw-semibold">${escapeHtml(provider.display_name || provider.id)}</div>
+            </td>
+            <td>
+                <span class="provider-tag">${escapeHtml(provider.provider_type || 'unknown')}</span>
+            </td>
+            <td>
+                <span class="provider-tag">${escapeHtml(provider.model_id || 'n/a')}</span>
+            </td>
+            <td>
+                <span class="provider-tag">${escapeHtml(providerSummary(provider))}</span>
+            </td>
+            <td>${provider.capabilities.map((item) => `<span class="provider-tag">${escapeHtml(item)}</span>`).join('') || '<span class="text-muted small">none</span>'}</td>
+            <td class="text-center">
+                <button type="button" class="btn ${provider.enabled !== false ? 'btn-outline-success' : 'btn-outline-secondary'} btn-sm icon-action-btn"
+                    data-toggle-provider="${escapeHtml(provider.id)}"
+                    data-bs-toggle="tooltip" data-bs-placement="top"
+                    title="${provider.enabled !== false ? 'Disable provider' : 'Enable provider'}"
+                    aria-label="${provider.enabled !== false ? 'Disable provider' : 'Enable provider'}">
+                    <i class="bi ${provider.enabled !== false ? 'bi-toggle-on text-success' : 'bi-toggle-off text-muted'}"></i>
+                </button>
+            </td>
+            <td class="text-center">
+                ${renderProviderStatusBadge(provider)}
+            </td>
+            <td class="text-end">
+                <div class="provider-actions">
+                    <button type="button" class="btn btn-outline-info btn-sm icon-action-btn"
+                        data-check-health="${escapeHtml(provider.id)}"
+                        data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Check health" aria-label="Check health">
+                        <i class="bi bi-record-circle"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-warning btn-sm icon-action-btn"
+                        data-set-default-provider="${escapeHtml(provider.id)}"
+                        data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="${provider.id === defaultProviderId ? 'Current default for General Chat' : 'Set as default for General Chat'}"
+                        aria-label="${provider.id === defaultProviderId ? 'Current default for General Chat' : 'Set default for General Chat'}"
+                        ${provider.id === defaultProviderId ? 'disabled' : ''}>
+                        <i class="bi ${provider.id === defaultProviderId ? 'bi-star-fill' : 'bi-star'}"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm icon-action-btn"
+                        data-edit-provider="${escapeHtml(provider.id)}"
+                        data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Edit provider" aria-label="Edit provider">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm icon-action-btn"
+                        data-delete-provider-row="${escapeHtml(provider.id)}"
+                        data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Delete provider" aria-label="Delete provider">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    initActionTooltips();
+    renderRouting();
+}
+
+function initActionTooltips() {
+    document.querySelectorAll('#provider-list [data-bs-toggle="tooltip"]').forEach((node) => {
+        bootstrap.Tooltip.getOrCreateInstance(node);
+    });
+}
+
+function providerStatusValue(provider) {
+    const healthState = state.health[provider.id];
+    if (healthState === 'checking') return 'checking';
+    if (healthState === 'healthy') return 'healthy';
+    if (healthState === 'unhealthy') return 'unhealthy';
+    if (provider.enabled === false) return 'disabled';
+    if (provider.auth_mode === 'stored_secret' && !provider.has_stored_secret) return 'secret_missing';
+    return 'ready';
+}
+
+function renderProviderStatusBadge(provider) {
+    const status = providerStatusValue(provider);
+    if (status === 'disabled') {
+        return '<span class="badge text-bg-secondary">Disabled</span>';
+    }
+    if (status === 'checking') {
+        return '<span class="badge text-bg-info">Checking…</span>';
+    }
+    if (status === 'healthy') {
+        return '<span class="badge text-bg-success">Healthy</span>';
+    }
+    if (status === 'unhealthy') {
+        return '<span class="badge text-bg-danger">Unhealthy</span>';
+    }
+    if (status === 'secret_missing') {
+        return '<span class="badge text-bg-warning">Secret missing</span>';
+    }
+    return '<span class="badge text-bg-success">Ready</span>';
+}
+
+function generalChatPrimaryProviderId() {
+    const rule = normalizeRoutingRule(
+        state.routing.general_chat || { primary_provider_id: '', fallback_provider_ids: [] }
+    );
+    return String(rule.primary_provider_id || '').trim();
+}
+
+function providerSortValue(provider, key) {
+    if (key === 'name') return String(provider.display_name || provider.id || '').toLowerCase();
+    if (key === 'type') return String(provider.provider_type || '').toLowerCase();
+    if (key === 'model') return String(provider.model_id || '').toLowerCase();
+    if (key === 'auth') return String(providerSummary(provider) || '').toLowerCase();
+    if (key === 'capabilities') return (provider.capabilities || []).join(',').toLowerCase();
+    if (key === 'enabled') return provider.enabled === false ? 0 : 1;
+    if (key === 'status') return providerStatusValue(provider);
+    return '';
+}
+
+function compareProvidersForActiveSort(left, right) {
+    const { key, direction } = state.providerSort;
+    const leftValue = providerSortValue(left, key);
+    const rightValue = providerSortValue(right, key);
+    let result = 0;
+    if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        result = leftValue - rightValue;
+    } else {
+        result = String(leftValue).localeCompare(String(rightValue));
+    }
+    return direction === 'desc' ? -result : result;
+}
+
+function renderProviderSortIndicators() {
+    document.querySelectorAll('.provider-list-table thead [data-sort-key]').forEach((header) => {
+        const key = header.getAttribute('data-sort-key');
+        const indicator = header.querySelector('.sort-indicator');
+        if (!indicator) return;
+        if (key === state.providerSort.key) {
+            indicator.textContent = state.providerSort.direction === 'asc' ? '▲' : '▼';
+        } else {
+            indicator.textContent = '';
+        }
+    });
+}
+
+function removeProviderFromDraft(provider) {
+    state.providers = state.providers.filter((item) => item.id !== provider.id);
+    Object.keys(state.routing).forEach((purpose) => {
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        if (rule.primary_provider_id === provider.id) {
+            rule.primary_provider_id = '';
+        }
+        rule.fallback_provider_ids = rule.fallback_provider_ids.filter((fallbackId) => fallbackId !== provider.id);
+        state.routing[purpose] = rule;
+    });
+    renderProviders();
+    if (state.editingProviderId === provider.id) {
+        state.editingProviderId = '';
+        fillForm();
+    }
+    showAlert('warning', `Removed ${provider.display_name || provider.id}.`);
+}
+
+function updateSecretInputs() {
+    const authMode = els.authMode.value;
+    const provider = currentProvider();
+    if (authMode === 'stored_secret') {
+        els.secretValueWrap.classList.remove('d-none');
+        const hasSecret = provider && provider.has_stored_secret;
+        els.secretStatus.textContent = hasSecret
+            ? `Stored secret already exists for ${provider.secret_ref || 'this provider'}. Enter a new value only to rotate it.`
+            : 'No stored secret saved yet.';
+    } else {
+        els.secretValueWrap.classList.add('d-none');
+        els.secretStatus.textContent = authMode === 'env_var'
+            ? 'This provider will read the secret from the named environment variable.'
+            : 'No secret is needed for this provider.';
+    }
+}
+
+function fillForm(provider) {
+    const item = provider || {
+        id: '',
+        display_name: '',
+        provider_type: 'ollama',
+        auth_mode: 'none',
+        secret_ref: '',
+        base_url: '',
+        model_id: '',
+        enabled: true,
+        capabilities: ['chat'],
+        context_window: null,
+        has_stored_secret: false,
+    };
+
+    state.editingProviderId = item.id || '';
+    els.providerId.value = item.id || '';
+    els.displayName.value = item.display_name || '';
+    els.providerType.value = item.provider_type || '';
+    els.authMode.value = item.auth_mode || 'env_var';
+    els.secretRef.value = item.secret_ref || '';
+    els.secretValue.value = '';
+    els.baseUrl.value = item.base_url || '';
+    els.modelId.value = item.model_id || '';
+    els.contextWindow.value = item.context_window || '';
+    els.capabilities.value = Array.isArray(item.capabilities) ? item.capabilities.join(', ') : '';
+    els.enabled.checked = item.enabled !== false;
+    els.editorPill.textContent = item.id ? `Editing ${item.id}` : 'New provider';
+    els.deleteProvider.disabled = !item.id;
+    updateSecretInputs();
+}
+
+function applyTemplateToForm(templateKey) {
+    const template = templateClone(templateKey);
+    if (!els.displayName.value || !state.editingProviderId) {
+        els.displayName.value = template.display_name;
+    }
+    els.providerType.value = template.provider_type;
+    els.authMode.value = template.auth_mode;
+    els.secretRef.value = template.secret_ref;
+    els.baseUrl.value = template.base_url;
+    els.modelId.value = template.model_id;
+    els.contextWindow.value = template.context_window || '';
+    els.capabilities.value = template.capabilities.join(', ');
+    els.enabled.checked = template.enabled !== false;
+    updateSecretInputs();
+}
+
+function upsertProviderDraft() {
+    const existing = currentProvider();
+    const draftId = els.providerId.value || (existing ? existing.id : createUniqueProviderId(els.displayName.value || els.providerType.value));
+    const draft = normalizeProviderDraft({
+        id: draftId,
+        display_name: els.displayName.value,
+        provider_type: els.providerType.value,
+        auth_mode: els.authMode.value,
+        secret_ref: els.secretRef.value,
+        base_url: els.baseUrl.value,
+        model_id: els.modelId.value,
+        enabled: els.enabled.checked,
+        capabilities: els.capabilities.value,
+        context_window: els.contextWindow.value,
+        has_stored_secret: existing ? existing.has_stored_secret : false,
+    });
+
+    if (!draft.display_name || !draft.provider_type || !draft.model_id) {
+        throw new Error('Display name, provider type, and model ID are required.');
+    }
+    if (draft.auth_mode !== 'none' && !draft.secret_ref) {
+        throw new Error('Secret / Env Var is required unless auth mode is "none".');
+    }
+
+    const existingIndex = state.providers.findIndex((provider) => provider.id === draft.id);
+    if (existingIndex >= 0) {
+        state.providers[existingIndex] = draft;
+    } else {
+        state.providers.push(draft);
+    }
+    state.editingProviderId = draft.id;
+    fillForm(draft);
+    renderProviders();
+    return draft;
+}
+
+async function saveStoredSecretIfNeeded(provider, secretValue) {
+    if (provider.auth_mode !== 'stored_secret') {
+        return;
+    }
+    const cleanSecretValue = String(secretValue || '').trim();
+    if (!cleanSecretValue) {
+        return;
+    }
+    const response = await fetch(`/api/llm-secrets/${encodeURIComponent(provider.secret_ref)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret_value: cleanSecretValue }),
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || 'Failed to store secret');
+    }
+    provider.has_stored_secret = true;
+    els.secretValue.value = '';
+}
+
+async function loadSettings() {
+    hideAlert();
+    const response = await fetch('/api/llm-settings');
+    if (!response.ok) {
+        throw new Error('Failed to load provider settings');
+    }
+    const payload = await response.json();
+    state.providers = (payload.providers || []).map(normalizeProviderDraft);
+    state.health = {};
+    state.routing = payload.routing || {};
+    if (payload.routing_labels && typeof payload.routing_labels === 'object') {
+        ROUTING_LABELS = payload.routing_labels;
+    }
+    renderProviders();
+    if (state.providers.length) {
+        fillForm(state.providers[0]);
+    } else {
+        fillForm();
+        applyTemplateToForm('ollama');
+    }
+}
+
+async function saveAllSettings(options = {}) {
+    const {
+        successMessage = 'Provider settings saved.',
+        showSuccessMessage = true,
+    } = options;
+    const payload = {
+        providers: state.providers.map((provider) => ({
+            id: provider.id,
+            display_name: provider.display_name,
+            provider_type: provider.provider_type,
+            auth_mode: provider.auth_mode,
+            secret_ref: provider.secret_ref,
+            base_url: provider.base_url,
+            model_id: provider.model_id,
+            enabled: provider.enabled,
+            capabilities: provider.capabilities,
+            context_window: provider.context_window,
+        })),
+        routing: state.routing,
+    };
+    const response = await fetch('/api/llm-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(body.detail || 'Failed to save settings');
+    }
+    state.providers = (body.providers || []).map(normalizeProviderDraft);
+    state.routing = body.routing || {};
+    renderProviders();
+    const edited = currentProvider();
+    if (edited) fillForm(edited);
+    if (showSuccessMessage) {
+        showAlert('success', successMessage);
+    }
+}
+
+document.getElementById('apply-provider-template').addEventListener('click', () => {
+    applyTemplateToForm(els.template.value);
+});
+
+els.authMode.addEventListener('change', updateSecretInputs);
+
+els.form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+        hideAlert();
+        const pendingSecretValue = els.secretValue.value;
+        const provider = upsertProviderDraft();
+        await saveStoredSecretIfNeeded(provider, pendingSecretValue);
+        await saveAllSettings();
+        renderProviders();
+        updateSecretInputs();
+        showAlert('success', 'Provider saved and persisted.');
+    } catch (error) {
+        showAlert('danger', error.message || 'Could not update provider draft.');
+    }
+});
+
+document.getElementById('new-provider').addEventListener('click', () => {
+    state.editingProviderId = '';
+    fillForm();
+    applyTemplateToForm(els.template.value);
+});
+
+els.deleteProvider.addEventListener('click', async () => {
+    const provider = currentProvider();
+    if (!provider) return;
+    hideAlert();
+    removeProviderFromDraft(provider);
+    try {
+        await saveAllSettings();
+    } catch (error) {
+        showAlert('danger', error.message || 'Failed to delete provider.');
+    }
+});
+
+document.getElementById('add-example-providers').addEventListener('click', () => {
+    Object.entries(PROVIDER_TEMPLATES).forEach(([key, template]) => {
+        const id = `provider-${slugify(key)}`;
+        if (state.providers.some((provider) => provider.id === id)) {
+            return;
+        }
+        state.providers.push(normalizeProviderDraft({ ...template, id }));
+    });
+    renderProviders();
+    showAlert('info', 'Added any missing example provider templates to the local draft.');
+});
+
+document.getElementById('save-all-settings').addEventListener('click', async () => {
+    try {
+        hideAlert();
+        if (els.displayName.value || els.modelId.value || els.providerType.value) {
+            const pendingSecretValue = els.secretValue.value;
+            const provider = upsertProviderDraft();
+            await saveStoredSecretIfNeeded(provider, pendingSecretValue);
+        }
+        await saveAllSettings();
+    } catch (error) {
+        showAlert('danger', error.message || 'Failed to save settings.');
+    }
+});
+
+els.routingEditor.addEventListener('change', (event) => {
+    const target = event.target;
+    if (target instanceof HTMLSelectElement) {
+        const purpose = target.dataset.routingPurpose;
+        if (!purpose) return;
+        state.routing[purpose] = normalizeRoutingRule(state.routing[purpose], target.value);
+        renderRouting();
+        return;
+    }
+    if (target instanceof HTMLInputElement && target.dataset.routingRuntimeOverride) {
+        const purpose = target.dataset.routingRuntimeOverride;
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        rule.allow_runtime_override = target.checked;
+        state.routing[purpose] = rule;
+        return;
+    }
+});
+
+els.routingEditor.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const addButton = target.closest('[data-fallback-add]');
+    if (addButton) {
+        const purpose = addButton.getAttribute('data-fallback-add');
+        if (!purpose) return;
+        const selector = els.routingEditor.querySelector(`[data-fallback-add-purpose="${CSS.escape(purpose)}"]`);
+        if (!(selector instanceof HTMLSelectElement)) return;
+        const selectedProviderId = String(selector.value || '').trim();
+        if (!selectedProviderId) return;
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        if (!rule.fallback_provider_ids.includes(selectedProviderId) && selectedProviderId !== rule.primary_provider_id) {
+            rule.fallback_provider_ids.push(selectedProviderId);
+            state.routing[purpose] = rule;
+            renderRouting();
+        }
+        return;
+    }
+
+    const removeButton = target.closest('[data-fallback-remove]');
+    if (removeButton) {
+        const [purpose, indexText] = String(removeButton.getAttribute('data-fallback-remove') || '').split(':');
+        const index = Number(indexText);
+        if (!purpose || Number.isNaN(index)) return;
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        if (index >= 0 && index < rule.fallback_provider_ids.length) {
+            rule.fallback_provider_ids.splice(index, 1);
+            state.routing[purpose] = rule;
+            renderRouting();
+        }
+        return;
+    }
+
+    const upButton = target.closest('[data-fallback-move-up]');
+    if (upButton) {
+        const [purpose, indexText] = String(upButton.getAttribute('data-fallback-move-up') || '').split(':');
+        const index = Number(indexText);
+        if (!purpose || Number.isNaN(index) || index <= 0) return;
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        if (index < rule.fallback_provider_ids.length) {
+            [rule.fallback_provider_ids[index - 1], rule.fallback_provider_ids[index]] =
+                [rule.fallback_provider_ids[index], rule.fallback_provider_ids[index - 1]];
+            state.routing[purpose] = rule;
+            renderRouting();
+        }
+        return;
+    }
+
+    const downButton = target.closest('[data-fallback-move-down]');
+    if (downButton) {
+        const [purpose, indexText] = String(downButton.getAttribute('data-fallback-move-down') || '').split(':');
+        const index = Number(indexText);
+        if (!purpose || Number.isNaN(index) || index < 0) return;
+        const rule = normalizeRoutingRule(state.routing[purpose] || { primary_provider_id: '', fallback_provider_ids: [] });
+        if (index < rule.fallback_provider_ids.length - 1) {
+            [rule.fallback_provider_ids[index], rule.fallback_provider_ids[index + 1]] =
+                [rule.fallback_provider_ids[index + 1], rule.fallback_provider_ids[index]];
+            state.routing[purpose] = rule;
+            renderRouting();
+        }
+    }
+});
+
+els.providerList.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const setDefaultButton = target.closest('[data-set-default-provider]');
+    if (setDefaultButton) {
+        const providerId = setDefaultButton.getAttribute('data-set-default-provider');
+        const provider = state.providers.find((item) => item.id === providerId);
+        if (!provider) return;
+        const previousRule = normalizeRoutingRule(
+            state.routing.general_chat || { primary_provider_id: '', fallback_provider_ids: [] },
+        );
+        if (previousRule.primary_provider_id === provider.id) {
+            return;
+        }
+        const rule = normalizeRoutingRule(
+            state.routing.general_chat || { primary_provider_id: '', fallback_provider_ids: [] },
+            provider.id
+        );
+        state.routing.general_chat = rule;
+        renderRouting();
+        renderProviders();
+        try {
+            await saveAllSettings({
+                successMessage: `Set ${provider.display_name || provider.id} as the default for General Chat.`,
+            });
+        } catch (error) {
+            state.routing.general_chat = previousRule;
+            renderProviders();
+            renderRouting();
+            showAlert('danger', error.message || 'Failed to update the default provider.');
+        }
+        return;
+    }
+
+    const toggleButton = target.closest('[data-toggle-provider]');
+    if (toggleButton) {
+        const providerId = toggleButton.getAttribute('data-toggle-provider');
+        const provider = state.providers.find((item) => item.id === providerId);
+        if (!provider) return;
+        provider.enabled = provider.enabled === false;
+        try {
+            await saveAllSettings();
+            const verb = provider.enabled ? 'Enabled' : 'Disabled';
+            showAlert('success', `${verb} ${provider.display_name || provider.id}.`);
+        } catch (error) {
+            provider.enabled = !provider.enabled;
+            renderProviders();
+            showAlert('danger', error.message || 'Failed to update provider status.');
+        }
+        return;
+    }
+
+    const healthButton = target.closest('[data-check-health]');
+    if (healthButton) {
+        const providerId = healthButton.getAttribute('data-check-health');
+        const provider = state.providers.find((item) => item.id === providerId);
+        if (!provider) return;
+        const model = healthCheckModel(provider);
+        if (!model) {
+            showAlert('danger', 'Provider is missing model ID for health check.');
+            return;
+        }
+        const form = new URLSearchParams();
+        form.set('prompt', 'Reply with OK');
+        form.set('model', model);
+        form.set('provider_id', provider.id);
+        state.health[provider.id] = 'checking';
+        renderProviders();
+        fetch('/api/llm/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+            body: form.toString(),
+        })
+            .then((response) => response.json().catch(() => ({})))
+            .then((body) => {
+                if (body.success) {
+                    state.health[provider.id] = 'healthy';
+                    showAlert('success', `Health check passed for ${provider.display_name || provider.id} (${body.time_ms || '?'}ms).`);
+                } else {
+                    state.health[provider.id] = 'unhealthy';
+                    showAlert('warning', `Health check failed for ${provider.display_name || provider.id}: ${body.error || 'Unknown error'}`);
+                }
+                renderProviders();
+            })
+            .catch((error) => {
+                state.health[provider.id] = 'unhealthy';
+                renderProviders();
+                showAlert('danger', error.message || 'Health check request failed.');
+            });
+        return;
+    }
+
+    const deleteButton = target.closest('[data-delete-provider-row]');
+    if (deleteButton) {
+        const deleteProviderId = deleteButton.getAttribute('data-delete-provider-row');
+        const deleteProviderItem = state.providers.find((item) => item.id === deleteProviderId);
+        if (deleteProviderItem) {
+            hideAlert();
+            removeProviderFromDraft(deleteProviderItem);
+            try {
+                await saveAllSettings();
+            } catch (error) {
+                showAlert('danger', error.message || 'Failed to delete provider.');
+            }
+        }
+        return;
+    }
+
+    const editButton = target.closest('[data-edit-provider]');
+    if (editButton) {
+        const providerId = editButton.getAttribute('data-edit-provider');
+        const provider = state.providers.find((item) => item.id === providerId);
+        if (provider) {
+            fillForm(provider);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+});
+
+document.querySelector('.provider-list-table thead').addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const header = target.closest('[data-sort-key]');
+    if (!header) return;
+    const sortKey = header.getAttribute('data-sort-key');
+    if (!sortKey) return;
+    if (state.providerSort.key === sortKey) {
+        state.providerSort.direction = state.providerSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.providerSort.key = sortKey;
+        state.providerSort.direction = 'asc';
+    }
+    renderProviders();
+});
+
+loadSettings().catch((error) => {
+    showAlert('danger', error.message || 'Failed to load provider settings.');
+    els.providerList.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">Could not load provider settings.</td></tr>';
+});
 </script>
 {% endblock %}

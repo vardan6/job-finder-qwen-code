@@ -123,50 +123,9 @@ async def settings_index():
 
 
 @router.get("/llm", response_class=HTMLResponse)
-async def list_llm_providers(request: Request, db: Session = Depends(get_db)):
-    """List all LLM providers with their models"""
-    providers = db.query(LLMProvider).all()
-
-    # Merge with default providers
-    db_provider_names = {p.name for p in providers}
-    for name, default in DEFAULT_PROVIDERS.items():
-        if name not in db_provider_names:
-            # Create default provider
-            provider = LLMProvider(
-                name=name,
-                api_url=default["api_url"],
-                is_active=default["is_active"]
-            )
-            db.add(provider)
-            db.commit()
-            db.refresh(provider)
-            
-            # Add default models
-            for model_name in default["models"]:
-                model = LLMModel(
-                    provider_id=provider.id,
-                    model_name=model_name,
-                    display_name=model_name,
-                    is_default_for_provider=(model_name == default["models"][0]),
-                    is_active=True
-                )
-                db.add(model)
-            db.commit()
-            providers.append(provider)
-
-    # Load models for each provider
-    for provider in providers:
-        db.refresh(provider)  # This loads the models relationship
-
-    # Get current default provider
-    default_provider = get_default_provider(db)
-
-    return templates.TemplateResponse("settings/llm.html", {
-        "request": request,
-        "providers": providers,
-        "default_provider": default_provider,
-        "default_model": DEFAULT_LLM_MODEL
-    })
+async def list_llm_providers(request: Request):
+    """Render the canonical provider settings UI backed by the JSON AI config store."""
+    return templates.TemplateResponse("settings/llm.html", {"request": request})
 
 
 @router.post("/")

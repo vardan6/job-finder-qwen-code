@@ -3,3 +3,28 @@
 - 2026-05-30: Workflow bootstrap — linked shared agent controls and created local workflow state files for `/session-open`.
 - 2026-05-30: AI migration direction captured — documented the `remote-rover`-derived provider/chat/agent architecture as the canonical path for `job-finder`.
 - 2026-05-30: Grill session finalized — promoted the AI migration outcome into ADR 0001 for durable implementation guidance.
+- 2026-05-30: Port the `remote-rover` provider settings backend/UI into `job-finder` as the canonical LLM system — added canonical AI config/secret stores, JSON APIs, and the first API-driven provider settings page.
+- 2026-05-31: Reconnected `/api/chat` to persisted AI sessions — chat turns now save in `AISessionStore`, reload by `session_id`, and are covered by focused route tests.
+- 2026-05-31: Exposed saved AI sessions in `/chat` — the UI now lists, reloads, and switches persisted transcripts while preserving a quick new-chat reset.
+- 2026-05-31: Added active-session management controls in `/chat` — saved chats can now be renamed or archived directly from the session sidebar.
+- 2026-05-31: Added per-message retry in `/chat` — assistant turns can now replay the preceding user prompt through the active persisted session.
+- 2026-05-31: Added streamed chat transport in `/api/chat/stream` — assistant chunks now stream to the client while the final reply is still persisted into the saved session.
+- 2026-05-31: Switched `/chat` to streamed assistant rendering — the chat UI now consumes the stream incrementally and finalizes saved-session state from the terminal event.
+- 2026-05-31: Added focused streaming chat coverage — route tests now assert stream session events, final persisted transcripts, timeout handling, and saved-session reuse.
+- 2026-05-31: Added per-session source controls in `/chat` — saved sessions now expose editable source toggles that persist through the AI session API.
+- 2026-05-31: Added candidate attachment to AI sessions — saved chats can now attach one candidate, gate candidate-only sources, and send attached candidate context through chat requests.
+- 2026-05-31: Locked job-finder AI routing/capability contract — added canonical routing + capability constants, normalized provider capabilities, enforced session mode whitelist, and surfaced routing/capability metadata via AI settings APIs/UI.
+- 2026-05-31: Implemented initial job-finder AI tool surfaces — added `/api/ai/tools` registry + execution adapter for candidate/session/settings lookups and workspace read/write with mutation-policy gating.
+- 2026-05-31: Repointed chat execution to AI routing config — `/api/chat` and `/api/chat/stream` now resolve provider/model via `model_routing.general_chat` with fallback coverage in route tests.
+- 2026-05-31: Repointed document and candidate analysis to routing-purpose selection — `document_parser`, `job_analysis`, and skill extraction now use shared `document_analysis` / `candidate_analysis` routing with fallback-safe behavior and updated job-analysis coverage.
+- 2026-05-31: Add job/search-result surfaces and employer-facing context — expanded `/api/ai/tools` with candidate job and employer summary lookups plus focused route tests.
+- 2026-05-31: Add approval-aware mutation flows for non-file writes — added write-tool approval handshake on `/api/ai/tools/execute` with approval-required/approved path coverage.
+- 2026-05-31: Expand agent mode beyond the initial toolset — added candidate application lookup tool plus bounded limit validation coverage for AI tool execution routes.
+- 2026-05-31: Port the session-based AI chat shell with persisted sessions, streaming, retry, rename, archive, and provider override — added explicit `/api/chat` and `/api/chat/stream` routing-override tests and closed the Phase 1 parent checklist item.
+- 2026-05-31: Align the AI chat shell with `remote-rover` UX, including organized session/control layout and Enter-to-send composer behavior — consolidated `/chat` layout, restored Enter-to-send behavior, and added startup schema/logging fixes for stable chat loading.
+- 2026-05-31: Consolidated remote-rover parity gap review handoff — merged full LLM providers + AI chat missing-feature findings into `handoff-remote-rover-gap-review-2026-05-31.md`.
+- 2026-05-31: Add ordered fallback routing editor for `fallback_provider_ids` in LLM settings — routed per-purpose fallback ordering now supports add/remove/reorder in UI and persists through `/api/llm-settings`.
+- 2026-05-31: Add provider quick actions in settings table — implemented row-level enable/disable, provider health check probe, and set-default action for `general_chat` in `llm.html`.
+- 2026-05-31: Complete Phase 4 Remote-Rover Parity P0 (Core Controls) — added chat stop-stream (`AbortController` + streaming-only stop button) and archived session sidebar management with active/archived filtering and search.
+- 2026-05-31: Landed three Phase 5 parity slices — verified runtime-override routing toggle coverage, expanded provider templates, and added chat run-mode controls (`chat`/`agent`/`intent`/`planning_shell`) wired through chat APIs/session mode.
+- 2026-05-31: Complete Phase 5 Remote-Rover Parity P1 — added slash command local fallbacks, stream trace/tool activity + diagnostics blocks, reload recovery hinting, and suspended-run clarification cards in chat stream UX.

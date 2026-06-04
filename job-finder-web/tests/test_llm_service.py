@@ -14,11 +14,11 @@ from backend.services.llm_service import extract_json_from_response
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_llm_model(provider_name="ollama", model_name="llama3", api_url=None, api_key_encrypted=None):
+def make_llm_model(provider_name="ollama", model_name="llama3", api_url="http://localhost:11434", api_key_encrypted=None):
     """Create a mock LLMModel with a linked provider."""
     provider = MagicMock()
     provider.name = provider_name
-    provider.api_url = api_url or "http://localhost:11434"
+    provider.api_url = api_url
     provider.api_key_encrypted = api_key_encrypted
     provider.auth_method = "api_key"
 
@@ -124,6 +124,48 @@ class TestSendMessageTimeout:
                 from backend.services.llm_service import send_message
                 result = await send_message("hello", function_name="ai_chat", db=db)
                 assert result is None
+
+
+class TestCompletionKwargs:
+    def test_keeps_v1_api_base_for_openai_compatible_providers(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(
+            provider_name="nvidia_nim",
+            model_name="meta/llama3-70b-instruct",
+            api_url="https://integrate.api.nvidia.com/v1",
+            api_key_encrypted="encrypted-key",
+        )
+
+        with patch("backend.security.decrypt_data", return_value="secret"):
+            kwargs = _build_completion_kwargs(
+                model.provider,
+                model,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+
+        assert kwargs["api_base"] == "https://integrate.api.nvidia.com/v1"
+        assert kwargs["model"] == "nvidia_nim/meta/llama3-70b-instruct"
+
+    def test_uses_groq_default_base_and_raw_model_name(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(
+            provider_name="groq",
+            model_name="openai/gpt-oss-120b",
+            api_url=None,
+            api_key_encrypted="encrypted-key",
+        )
+
+        with patch("backend.security.decrypt_data", return_value="secret"):
+            kwargs = _build_completion_kwargs(
+                model.provider,
+                model,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+
+        assert kwargs["api_base"] == "https://api.groq.com/openai/v1"
+        assert kwargs["model"] == "openai/gpt-oss-120b"
 
 
 # ---------------------------------------------------------------------------

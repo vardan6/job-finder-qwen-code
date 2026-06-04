@@ -16,6 +16,9 @@ except ImportError:
 # Base directories
 BASE_DIR = Path(__file__).parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR.parent / "data"))
+AI_SETTINGS_PATH = Path(os.getenv("AI_SETTINGS_PATH", DATA_DIR / "ai-settings.json"))
+LLM_SECRETS_DB_PATH = Path(os.getenv("LLM_SECRETS_DB_PATH", DATA_DIR / "llm-secrets.sqlite3"))
+AI_SESSIONS_DB_PATH = Path(os.getenv("AI_SESSIONS_DB_PATH", DATA_DIR / "ai-sessions.sqlite3"))
 
 # Ensure data directories exist (quick check)
 for subdir in ["candidates", "cookies", "backups", "archive"]:
@@ -58,7 +61,7 @@ DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "ollama/llama3")
 # App Configuration
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 9001))  # Changed from 8000 to 9002
+PORT = int(os.getenv("PORT", 9004))  # Changed from 8000 to 9002
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "Asia/Yerevan")
 
 # LLM Timeouts (seconds) - prevents hangs when LLM is slow/unresponsive
