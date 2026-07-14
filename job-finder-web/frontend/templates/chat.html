@@ -372,6 +372,9 @@ textarea.addEventListener('keydown', function(event) {
         return;
     }
     if (event.key === 'Enter' && !event.shiftKey) {
+        if (isStreamingResponse) {
+            return;
+        }
         event.preventDefault();
         sendMessage(event);
     }
@@ -422,7 +425,11 @@ async function sendMessage(event) {
     event.preventDefault();
 
     if (isStreamingResponse) {
-        stopStreaming();
+        if (event && event.submitter === sendBtn) {
+            stopStreaming();
+        } else {
+            showValidation('The current response is still streaming. Keep typing, then send after it finishes, or click Stop.');
+        }
         return;
     }
 
@@ -1202,7 +1209,7 @@ function startNewChat() {
 }
 
 function setComposerState(isBusy) {
-    textarea.disabled = isBusy;
+    textarea.disabled = false;
     modelSelect.disabled = isBusy;
     modeSelect.disabled = isBusy;
     document.querySelectorAll('.chat-mode-btn').forEach((button) => {

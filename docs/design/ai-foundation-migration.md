@@ -119,6 +119,24 @@ Phase 1 agent mode should start with a narrow real tool catalog:
 
 `jobs/search_results` is intentionally out of the initial AI surface.
 
+## Agent runtime migration
+
+Agent mode should use `backend.ai_agent` as the model-facing runtime boundary.
+The typed registry owns model-visible tool contracts, JSON schemas, permission
+classes, scopes, and validation before handler execution. Direct HTTP tool
+execution through `backend.ai_tool_registry` may remain as a lower-level
+adapter while the server-side model-driven loop is built.
+
+The first model-visible read tools are:
+
+- `list_data_surfaces`
+- `candidate_skills_lookup`
+
+`list_data_surfaces` is the discovery tool for lazy context loading. It should
+return compact metadata about attached candidate data, chat history, workspace
+files, and redacted settings availability rather than loading full records into
+the prompt.
+
 ## Mutation policy
 
 Mutation policy should be configurable at the AI settings level.

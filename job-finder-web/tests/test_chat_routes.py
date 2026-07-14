@@ -1,10 +1,10 @@
 from __future__ import annotations
-
 from collections.abc import Iterator
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -693,6 +693,80 @@ def test_chat_stream_explicit_model_id_overrides_routing_primary(tmp_path, monke
     assert events[-1]["message"] == "Explicit stream"
 
 
+def test_chat_stream_explicit_model_id_falls_back_to_db_provider_when_config_match_lacks_credentials(
+    tmp_path,
+    monkeypatch,
+    db,
+) -> None:
+    monkeypatch.setenv("AI_SESSIONS_DB_PATH", str(tmp_path / "ai-sessions.sqlite3"))
+    settings_path = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("AI_SETTINGS_PATH", str(settings_path))
+    monkeypatch.setenv("LLM_SECRETS_DB_PATH", str(tmp_path / "llm-secrets.sqlite3"))
+
+    openai = LLMProvider(name="openai", api_url="https://db-openai.example/v1", is_active=True)
+    db.add(openai)
+    db.flush()
+    openai_model = LLMModel(provider_id=openai.id, model_name="gpt-test", display_name="GPT Test", is_active=True)
+    db.add(openai_model)
+    db.commit()
+
+    write_ai_settings(
+        settings_path,
+        {
+            "llm_providers": [
+                {
+                    "id": "provider-openai",
+                    "display_name": "OpenAI",
+                    "provider_type": "openai",
+                    "auth_mode": "stored_secret",
+                    "secret_ref": "MISSING_OPENAI_API_KEY",
+                    "base_url": "https://api.openai.com/v1",
+                    "model_id": "gpt-test",
+                    "enabled": True,
+                    "capabilities": ["chat"],
+                }
+            ],
+            "model_routing": {
+                "general_chat": {
+                    "primary_provider_id": "provider-openai",
+                    "fallback_provider_ids": [],
+                }
+            },
+        },
+    )
+
+    async def fake_stream_completion(**kwargs):
+        assert kwargs["stream"] is True
+        assert kwargs["provider"] == "openai"
+        assert kwargs["model"] == "gpt-test"
+
+        async def iterator():
+            yield {"choices": [{"delta": {"content": "DB route still works"}}]}
+
+        return iterator()
+
+    def fake_build_completion_kwargs(provider, selected_model, messages):
+        assert provider.api_url == "https://db-openai.example/v1"
+        assert not hasattr(provider, "api_key")
+        return {"messages": messages, "provider": provider.name, "model": selected_model.model_name}
+
+    monkeypatch.setattr("litellm.acompletion", fake_stream_completion)
+    monkeypatch.setattr("backend.services.llm_service._build_completion_kwargs", fake_build_completion_kwargs)
+
+    client = create_client(db)
+    with client.stream(
+        "POST",
+        "/api/chat/stream",
+        data={"model_id": str(openai_model.id), "message": "Use the DB model"},
+    ) as response:
+        assert response.status_code == 200
+        events = read_stream_events(response)
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["message"] == "DB route still works"
+    assert events[-1]["meta"]["selection_source"] == "explicit_model"
+
+
 def test_chat_stream_emits_trace_and_tool_activity_in_agent_mode(tmp_path, monkeypatch, db) -> None:
     monkeypatch.setenv("AI_SESSIONS_DB_PATH", str(tmp_path / "ai-sessions.sqlite3"))
     model = create_model(db)
@@ -815,6 +889,74 @@ def test_chat_stream_timeout_returns_error_event(tmp_path, monkeypatch, db) -> N
     assert [event["type"] for event in events] == ["session", "error"]
     assert events[-1]["message"].startswith("LLM did not respond within ")
     assert events[-1]["message"].endswith("Check that your provider is running and try again.")
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_disconnect_does_not_persist_orphaned_user_turn(tmp_path, monkeypatch, db) -> None:
+    monkeypatch.setenv("AI_SESSIONS_DB_PATH", str(tmp_path / "ai-sessions.sqlite3"))
+    model = create_model(db)
+    close_calls = {"count": 0}
+
+    async def fake_stream_completion(**kwargs):
+        assert kwargs["stream"] is True
+
+        class FakeStream:
+            def __init__(self) -> None:
+                self._chunks = iter(
+                    [
+                        {"choices": [{"delta": {"content": "Partial"}}]},
+                        {"choices": [{"delta": {"content": " reply"}}]},
+                    ]
+                )
+
+            async def __anext__(self):
+                try:
+                    return next(self._chunks)
+                except StopIteration as exc:
+                    raise StopAsyncIteration() from exc
+
+            async def aclose(self):
+                close_calls["count"] += 1
+
+        return FakeStream()
+
+    def fake_build_completion_kwargs(provider, selected_model, messages):
+        return {"messages": messages, "provider": provider.name, "model": selected_model.model_name}
+
+    class FakeRequest:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def is_disconnected(self) -> bool:
+            self.calls += 1
+            return self.calls > 1
+
+    monkeypatch.setattr("litellm.acompletion", fake_stream_completion)
+    monkeypatch.setattr("backend.services.llm_service._build_completion_kwargs", fake_build_completion_kwargs)
+
+    response = await chat_routes.chat_stream(
+        request=FakeRequest(),
+        model_id=model.id,
+        selected_provider_config_id="",
+        mode="general_chat",
+        message="Stop mid-stream",
+        session_id="",
+        conversation_history="[]",
+        db=db,
+    )
+
+    events: list[dict] = []
+    async for raw_event in response.body_iterator:
+        text = raw_event.decode("utf-8") if isinstance(raw_event, bytes) else str(raw_event)
+        for block in text.split("\n\n"):
+            block = block.strip()
+            if block.startswith("data: "):
+                events.append(json.loads(block[6:]))
+
+    assert [event["type"] for event in events] == ["session", "chunk"]
+    session_id = events[0]["session_id"]
+    assert get_ai_session_store().get_session(session_id) is None
+    assert close_calls["count"] == 1
 
 
 def test_chat_stream_reuses_existing_persisted_session(tmp_path, monkeypatch, db) -> None:

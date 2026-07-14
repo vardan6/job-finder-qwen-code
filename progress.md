@@ -28,3 +28,4 @@
 - 2026-05-31: Complete Phase 4 Remote-Rover Parity P0 (Core Controls) — added chat stop-stream (`AbortController` + streaming-only stop button) and archived session sidebar management with active/archived filtering and search.
 - 2026-05-31: Landed three Phase 5 parity slices — verified runtime-override routing toggle coverage, expanded provider templates, and added chat run-mode controls (`chat`/`agent`/`intent`/`planning_shell`) wired through chat APIs/session mode.
 - 2026-05-31: Complete Phase 5 Remote-Rover Parity P1 — added slash command local fallbacks, stream trace/tool activity + diagnostics blocks, reload recovery hinting, and suspended-run clarification cards in chat stream UX.
+- 2026-06-05: Add typed read-only tool definitions for `list_data_surfaces` and `candidate_skills_lookup` — added the `backend.ai_agent` schema/registry layer with validation tests.

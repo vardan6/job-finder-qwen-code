@@ -64,7 +64,15 @@
 - [x] Add in-flight stream recovery across reload/session switch
 - [x] Add approval/clarification interaction cards for suspended agent/planning runs
 
-## Phase 6 — Remote-Rover Parity P2 (UX Polish + System Niceties)
+## Phase 6 — Real Agent Runtime
+
+- [ ] Add read-only model-driven agent runtime with typed tools and trace events
+  - [x] Add typed read-only tool definitions for `list_data_surfaces` and `candidate_skills_lookup`
+  - [ ] Add compact `AIContextService` for agent mode while preserving plain chat behavior
+  - [ ] Route `run_mode=agent` through an agent loop for `/api/chat` and `/api/chat/stream`
+  - [ ] Enforce explicit provider tool-calling capability/fallback for agent mode
+
+## Phase 7 — Remote-Rover Parity P2 (UX Polish + System Niceties)
 
 - [ ] Add sortable provider registry table (name/type/status/capabilities)
 - [ ] Add routing-specific save/reload controls and status feedback
@@ -77,6 +85,6 @@
 - [ ] Add theme controls (light/dark/system) with persistence
 - [ ] Add tool discovery surface (`list_data_surfaces`) where domain-appropriate
 
-## Phase 7 — Optional Accessibility Extensions
+## Phase 8 — Optional Accessibility Extensions
 
 - [ ] Add TTS support (browser speech and/or local service integration)

@@ -176,7 +176,7 @@ def _selection_from_db_model(db: Session, model_id: int) -> RoutingSelection:
 
     provider_cfg = _match_config_provider_for_db_model(explicit_model.provider, explicit_model)
     if provider_cfg:
-        selection = _selection_from_provider_cfg(provider_cfg, source="explicit_model_config_match", require_credentials=False)
+        selection = _selection_from_provider_cfg(provider_cfg, source="explicit_model_config_match")
         if selection:
             return selection
 

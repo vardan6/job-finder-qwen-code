@@ -263,6 +263,15 @@ def _build_diagnostics_payload(session: dict, session_mode: str) -> dict:
     }
 
 
+async def _close_stream_if_possible(stream) -> None:
+    close_method = getattr(stream, "aclose", None)
+    if close_method is None:
+        return
+    result = close_method()
+    if asyncio.iscoroutine(result):
+        await result
+
+
 def _prepare_messages_from_history(
     session_store,
     session: dict,
@@ -416,6 +425,7 @@ def _get_or_create_session(
     model,
     configured_provider_id: str,
     mode: str,
+    initial_title: str = "",
 ) -> dict:
     clean_session_id = session_id.strip()
     session = session_store.get_session(clean_session_id) if clean_session_id else None
@@ -423,6 +433,7 @@ def _get_or_create_session(
         raise HTTPException(status_code=404, detail="AI session not found")
     if session is None:
         session = session_store.create_session(
+            title=initial_title or "New chat",
             provider_id=configured_provider_id or str(getattr(provider, "id", "")),
             mode=mode,
             meta={
@@ -622,6 +633,7 @@ async def clear_conversation():
 
 @router.post("/api/chat/stream")
 async def chat_stream(
+    request: Request,
     model_id: int | None = Form(default=None),
     selected_provider_config_id: str = Form(default=""),
     mode: str = Form(default="general_chat"),
@@ -663,11 +675,10 @@ async def chat_stream(
         model,
         resolved_provider_config_id,
         session_mode,
+        message,
     )
+    created_new_session = not session_id.strip()
     messages = _prepare_messages_from_history(session_store, session, conversation_history, message, db)
-
-    session_store.add_message(session["id"], role="user", content=message)
-    session_store.maybe_auto_title(session["id"], message)
 
     from backend.services.llm_service import _build_completion_kwargs
     kwargs = _build_completion_kwargs(provider, model, messages)
@@ -685,6 +696,18 @@ async def chat_stream(
         parts: list[str] = []
         stream_usage_metadata: dict[str, object] = {}
         stream_response_metadata: dict[str, object] = {}
+        stream = None
+        user_message_persisted = False
+        client_disconnected = False
+
+        def persist_user_message() -> None:
+            nonlocal user_message_persisted
+            if user_message_persisted:
+                return
+            session_store.add_message(session["id"], role="user", content=message)
+            session_store.maybe_auto_title(session["id"], message)
+            user_message_persisted = True
+
         try:
             yield f"data: {json.dumps({'type': 'session', 'session_id': session['id'], 'session': _session_payload(session_store.get_session(session['id'], include_messages=False) or session)})}\n\n"
 
@@ -693,6 +716,7 @@ async def chat_stream(
                 yield f"data: {json.dumps({'type': 'tool_activity', 'tool': 'session_context', 'status': 'started', 'message': 'Collecting candidate/session context'})}\n\n"
 
             if session_mode == "agent" and message.strip().lower().startswith("/plan"):
+                persist_user_message()
                 yield f"data: {json.dumps({'type': 'interaction_required', 'interaction': {'kind': 'clarification', 'title': 'Plan clarification needed', 'prompt': 'Confirm scope before executing the plan.', 'options': ['Use current session context', 'Limit to this message only']}})}\n\n"
                 return
 
@@ -704,6 +728,9 @@ async def chat_stream(
             )
 
             while True:
+                if await request.is_disconnected():
+                    client_disconnected = True
+                    break
                 try:
                     chunk = await asyncio.wait_for(stream.__anext__(), timeout=LLM_CHAT_TIMEOUT_SECONDS)
                 except StopAsyncIteration:
@@ -724,6 +751,9 @@ async def chat_stream(
                 if session_mode == "agent":
                     yield f"data: {json.dumps({'type': 'tool_activity', 'tool': 'llm_stream', 'status': 'running', 'message': f'Received {len(parts)} response chunk(s)'})}\n\n"
 
+            if client_disconnected:
+                return
+
             ai_message = "".join(parts).strip()
             if not ai_message:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Empty response from LLM'})}\n\n"
@@ -740,6 +770,7 @@ async def chat_stream(
                 "response_metadata": stream_response_metadata,
                 **selection_meta,
             }
+            persist_user_message()
             session_store.add_message(
                 session["id"],
                 role="assistant",
@@ -752,12 +783,21 @@ async def chat_stream(
             persisted_session = session_store.get_session(session["id"]) or session
             diagnostics = _build_diagnostics_payload(persisted_session, session_mode)
             yield f"data: {json.dumps({'type': 'done', 'message': ai_message, 'conversation': _serialize_conversation(persisted_session), 'session_id': session['id'], 'session': _session_payload(persisted_session), 'meta': response_meta, 'diagnostics': diagnostics})}\n\n"
+        except asyncio.CancelledError:
+            raise
         except asyncio.TimeoutError:
             yield f"data: {json.dumps({'type': 'error', 'message': f'LLM did not respond within {LLM_CHAT_TIMEOUT_SECONDS}s. Check that your provider is running and try again.'})}\n\n"
         except HTTPException:
             raise
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': _format_llm_runtime_error(exc)})}\n\n"
+        finally:
+            if stream is not None:
+                await _close_stream_if_possible(stream)
+            if not user_message_persisted and created_new_session:
+                persisted_session = session_store.get_session(session["id"])
+                if persisted_session and not persisted_session.get("messages"):
+                    session_store.purge_session(session["id"])
 
     return StreamingResponse(
         generate(),
