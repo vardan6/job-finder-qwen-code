@@ -1,0 +1,50 @@
+# Local agent/editor state
+.claude/
+.qwen/settings.json
+.qwen/*.orig
+
+# Local coding-agent workflow links/generated compatibility files
+.agents/
+.claude/skills/
+.codex/skills/
+.codex/hooks/
+.codex/hooks.json
+/CLAUDE.md
+/AGENTS.md
+/hooks
+
+# Python caches and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local environments and secrets
+.env
+venv/
+env/
+ENV/
+
+# Generated runtime files
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+data/
+logs/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup

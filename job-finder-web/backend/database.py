@@ -5,8 +5,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pathlib import Path
 
-# Database URL
-DATABASE_URL = "sqlite:///./data/jobs.db"
+# Database URL - use absolute path relative to this file to avoid cwd issues
+_DB_PATH = Path(__file__).parent.parent / "data" / "jobs.db"
+DATABASE_URL = f"sqlite:///{_DB_PATH}"
 
 # Create engine
 engine = create_engine(
@@ -72,27 +73,31 @@ def migrate_database():
         conn.close()
 
     if has_old_column:
-        # Migrate existing model_name from LLMProvider to LLMModel
         db = SessionLocal()
+        conn = engine.connect()
         try:
-            providers = db.query(LLMProvider).all()
-            for provider in providers:
-                if provider.model_name:
-                    # Create default model for this provider
-                    model = LLMModel(
-                        provider_id=provider.id,
-                        model_name=provider.model_name,
-                        display_name=provider.model_name,
-                        is_default_for_provider=True,
-                        is_active=True
-                    )
-                    db.add(model)
-
+            # Read legacy provider model names with raw SQL to avoid ORM shape mismatches.
+            legacy_rows = conn.execute(text("SELECT id, model_name FROM llm_providers")).fetchall()
+            for row in legacy_rows:
+                legacy_model_name = row[1]
+                if not legacy_model_name:
+                    continue
+                existing = db.query(LLMModel).filter(
+                    LLMModel.provider_id == row[0],
+                    LLMModel.model_name == legacy_model_name,
+                ).first()
+                if existing:
+                    continue
+                db.add(LLMModel(
+                    provider_id=row[0],
+                    model_name=legacy_model_name,
+                    display_name=legacy_model_name,
+                    is_default_for_provider=True,
+                    is_active=True,
+                ))
             db.commit()
 
-            # Remove the old model_name column (recreate table without it)
-            # For SQLite, we need to recreate the table
-            conn = engine.connect()
+            # Remove the old model_name column (SQLite table rebuild).
             conn.execute(text("""
                 CREATE TABLE llm_providers_new (
                     id INTEGER PRIMARY KEY,
@@ -104,25 +109,22 @@ def migrate_database():
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """))
-
-            # Copy data from old table
             conn.execute(text("""
                 INSERT INTO llm_providers_new (id, name, api_key_encrypted, api_url, is_global_default, is_active, created_at)
                 SELECT id, name, api_key_encrypted, api_url, is_global_default, is_active, created_at
                 FROM llm_providers
             """))
-
-            # Drop old table and rename new one
             conn.execute(text("DROP TABLE llm_providers"))
             conn.execute(text("ALTER TABLE llm_providers_new RENAME TO llm_providers"))
             conn.commit()
-            conn.close()
-
         except Exception as e:
             db.rollback()
             print(f"Migration warning: {e}")
         finally:
+            conn.close()
             db.close()
+
+    ensure_llm_provider_auth_columns()
 
     # Populate default models for providers that don't have any
     populate_default_models()
@@ -132,6 +134,31 @@ def migrate_database():
 
     # Populate default LLM function mappings
     populate_default_function_mappings()
+
+
+def ensure_llm_provider_auth_columns():
+    """Ensure llm_providers has OAuth/auth columns expected by the ORM model."""
+    conn = engine.connect()
+    try:
+        columns = [row[1] for row in conn.execute(text("PRAGMA table_info(llm_providers)")).fetchall()]
+        column_updates = [
+            ("auth_method", "ALTER TABLE llm_providers ADD COLUMN auth_method VARCHAR(50) DEFAULT 'api_key'"),
+            ("oauth_token_encrypted", "ALTER TABLE llm_providers ADD COLUMN oauth_token_encrypted TEXT"),
+            ("oauth_refresh_token_encrypted", "ALTER TABLE llm_providers ADD COLUMN oauth_refresh_token_encrypted TEXT"),
+            ("oauth_expires_at", "ALTER TABLE llm_providers ADD COLUMN oauth_expires_at DATETIME"),
+            ("oauth_subscription_type", "ALTER TABLE llm_providers ADD COLUMN oauth_subscription_type VARCHAR(50)"),
+        ]
+        changed = False
+        for column_name, ddl in column_updates:
+            if column_name in columns:
+                continue
+            conn.execute(text(ddl))
+            changed = True
+
+        if changed:
+            conn.commit()
+    finally:
+        conn.close()
 
 
 def populate_default_models():

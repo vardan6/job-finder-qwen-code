@@ -1,4 +1,4 @@
-<!-- AI Skill Parsing Result - Redesigned -->
+<!-- AI Skill Parsing Result -->
 {% if success %}
     <div class="alert alert-success">
         <i class="bi bi-check-circle"></i> {{ message }}
@@ -13,16 +13,26 @@
                 <p class="text-muted mb-3">
                     <i class="bi bi-info-circle"></i>
                     Extracted from: <strong>{{ documents | join(', ') }}</strong>
+                    <br>
+                    <i class="bi bi-arrow-repeat"></i> Mode: <strong>{{ parse_mode or 'merge' }}</strong>
+                    {% if parse_mode == 'overwrite' %}
+                        <span class="badge bg-danger ms-2">Will replace all existing skills</span>
+                    {% else %}
+                        {% if skipped_count %}
+                            <span class="badge bg-secondary ms-2">{{ skipped_count }} duplicates skipped</span>
+                        {% endif %}
+                    {% endif %}
                     <br>Check skills to save, uncheck to exclude. Click "Save" when ready.
                 </p>
 
                 <form id="saveParsedSkillsForm">
+                    <input type="hidden" name="parse_mode" value="{{ parse_mode or 'merge' }}">
                     <div class="table-responsive">
                         <table class="table table-hover">
                             <thead class="table-light">
                                 <tr>
                                     <th style="width: 50%">Skill Name</th>
-                                    <th style="width: 25%" class="text-center">Auto-Enabled</th>
+                                    <th style="width: 25%" class="text-center">Category</th>
                                     <th style="width: 25%" class="text-center">Save</th>
                                 </tr>
                             </thead>
@@ -34,15 +44,15 @@
                                     </td>
                                     <td class="text-center">
                                         {% if skill.category == 'required' %}
-                                            <span class="badge bg-success">Yes (Required)</span>
+                                            <span class="badge bg-success">Required</span>
                                         {% else %}
-                                            <span class="badge bg-secondary">No (Preferred)</span>
+                                            <span class="badge bg-secondary">Preferred</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-center">
                                         <div class="form-check d-flex justify-content-center">
                                             <input type="checkbox" name="skills" class="form-check-input"
-                                                   value='{"skill_name": "{{ skill.skill_name }}", "is_enabled": {% if skill.category == 'required' %}true{% else %}false{% endif %}}'
+                                                   value='{"skill_name": "{{ skill.skill_name }}", "is_enabled": true, "category": "{{ skill.category }}"}'
                                                    checked>
                                         </div>
                                     </td>
@@ -66,13 +76,13 @@
     {% else %}
         <div class="alert alert-warning">
             <i class="bi bi-exclamation-triangle"></i>
-            No new skills found. All extracted skills already exist in your list.
+            No new skills found. {% if parse_mode == 'merge' %}All extracted skills already exist in your list.{% else %}No skills were extracted from the documents.{% endif %}
         </div>
     {% endif %}
 
-    <!-- Existing Skills Summary -->
-    {% if existing_skills %}
-        <div class="card shadow-sm border-0">
+    <!-- Existing Skills Summary (only in merge mode) -->
+    {% if existing_skills and parse_mode != 'overwrite' %}
+        <div class="card shadow-sm border-0 mt-3">
             <div class="card-header">
                 <i class="bi bi-list-check"></i> Your Current Skills ({{ existing_skills|length }})
             </div>
@@ -104,6 +114,8 @@ function saveParsedSkills() {
     }
 
     const skillsToSave = Array.from(checkboxes).map(cb => JSON.parse(cb.value));
+    const parseModeForm = document.querySelector('#saveParsedSkillsForm input[name="parse_mode"]');
+    const parseMode = parseModeForm ? parseModeForm.value : 'merge';
 
     const formData = new FormData();
     formData.append('skills_data', JSON.stringify(skillsToSave));
@@ -121,7 +133,7 @@ function saveParsedSkills() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Close modal and reload
+            // Close skills modal and reload
             const modalEl = document.getElementById('skillsModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if (modal) {
@@ -142,7 +154,7 @@ function saveParsedSkills() {
 }
 
 function discardParsedSkills() {
-    // Reload the modal content
+    // Just close the parse result by reloading the modal content
     location.reload();
 }
 </script>

@@ -28,112 +28,11 @@
 </div>
 
 <script>
-// Model selector change handler
-function onModelSelectorChange(functionName, modelId) {
-    const statusSpan = document.getElementById(`status-${functionName}`);
-    
-    // Show loading state
-    statusSpan.innerHTML = '<span class="badge bg-secondary"><i class="bi bi-hourglass-split"></i> Saving...</span>';
-    
-    // Save selection to backend
-    fetch(`/api/llm/function/${functionName}/model`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({model_id: modelId ? parseInt(modelId) : null})
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // Update status badge
-            if (modelId) {
-                statusSpan.innerHTML = `
-                    <span class="badge bg-success">
-                        <i class="bi bi-check-circle"></i> Ready
-                    </span>
-                `;
-            } else {
-                statusSpan.innerHTML = `
-                    <span class="badge bg-warning text-dark">
-                        <i class="bi bi-exclamation-triangle"></i> Not configured
-                    </span>
-                `;
-            }
-        } else {
-            statusSpan.innerHTML = `
-                <span class="badge bg-danger">
-                    <i class="bi bi-x-circle"></i> Error
-                </span>
-            `;
-            console.error('Failed to save model selection:', data);
-        }
-    })
-    .catch(error => {
-        statusSpan.innerHTML = `
-            <span class="badge bg-danger">
-                <i class="bi bi-x-circle"></i> Error
-            </span>
-        `;
-        console.error('Error saving model selection:', error);
-    });
-}
+window.onModelSelectorChange = window.onModelSelectorChange || function(functionName, modelId) {
+    return window.JobFinder.onModelSelectorChange(functionName, modelId);
+};
 
-// Load models via API if not provided
-function loadModelsForWidget(widget) {
-    const functionName = widget.getAttribute('data-function');
-    const selectElement = widget.querySelector('select');
-    const statusElement = document.getElementById(`status-${functionName}`);
-    
-    // Get currently selected model ID from status badge data
-    const currentModelId = statusElement?.getAttribute('data-model-id');
-    
-    if (!selectElement || selectElement.options.length > 1) {
-        return; // Already loaded or no select element
-    }
-    
-    // Fetch models from API
-    fetch('/api/llm/models')
-        .then(response => response.json())
-        .then(data => {
-            // Clear and rebuild options
-            selectElement.innerHTML = '<option value="">-- Select Model --</option>';
-            
-            // Populate with providers and models
-            data.providers.forEach(provider => {
-                if (provider.models && provider.models.length > 0) {
-                    const optgroup = document.createElement('optgroup');
-                    optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
-                    
-                    provider.models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.id;
-                        option.textContent = model.display_name || model.name;
-                        if (model.is_default) {
-                            option.textContent += ' (default)';
-                        }
-                        // Select the current model if it matches
-                        if (currentModelId && model.id == currentModelId) {
-                            option.selected = true;
-                        }
-                        optgroup.appendChild(option);
-                    });
-                    
-                    selectElement.appendChild(optgroup);
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Error loading models:', error);
-            selectElement.innerHTML = '<option value="">Error loading models</option>';
-        });
-}
-
-// Initialize all model selectors on page load
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
-});
-
-// Also initialize on HTMX content load (for dynamically loaded content)
-document.addEventListener('htmx:afterSwap', function(event) {
-    event.target.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
-});
+window.loadModelsForWidget = window.loadModelsForWidget || function(widget) {
+    return window.JobFinder.loadModelsForWidget(widget);
+};
 </script>

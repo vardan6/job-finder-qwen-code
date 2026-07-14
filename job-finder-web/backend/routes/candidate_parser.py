@@ -69,7 +69,7 @@ async def parse_job_titles(
     try:
         body = await request.json()
         document_ids = body.get("document_ids", [])
-    except:
+    except (ValueError, KeyError):
         document_ids = []
 
     # Parse selected or all documents (native async)
@@ -111,7 +111,7 @@ async def save_job_titles(
     # Parse JSON body
     try:
         body = await request.json()
-    except:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     job_titles_data = body.get("job_titles", [])
@@ -175,7 +175,7 @@ async def add_job_title(
     
     try:
         body = await request.json()
-    except:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     title = body.get("title", "").strip()
@@ -235,7 +235,7 @@ async def bulk_save_job_titles(
     
     try:
         body = await request.json()
-    except:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     job_titles_data = body.get("job_titles", [])
@@ -322,7 +322,7 @@ async def update_job_title(
     
     try:
         body = await request.json()
-    except:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     # Update fields

@@ -28,16 +28,16 @@ PLATFORM_LOGIN_URLS = {
 }
 
 
+VALID_PLATFORMS = {"linkedin", "glassdoor", "indeed"}
+
+
 def _get_cookie_file_path(candidate: Candidate, platform: str) -> Path:
-    return Path(f"data/cookies/{candidate.uuid}_{platform}.enc")
+    if platform not in VALID_PLATFORMS:
+        raise ValueError(f"Invalid platform: {platform}")
+    from backend.config import DATA_DIR
+    return DATA_DIR / "cookies" / f"{candidate.uuid}_{platform}.enc"
 
 
-def _to_bytes(value) -> bytes:
-    if isinstance(value, bytes):
-        return value
-    if isinstance(value, str):
-        return value.encode()
-    raise ValueError("Unsupported encrypted cookie format")
 
 
 def _normalize_cookies(cookies_raw):
@@ -88,7 +88,7 @@ def _upsert_platform_account(
 def _persist_cookie_file(candidate: Candidate, platform: str, cookies: list) -> Path:
     cookies_path = _get_cookie_file_path(candidate, platform)
     cookies_path.parent.mkdir(parents=True, exist_ok=True)
-    cookies_path.write_bytes(encrypt_data(json.dumps(cookies)))
+    cookies_path.write_text(encrypt_data(json.dumps(cookies)))
     return cookies_path
 
 
@@ -220,7 +220,7 @@ async def test_account(request: Request, candidate_id: int, account_id: int, db:
             raise HTTPException(status_code=404, detail="Candidate not found")
 
         # Decrypt cookies
-        payload = decrypt_json(_to_bytes(account.cookies_encrypted))
+        payload = decrypt_json(account.cookies_encrypted)
         state = _normalize_storage_state(payload)
         cookies = state["cookies"]
         
@@ -291,7 +291,7 @@ async def get_cookies(candidate_id: int, account_id: int, db: Session = Depends(
         return JSONResponse({"success": False, "message": "No cookies stored"})
     
     try:
-        payload = decrypt_json(_to_bytes(account.cookies_encrypted))
+        payload = decrypt_json(account.cookies_encrypted)
         state = _normalize_storage_state(payload)
         cookies = state["cookies"]
         return JSONResponse({"success": True, "cookies": cookies})

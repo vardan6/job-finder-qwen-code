@@ -2,18 +2,23 @@
 Job Routes - Job search, listing, and management
 """
 import asyncio
+import json
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.config import DATA_DIR
 from backend.models.candidate import Candidate
 from backend.models.job import Job
+from backend.models.llm_provider import LLMProvider
+from backend.security import safe_resolve_path
 from backend.services.job_search import run_job_search, SearchConfig
 
 logger = logging.getLogger(__name__)
@@ -85,6 +90,111 @@ async def search_jobs_form(
     )
 
 
+@router.get("/api/candidates/{candidate_id}/search-config")
+async def get_candidate_search_config(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get auto-generated search configuration for a candidate.
+    
+    Returns search parameters built from candidate's profile:
+    - Query: Combined from active job titles
+    - Location: From candidate profile
+    - Platforms: Only connected/active accounts
+    - AI analysis: Based on LLM provider configuration
+    """
+    # Get candidate
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    # Build query from active job titles
+    job_titles = [jt.title for jt in candidate.job_titles if jt.is_active]
+    
+    # Fallback to current role if no job titles
+    if not job_titles:
+        job_titles = [candidate.current_role] if candidate.current_role else ["Software Engineer"]
+    
+    # Construct query - use comma-separated for broad search
+    query = ", ".join(job_titles[:5])  # Limit to 5 titles to avoid URL length issues
+    
+    # Get location from candidate preferences or default
+    location = candidate.location or "United States"
+    
+    # Get remote-only preference
+    remote_only = False
+    if candidate.preferences:
+        remote_only = candidate.preferences.remote_only or False
+    
+    # Get connected platforms (only active accounts)
+    connected_platforms = []
+    platform_status = []
+    
+    for platform in ["linkedin", "glassdoor"]:
+        account = next(
+            (acc for acc in candidate.platform_accounts if acc.platform == platform and acc.status == "active"),
+            None
+        )
+        if account:
+            connected_platforms.append(platform)
+            platform_status.append({
+                "platform": platform,
+                "connected": True,
+                "status": "active",
+            })
+        else:
+            platform_status.append({
+                "platform": platform,
+                "connected": False,
+                "status": "disconnected",
+            })
+    
+    # Default to all platforms if none connected (user will need to connect)
+    if not connected_platforms:
+        connected_platforms = ["linkedin", "glassdoor"]
+    
+    # Check if LLM is configured for AI analysis
+    llm_configured = db.query(LLMProvider).filter(
+        LLMProvider.is_global_default == True
+    ).first() is not None
+    
+    # If no global default, check if any provider has API key
+    if not llm_configured:
+        llm_configured = db.query(LLMProvider).filter(
+            LLMProvider.api_key_encrypted.isnot(None)
+        ).first() is not None
+    
+    # Get skills count for AI analysis info
+    enabled_skills = [s for s in candidate.skills if s.is_enabled]
+    
+    # Get max jobs from preferences or default
+    max_jobs = 20
+    if candidate.preferences:
+        # Could add a max_jobs field to preferences in the future
+        pass
+    
+    # Return HTML partial for HTMX swapping
+    return templates.TemplateResponse("jobs/search_config_partial.html", {
+        "request": request,
+        "candidate_id": candidate_id,
+        "candidate_name": candidate.name,
+        "query": query,
+        "location": location,
+        "remote_only": remote_only,
+        "platforms": connected_platforms,
+        "platform_status": platform_status,
+        "max_jobs": max_jobs,
+        "analyze_with_ai": llm_configured,
+        "llm_configured": llm_configured,
+        "job_titles": job_titles,
+        "job_titles_count": len(job_titles),
+        "skills_count": len(enabled_skills),
+        "has_active_platforms": len(connected_platforms) > 0,
+    })
+
+
 @router.post("/search", response_class=HTMLResponse)
 async def perform_job_search(
     request: Request,
@@ -94,12 +204,13 @@ async def perform_job_search(
     location: str = Form(""),
     platforms: list = Form(default_factory=lambda: ["linkedin", "glassdoor"]),
     max_jobs: int = Form(20),
-    analyze: bool = Form(False),
-    headless: bool = Form(False),
+    analyze: str = Form("false"),  # Comes as 'true' or 'false' string
+    headless: str = Form("false"),  # Comes as 'true' or 'false' string
+    remote_only: str = Form("false"),  # Comes as 'true' or 'false' string (for override)
 ):
     """
     Perform a job search across platforms.
-    
+
     This is a long-running operation that:
     1. Acquires global search lock
     2. Checks rate limits
@@ -108,6 +219,10 @@ async def perform_job_search(
     5. Runs AI analysis (if enabled)
     6. Saves to database
     """
+    # Parse string booleans
+    analyze_bool = analyze.lower() == "true"
+    headless_bool = headless.lower() == "true"
+    
     # Validate candidate
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
@@ -119,7 +234,7 @@ async def perform_job_search(
             },
             status_code=200,
         )
-    
+
     # Check if search is already running
     from backend.services.search_lock import is_search_running
     if is_search_running():
@@ -145,9 +260,10 @@ async def perform_job_search(
 
         logger.info(
             f"Starting job search for candidate {candidate_id}: "
-            f"query='{query}', location='{location}', platforms={platforms}"
+            f"query='{query}', location='{location}', platforms={platforms}, "
+            f"analyze={analyze_bool}, headless={headless_bool}"
         )
-        
+
         # Run the search (async)
         result = await run_job_search(
             db=db,
@@ -156,8 +272,8 @@ async def perform_job_search(
             location=location,
             platforms=platforms,
             max_jobs=max_jobs,
-            analyze=analyze,
-            headless=headless,
+            analyze=analyze_bool,
+            headless=headless_bool,
         )
         
         # Prepare result summary
@@ -192,6 +308,161 @@ async def perform_job_search(
             },
             status_code=200,
         )
+
+
+@router.post("/search/start")
+async def start_job_search_stream(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    candidate_id: int = Form(...),
+    query: str = Form(...),
+    location: str = Form(""),
+    platforms: list = Form(default_factory=lambda: ["linkedin", "glassdoor"]),
+    max_jobs: int = Form(20),
+    analyze: str = Form("false"),
+    headless: str = Form("false"),
+):
+    """
+    Start a job search and return a search_id for SSE progress streaming.
+    The client should then connect to /search/stream/{search_id}.
+    """
+    from backend.services.search_progress import create_progress_queue
+    from backend.services.search_lock import is_search_running
+
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        return JSONResponse({"error": f"Candidate {candidate_id} not found"}, status_code=404)
+
+    if is_search_running():
+        return JSONResponse({"error": "Another search is already in progress. Please wait."}, status_code=409)
+
+    # Normalize platforms
+    if isinstance(platforms, str):
+        platforms = [platforms]
+    else:
+        platforms = [p for p in platforms if isinstance(p, str) and p.strip()] or ["linkedin", "glassdoor"]
+
+    analyze_bool = analyze.lower() == "true"
+    headless_bool = headless.lower() == "true"
+
+    search_id = str(uuid.uuid4())
+    # Create queue BEFORE the background task starts so the SSE endpoint can connect immediately
+    create_progress_queue(search_id)
+
+    background_tasks.add_task(
+        _run_search_with_progress,
+        search_id,
+        candidate_id,
+        query,
+        location,
+        platforms,
+        max_jobs,
+        analyze_bool,
+        headless_bool,
+    )
+
+    return JSONResponse({"search_id": search_id})
+
+
+@router.get("/search/stream/{search_id}")
+async def stream_search_progress(search_id: str, request: Request):
+    """
+    SSE endpoint that streams real-time progress for a running job search.
+    Connect immediately after POST /search/start.
+    """
+    from backend.services.search_progress import get_progress_queue, remove_progress_queue
+
+    # Brief wait in case the background task hasn't registered the queue yet
+    queue = get_progress_queue(search_id)
+    if not queue:
+        await asyncio.sleep(0.3)
+        queue = get_progress_queue(search_id)
+
+    if not queue:
+        return JSONResponse({"error": "Search not found"}, status_code=404)
+
+    async def generate():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=30)
+                except asyncio.TimeoutError:
+                    # SSE keepalive comment (browsers ignore lines starting with ':')
+                    yield ": keepalive\n\n"
+                    continue
+
+                if msg is None:
+                    # Sentinel: search finished
+                    yield "data: [DONE]\n\n"
+                    break
+
+                if isinstance(msg, dict):
+                    yield f"data: {json.dumps(msg)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'msg': str(msg)})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            remove_progress_queue(search_id)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+async def _run_search_with_progress(
+    search_id: str,
+    candidate_id: int,
+    query: str,
+    location: str,
+    platforms: list,
+    max_jobs: int,
+    analyze: bool,
+    headless: bool,
+):
+    """Background task: run the search and push progress messages to the SSE queue."""
+    from backend.services.search_progress import get_progress_queue
+    from backend.database import SessionLocal
+
+    queue = get_progress_queue(search_id)
+
+    def push(msg: str) -> None:
+        if queue:
+            queue.put_nowait({"msg": msg})
+
+    db = SessionLocal()
+    result_dict = None
+    try:
+        result = await run_job_search(
+            db=db,
+            candidate_id=candidate_id,
+            query=query,
+            location=location,
+            platforms=platforms,
+            max_jobs=max_jobs,
+            analyze=analyze,
+            headless=headless,
+            progress_callback=push,
+        )
+        result_dict = result.to_dict()
+    except Exception as e:
+        logger.error(f"Streamed search {search_id} failed: {e}")
+        push(f"Fatal error: {e}")
+    finally:
+        db.close()
+        # Push result summary then sentinel
+        if queue:
+            queue.put_nowait({"done": True, "result": result_dict})
+            queue.put_nowait(None)  # sentinel to close the SSE stream
 
 
 @router.post("/search/async")
@@ -299,9 +570,14 @@ async def view_job(
     
     # Load description from file if available
     description = None
-    if job.description_path and Path(job.description_path).exists():
-        description = Path(job.description_path).read_text()
-    elif job.description_snippet:
+    if job.description_path:
+        try:
+            desc_path = safe_resolve_path(job.description_path, DATA_DIR)
+            if desc_path.exists():
+                description = desc_path.read_text()
+        except ValueError:
+            description = None
+    if not description and job.description_snippet:
         description = job.description_snippet
     
     # Get AI analysis if available
@@ -365,10 +641,24 @@ async def get_rate_limit_status(
     platform: str,
     db: Session = Depends(get_db),
 ):
-    """Get rate limit status for a platform"""
+    """Get rate limit status and scraper health for a platform"""
     from backend.services.rate_limiter import get_rate_limiter
-    
+    from backend.services.scraper_health import get_platform_health
+
     rate_limiter = get_rate_limiter()
     status = rate_limiter.get_status(platform)
-    
+
+    # Attach scraper health data so callers can see zero-result streaks
+    health = get_platform_health(platform)
+    status["scraper_health"] = health  # None if platform has never been scraped
+
     return status
+
+
+@router.get("/api/scraper-health")
+async def get_all_scraper_health(
+    db: Session = Depends(get_db),
+):
+    """Get health summary for all scraped platforms"""
+    from backend.services.scraper_health import get_health_summary
+    return get_health_summary()

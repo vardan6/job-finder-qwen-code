@@ -98,9 +98,9 @@ def refresh_claude_code_token(refresh_token: str) -> Tuple[Optional[str], Option
             if profile_response.status_code == 200:
                 profile_data = profile_response.json()
                 subscription_type = profile_data.get('subscriptionType', 'unknown')
-        except:
+        except Exception:
             pass
-        
+
         return access_token, new_refresh_token, expires_at_ms, subscription_type
         
     except Exception as e:

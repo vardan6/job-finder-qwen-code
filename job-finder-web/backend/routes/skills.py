@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from pathlib import Path
 import json
+import logging
 
 from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.supporting import CandidateSkill, CandidatePreferences
 from backend.models.document import CandidateDocument, LLMFunctionMapping
 from backend.services.llm_service import extract_skills_from_text
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/candidates/{candidate_id}/skills", tags=["skills"])
 
@@ -267,10 +270,10 @@ async def parse_skills_from_documents(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    # Get documents with parsed content
+    # Get documents - include all active documents of relevant types
+    # Don't require parse_status="completed" since we'll parse content directly
     documents = db.query(CandidateDocument).filter(
         CandidateDocument.candidate_id == candidate_id,
-        CandidateDocument.parse_status == "completed",
         CandidateDocument.is_active == True,
         CandidateDocument.document_type.in_(["profile", "resume", "job_titles"])
     ).all()
@@ -280,7 +283,7 @@ async def parse_skills_from_documents(
             "request": request,
             "candidate": candidate,
             "success": False,
-            "message": "No parsed documents found. Upload and parse documents first.",
+            "message": "No documents found. Upload profile, resume, or job titles documents first.",
             "skills": [],
             "existing_skills": []
         })
@@ -295,15 +298,16 @@ async def parse_skills_from_documents(
     # Read document content from files
     all_content = []
     from pathlib import Path
-    
+    from backend.config import DATA_DIR
+
     for doc in documents:
         try:
-            file_path = Path("data") / doc.file_path
+            file_path = DATA_DIR / doc.file_path
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
-                all_content.append(content)
+                all_content.append(f"=== {doc.filename} ===\n{content}")
         except Exception as e:
-            print(f"Error reading {doc.filename}: {e}")
+            logger.warning(f"Error reading {doc.filename}: {e}")
             continue
 
     if not all_content:
@@ -311,27 +315,32 @@ async def parse_skills_from_documents(
             "request": request,
             "candidate": candidate,
             "success": False,
-            "message": "No parseable content found in documents.",
+            "message": "Could not read document content. Please re-upload the files.",
             "skills": [],
             "existing_skills": []
         })
 
     combined_content = "\n\n".join(all_content)
+    logger.info(f"Parsing skills from {len(documents)} documents ({len(combined_content)} chars)")
 
     # Extract skills using AI (native async)
     try:
+        logger.info("Calling AI skill extraction...")
         # Pass db session for LLM model lookup
         extracted_skills = await extract_skills_from_text(combined_content, db)
+        logger.info(f"AI extracted {len(extracted_skills)} skills")
 
         # Filter out duplicates and prepare skills
         new_skills = []
         for skill_data in extracted_skills:
             skill_name = skill_data.get("skill", "").strip()
             if not skill_name:
+                logger.debug(f"Skipping skill with empty name: {skill_data}")
                 continue
 
             # Skip if already exists
             if skill_name.lower() in existing_names:
+                logger.debug(f"Skipping existing skill: {skill_name}")
                 continue
 
             new_skills.append({
@@ -340,6 +349,8 @@ async def parse_skills_from_documents(
                 "years_experience": skill_data.get("years_experience"),
                 "source_document_id": documents[0].id if documents else None
             })
+
+        logger.info(f"Found {len(new_skills)} new skills to add")
 
         return templates.TemplateResponse("skills/parse_result.html", {
             "request": request,
@@ -355,8 +366,7 @@ async def parse_skills_from_documents(
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error(f"AI parsing failed: {e}", exc_info=True)
         return templates.TemplateResponse("skills/parse_result.html", {
             "request": request,
             "candidate": candidate,
@@ -378,11 +388,11 @@ async def save_parsed_skills(
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
     try:
         skills = json.loads(skills_data)
         saved_count = 0
-        
+
         for skill_data in skills:
             # Check if already exists
             existing = db.query(CandidateSkill).filter(
@@ -390,7 +400,7 @@ async def save_parsed_skills(
                 CandidateSkill.skill_name.ilike(skill_data["skill_name"].strip()),
                 CandidateSkill.is_active == True
             ).first()
-            
+
             if not existing:
                 skill = CandidateSkill(
                     candidate_id=candidate_id,
@@ -402,15 +412,177 @@ async def save_parsed_skills(
                 )
                 db.add(skill)
                 saved_count += 1
-        
+
         db.commit()
-        
+
         return JSONResponse({
             "success": True,
             "message": f"{saved_count} skill(s) saved",
             "saved_count": saved_count
         })
-        
+
     except Exception as e:
         db.rollback()
         return JSONResponse({"success": False, "message": str(e)}, status_code=400)
+
+
+@router.post("/parse-with-selection", response_class=HTMLResponse)
+async def parse_skills_with_file_selection(
+    request: Request,
+    candidate_id: int,
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Parse skills from selected files with merge/overwrite mode.
+    
+    Expects JSON payload:
+    {
+        "file_ids": [1, 2, 3],
+        "parse_mode": "merge" | "overwrite"
+    }
+    """
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    file_ids = payload.get("file_ids", [])
+    parse_mode = payload.get("parse_mode", "merge")
+
+    if not file_ids:
+        return templates.TemplateResponse("skills/parse_result.html", {
+            "request": request,
+            "candidate": candidate,
+            "success": False,
+            "message": "No files selected for parsing",
+            "skills": [],
+            "existing_skills": []
+        })
+
+    # Get selected documents
+    documents = db.query(CandidateDocument).filter(
+        CandidateDocument.id.in_(file_ids),
+        CandidateDocument.candidate_id == candidate_id,
+        CandidateDocument.is_active == True
+    ).all()
+
+    if not documents:
+        return templates.TemplateResponse("skills/parse_result.html", {
+            "request": request,
+            "candidate": candidate,
+            "success": False,
+            "message": "Selected files not found",
+            "skills": [],
+            "existing_skills": []
+        })
+
+    # Get existing skills
+    existing_skills = db.query(CandidateSkill).filter(
+        CandidateSkill.candidate_id == candidate_id,
+        CandidateSkill.is_active == True
+    ).all()
+    existing_names = {s.skill_name.lower().strip() for s in existing_skills}
+
+    # Read document content from files
+    all_content = []
+    from backend.config import DATA_DIR
+
+    for doc in documents:
+        try:
+            file_path = DATA_DIR / doc.file_path
+            if file_path.exists():
+                content = file_path.read_text(encoding="utf-8")
+                all_content.append(f"=== {doc.filename} ===\n{content}")
+        except Exception as e:
+            logger.warning(f"Error reading {doc.filename}: {e}")
+            continue
+
+    if not all_content:
+        return templates.TemplateResponse("skills/parse_result.html", {
+            "request": request,
+            "candidate": candidate,
+            "success": False,
+            "message": "Could not read content from selected files",
+            "skills": [],
+            "existing_skills": []
+        })
+
+    combined_content = "\n\n".join(all_content)
+    logger.info(f"Parsing skills from {len(documents)} selected files ({len(combined_content)} chars)")
+    logger.info(f"Parse mode: {parse_mode}")
+
+    # Extract skills using AI
+    try:
+        logger.info("Calling AI skill extraction...")
+        extracted_skills = await extract_skills_from_text(combined_content, db)
+        logger.info(f"AI extracted {len(extracted_skills)} skills")
+
+        # Prepare skills based on mode
+        new_skills = []
+        skipped_count = 0
+
+        for skill_data in extracted_skills:
+            skill_name = skill_data.get("skill", "").strip()
+            if not skill_name:
+                continue
+
+            # Check if already exists
+            if skill_name.lower() in existing_names:
+                skipped_count += 1
+                logger.debug(f"Skipping existing skill: {skill_name}")
+                continue
+
+            new_skills.append({
+                "skill_name": skill_name,
+                "category": skill_data.get("category", "preferred"),
+                "years_experience": skill_data.get("years_experience"),
+                "source_document_id": documents[0].id if documents else None,
+                "is_enabled": True
+            })
+
+        logger.info(f"Found {len(new_skills)} new skills to add ({skipped_count} existing skipped)")
+
+        # If overwrite mode, delete existing skills first
+        if parse_mode == "overwrite":
+            logger.info(f"Overwrite mode: Deleting {len(existing_skills)} existing skills")
+            db.query(CandidateSkill).filter(
+                CandidateSkill.candidate_id == candidate_id,
+                CandidateSkill.is_active == True
+            ).update({"is_active": False})
+            db.commit()
+
+            # All extracted skills are now "new"
+            for skill_data in extracted_skills:
+                skill_name = skill_data.get("skill", "").strip()
+                if not skill_name:
+                    continue
+                new_skills.append({
+                    "skill_name": skill_name,
+                    "category": skill_data.get("category", "preferred"),
+                    "years_experience": skill_data.get("years_experience"),
+                    "source_document_id": documents[0].id if documents else None,
+                    "is_enabled": True
+                })
+
+        return templates.TemplateResponse("skills/parse_result.html", {
+            "request": request,
+            "candidate": candidate,
+            "success": True,
+            "message": f"Found {len(new_skills)} skills from AI parsing ({parse_mode} mode)",
+            "skills": new_skills,
+            "existing_skills": [],  # Empty in overwrite mode since we deleted them
+            "documents": [doc.filename for doc in documents],
+            "parse_mode": parse_mode,
+            "skipped_count": skipped_count if parse_mode == "merge" else 0
+        })
+
+    except Exception as e:
+        logger.error(f"AI parsing failed: {e}", exc_info=True)
+        return templates.TemplateResponse("skills/parse_result.html", {
+            "request": request,
+            "candidate": candidate,
+            "success": False,
+            "message": f"AI parsing failed: {str(e)}",
+            "skills": [],
+            "existing_skills": []
+        })

@@ -1,4 +1,4 @@
-<!-- Skills Management Modal - Redesigned -->
+<!-- Skills Management Modal - Integrated Design -->
 <div class="modal fade" id="skillsModal" tabindex="-1" aria-labelledby="skillsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -24,21 +24,117 @@
                             <button class="btn btn-success" onclick="showAddSkillRow()">
                                 <i class="bi bi-plus-circle"></i> Add
                             </button>
-                            <button class="btn btn-primary"
-                                    hx-post="/candidates/{{ candidate.id }}/skills/parse"
-                                    hx-target="#skillsModalBody"
-                                    hx-swap="innerHTML">
-                                <i class="bi bi-robot"></i> Parse
+                            <button class="btn btn-primary" onclick="showParsePanel()">
+                                <i class="bi bi-file-earmark-check"></i> Parse from Files
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Inline Model Selector -->
-                <div class="mb-3">
-                    {% set function_name = 'skill_extractor' %}
-                    {% set selected_model_id = skill_extractor_model_id %}
-                    {% include "components/model_selector.html" %}
+                <!-- Parse Panel (Collapsible) -->
+                <div id="parsePanel" class="collapse mb-4">
+                    <div class="card card-body bg-light border-0">
+                        <h6 class="mb-3"><i class="bi bi-magic"></i> Parse Skills from Documents</h6>
+                        
+                        <!-- Model Selector -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-cpu"></i> AI Model
+                            </label>
+                            <div class="model-selector-widget" data-function="skill_extractor">
+                                <select class="form-select"
+                                        onchange="onModelSelectorChange('skill_extractor', this.value)"
+                                        id="model-selector-skill_extractor">
+                                    <option value="">-- Select Model --</option>
+                                </select>
+                                <span class="model-selector-status ms-2" id="status-skill_extractor">
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-hourglass-split"></i> Loading...
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="form-text mt-1">
+                                <i class="bi bi-info-circle"></i> This model will be used for extracting skills
+                            </div>
+                        </div>
+
+                        <!-- Parse Mode -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-arrow-repeat"></i> Parse Mode
+                            </label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="parseMode" id="parseModeMerge" value="merge" checked>
+                                <label class="form-check-label" for="parseModeMerge">
+                                    <strong>Merge with existing skills</strong>
+                                    <div class="form-text">
+                                        <i class="bi bi-info-circle"></i> Add new skills, skip duplicates
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="parseMode" id="parseModeOverwrite" value="overwrite">
+                                <label class="form-check-label" for="parseModeOverwrite">
+                                    <strong class="text-danger">Overwrite all existing skills</strong>
+                                    <div class="form-text text-danger">
+                                        <i class="bi bi-exclamation-triangle"></i> Deletes all current skills
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- File Selection -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-files"></i> Select Files
+                            </label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="skillsLegacyShowCustomDocs"
+                                       onchange="toggleCustomDocuments(this.checked)">
+                                <label class="form-check-label" for="skillsLegacyShowCustomDocs">
+                                    Show custom documents
+                                </label>
+                            </div>
+                            <div id="fileList" class="list-group">
+                                <div class="text-center text-muted py-2">
+                                    <div class="spinner-border spinner-border-sm" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="btn-group mt-2">
+                                <button class="btn btn-sm btn-outline-primary" onclick="selectAllFiles()">
+                                    <i class="bi bi-check-all"></i> Select All
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                                    <i class="bi bi-x-lg"></i> Clear
+                                </button>
+                                <span class="badge bg-secondary ms-2 d-flex align-items-center" id="fileCountBadge">
+                                    0 selected
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Parse Action -->
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" onclick="parseSelectedFiles()">
+                                <i class="bi bi-magic"></i> Parse <span id="fileCount">0</span> File(s)
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="hideParsePanel()">
+                                Cancel
+                            </button>
+                        </div>
+
+                        <!-- Parse Loading Indicator -->
+                        <div id="parseIndicator" class="htmx-indicator text-center py-3 mt-3" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="text-muted mt-2">
+                                <i class="bi bi-robot"></i> AI is parsing documents... This may take 30-60 seconds.
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Add Skill Row (hidden by default) -->
@@ -130,10 +226,13 @@
                         <div class="text-center text-muted py-5">
                             <i class="bi bi-inbox fs-1"></i>
                             <p class="mb-0">No skills added yet</p>
-                            <small>Click "Add" or "Parse from Documents" to get started</small>
+                            <small>Click "Add" or "Parse from Files" to get started</small>
                         </div>
                     {% endif %}
                 </div>
+
+                <!-- Parse Result Panel (replaces skills table after parsing) -->
+                <div id="parseResultPanel" style="display: none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -143,7 +242,222 @@
 </div>
 
 <script>
-// Filter skills based on search
+// File selection state
+let availableFiles = [];
+let selectedFileIds = [];
+let showCustomDocuments = false;
+
+// Show parse panel
+function showParsePanel() {
+    const panel = document.getElementById('parsePanel');
+    panel.classList.add('show');
+    loadFiles();
+}
+
+// Hide parse panel
+function hideParsePanel() {
+    const panel = document.getElementById('parsePanel');
+    panel.classList.remove('show');
+}
+
+// Show parse loading
+function showParseLoading() {
+    document.getElementById('parseIndicator').style.display = 'block';
+    const parseBtn = document.querySelector('#parsePanel .btn-primary');
+    if (parseBtn) {
+        parseBtn.disabled = true;
+        parseBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Parsing...';
+    }
+}
+
+// Hide parse loading
+function hideParseLoading() {
+    document.getElementById('parseIndicator').style.display = 'none';
+    const parseBtn = document.querySelector('#parsePanel .btn-primary');
+    if (parseBtn) {
+        parseBtn.disabled = false;
+        parseBtn.innerHTML = '<i class="bi bi-magic"></i> Parse <span id="fileCount">0</span> File(s)';
+    }
+}
+
+// Load files
+function loadFiles() {
+    fetch('/candidates/{{ candidate.id }}/documents')
+        .then(response => response.json())
+        .then(data => {
+            availableFiles = data.documents;
+            
+            // Load saved state
+            const savedState = localStorage.getItem(`skills_show_custom_docs_{{ candidate.id }}`);
+            showCustomDocuments = savedState === 'true';
+            document.getElementById('skillsLegacyShowCustomDocs').checked = showCustomDocuments;
+            
+            // Load saved selection
+            const saved = localStorage.getItem(`skills_parse_selection_{{ candidate.id }}`);
+            if (saved) {
+                try {
+                    selectedFileIds = JSON.parse(saved);
+                } catch (e) {
+                    selectedFileIds = [];
+                }
+            } else {
+                const visibleFiles = getVisibleFiles();
+                selectedFileIds = visibleFiles.map(f => f.id);
+            }
+            
+            renderFileList();
+        })
+        .catch(error => {
+            console.error('Error loading files:', error);
+            document.getElementById('fileList').innerHTML = `
+                <div class="alert alert-danger">Error loading files</div>
+            `;
+        });
+}
+
+// Get visible files
+function getVisibleFiles() {
+    if (showCustomDocuments) {
+        return availableFiles;
+    }
+    return availableFiles.filter(f => f.document_type !== 'custom');
+}
+
+// Toggle custom documents
+function toggleCustomDocuments(show) {
+    showCustomDocuments = show;
+    localStorage.setItem(`skills_show_custom_docs_{{ candidate.id }}`, show ? 'true' : 'false');
+    renderFileList();
+}
+
+// Render file list
+function renderFileList() {
+    const container = document.getElementById('fileList');
+    const filesToDisplay = getVisibleFiles();
+    
+    if (filesToDisplay.length === 0) {
+        container.innerHTML = '<div class="alert alert-warning">No files available</div>';
+        updateFileCount();
+        return;
+    }
+    
+    container.innerHTML = filesToDisplay.map(file => {
+        const isChecked = selectedFileIds.includes(file.id);
+        const typeBadges = {
+            'profile': '<span class="badge bg-info">Profile</span>',
+            'resume': '<span class="badge bg-success">Resume</span>',
+            'job_titles': '<span class="badge bg-primary">Job Titles</span>',
+            'cover_letter': '<span class="badge bg-secondary">Cover Letter</span>'
+        };
+        
+        return `
+            <label class="list-group-item list-group-item-action">
+                <div class="d-flex align-items-start">
+                    <input type="checkbox" class="form-check-input me-3 mt-1"
+                           value="${file.id}"
+                           ${isChecked ? 'checked' : ''}
+                           onchange="toggleFileSelection(${file.id}, this.checked)">
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <strong class="text-primary">${file.filename}</strong>
+                            <span class="badge bg-secondary">${formatFileSize(file.file_size || 0)}</span>
+                        </div>
+                        <div class="text-muted small">
+                            ${typeBadges[file.document_type] || '<span class="badge bg-light text-dark">Custom</span>'}
+                        </div>
+                    </div>
+                </div>
+            </label>
+        `;
+    }).join('');
+    
+    updateFileCount();
+}
+
+// Toggle file selection
+function toggleFileSelection(fileId, isSelected) {
+    if (isSelected) {
+        if (!selectedFileIds.includes(fileId)) {
+            selectedFileIds.push(fileId);
+        }
+    } else {
+        selectedFileIds = selectedFileIds.filter(id => id !== fileId);
+    }
+    localStorage.setItem(`skills_parse_selection_{{ candidate.id }}`, JSON.stringify(selectedFileIds));
+    updateFileCount();
+}
+
+// Select all files
+function selectAllFiles() {
+    const visibleFiles = getVisibleFiles();
+    selectedFileIds = visibleFiles.map(f => f.id);
+    localStorage.setItem(`skills_parse_selection_{{ candidate.id }}`, JSON.stringify(selectedFileIds));
+    renderFileList();
+}
+
+// Clear selection
+function clearSelection() {
+    selectedFileIds = [];
+    localStorage.setItem(`skills_parse_selection_{{ candidate.id }}`, JSON.stringify(selectedFileIds));
+    renderFileList();
+}
+
+// Update file count
+function updateFileCount() {
+    const count = selectedFileIds.length;
+    document.getElementById('fileCount').textContent = count;
+    document.getElementById('fileCountBadge').textContent = `${count} selected`;
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Parse selected files
+function parseSelectedFiles() {
+    if (selectedFileIds.length === 0) {
+        alert('Please select at least one file');
+        return;
+    }
+    
+    const modelSelect = document.getElementById('model-selector-skill_extractor');
+    if (!modelSelect.value) {
+        alert('Please select an AI model first');
+        return;
+    }
+    
+    const parseMode = document.querySelector('input[name="parseMode"]:checked').value;
+    
+    showParseLoading();
+    
+    fetch(`/candidates/{{ candidate.id }}/skills/parse-with-selection`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            file_ids: selectedFileIds,
+            parse_mode: parseMode
+        })
+    })
+    .then(response => response.text())
+    .then(html => {
+        document.getElementById('parseResultPanel').innerHTML = html;
+        document.getElementById('parseResultPanel').style.display = 'block';
+        document.getElementById('skillsModalBody').style.display = 'none';
+        hideParseLoading();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error parsing files: ' + error);
+        hideParseLoading();
+    });
+}
+
+// Filter skills
 function filterSkills() {
     const searchTerm = document.getElementById('skillSearch').value.toLowerCase();
     
@@ -152,48 +466,6 @@ function filterSkills() {
         const show = !searchTerm || skillName.includes(searchTerm);
         row.style.display = show ? '' : 'none';
     });
-}
-
-// Load models for model selector widget
-function loadModelsForWidget(widget) {
-    const functionName = widget.getAttribute('data-function');
-    const selectElement = widget.querySelector('select');
-    
-    if (!selectElement || selectElement.options.length > 1) {
-        return; // Already loaded or no select element
-    }
-    
-    // Fetch models from API
-    fetch('/api/llm/models')
-        .then(response => response.json())
-        .then(data => {
-            // Clear loading option
-            selectElement.innerHTML = '<option value="">-- Select Model --</option>';
-            
-            // Populate with providers and models
-            data.providers.forEach(provider => {
-                if (provider.models && provider.models.length > 0) {
-                    const optgroup = document.createElement('optgroup');
-                    optgroup.label = provider.name.charAt(0).toUpperCase() + provider.name.slice(1);
-                    
-                    provider.models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.id;
-                        option.textContent = model.display_name || model.name;
-                        if (model.is_default) {
-                            option.textContent += ' (default)';
-                        }
-                        optgroup.appendChild(option);
-                    });
-                    
-                    selectElement.appendChild(optgroup);
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Error loading models:', error);
-            selectElement.innerHTML = '<option value="">Error loading models</option>';
-        });
 }
 
 // Show add skill row
@@ -224,14 +496,7 @@ function saveNewSkill() {
     
     const formData = new FormData();
     formData.append('skill_name', skillName);
-    formData.append('category', 'preferred');  // Default category
     formData.append('is_enabled', enabledInput.checked ? 'true' : 'false');
-    
-    // Show loading
-    const saveBtn = event.target.closest('button');
-    const originalHtml = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-    saveBtn.disabled = true;
     
     fetch('/candidates/{{ candidate.id }}/skills/', {
         method: 'POST',
@@ -243,83 +508,52 @@ function saveNewSkill() {
             location.reload();
         } else {
             alert('Error: ' + data.message);
-            saveBtn.innerHTML = originalHtml;
-            saveBtn.disabled = false;
         }
     })
     .catch(error => {
         alert('Error: ' + error);
-        saveBtn.innerHTML = originalHtml;
-        saveBtn.disabled = false;
     });
 }
 
-// Enable edit mode for skill name
+// Enable edit mode
 function enableEdit(element) {
     const span = element;
     const input = element.nextElementSibling;
-
-    if (!span || !input) {
-        console.error('Edit elements not found');
-        return;
-    }
-
     span.style.display = 'none';
     input.style.display = 'block';
     input.focus();
     input.select();
 }
 
-// Enable edit by clicking edit button
 function enableEditByName(skillId) {
     const row = document.querySelector(`.skill-row[data-id="${skillId}"]`);
-    if (!row) {
-        console.error('Row not found for skillId:', skillId);
-        return;
-    }
     const span = row.querySelector('.skill-name');
     const input = row.querySelector('.skill-edit-input');
-    
-    if (span && input) {
-        span.style.display = 'none';
-        input.style.display = 'block';
-        input.focus();
-        input.select();
-    }
+    span.style.display = 'none';
+    input.style.display = 'block';
+    input.focus();
+    input.select();
 }
 
-// Handle keydown in edit input
 function handleEditKeydown(event, skillId) {
-    if (event.key === 'Enter') {
-        saveEdit(skillId);
-    } else if (event.key === 'Escape') {
-        cancelEdit(event.target);
-    }
+    if (event.key === 'Enter') saveEdit(skillId);
+    else if (event.key === 'Escape') cancelEdit(event.target);
 }
 
-// Save edit
 function saveEdit(skillId) {
     const row = document.querySelector(`.skill-row[data-id="${skillId}"]`);
     const input = row.querySelector('.skill-edit-input');
     const span = row.querySelector('.skill-name');
     const newName = input.value.trim();
-
+    
     if (!newName) {
         alert('Skill name cannot be empty');
         return;
     }
-
-    if (newName === input.dataset.original) {
-        cancelEdit(input);
-        return;
-    }
-
+    
     const formData = new FormData();
     formData.append('skill_name', newName);
-
-    // Show loading
-    input.disabled = true;
-
+    
     fetch(`/candidates/{{ candidate.id }}/skills/${skillId}/update`, {
         method: 'POST',
         body: formData
@@ -327,64 +561,39 @@ function saveEdit(skillId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Update span text and restore display
             span.textContent = newName;
             input.dataset.original = newName;
             span.style.display = 'inline';
             input.style.display = 'none';
-            input.disabled = false;
         } else {
             alert('Error: ' + data.message);
-            input.disabled = false;
         }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-        input.disabled = false;
     });
 }
 
-// Cancel edit
 function cancelEdit(input) {
     const span = input.previousElementSibling;
-    if (span && input) {
-        span.style.display = 'inline';
-        input.style.display = 'none';
-        input.value = input.dataset.original;
-        input.disabled = false;
-    }
+    span.style.display = 'inline';
+    input.style.display = 'none';
+    input.value = input.dataset.original;
 }
 
 // Toggle skill enabled
 function toggleSkillEnabled(skillId, isEnabled) {
     fetch(`/candidates/{{ candidate.id }}/skills/${skillId}/toggle`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
+        method: 'POST'
     })
     .then(response => response.json())
     .then(data => {
         if (!data.success) {
             alert('Error: ' + data.message);
-            // Revert checkbox
-            const checkbox = document.querySelector(`.skill-row[data-id="${skillId}"] input[type="checkbox"]`);
-            checkbox.checked = !isEnabled;
         }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
-        // Revert checkbox
-        const checkbox = document.querySelector(`.skill-row[data-id="${skillId}"] input[type="checkbox"]`);
-        checkbox.checked = !isEnabled;
     });
 }
 
 // Delete skill
 function deleteSkill(skillId) {
-    if (!confirm('Are you sure you want to delete this skill?')) {
-        return;
-    }
+    if (!confirm('Are you sure you want to delete this skill?')) return;
     
     fetch(`/candidates/{{ candidate.id }}/skills/${skillId}/delete`, {
         method: 'POST'
@@ -392,64 +601,62 @@ function deleteSkill(skillId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Remove row from table
-            const row = document.querySelector(`.skill-row[data-id="${skillId}"]`);
-            row.remove();
-            
-            // Update count
-            updateSkillCount();
+            location.reload();
         } else {
             alert('Error: ' + data.message);
         }
-    })
-    .catch(error => {
-        alert('Error: ' + error);
     });
 }
 
-// Update skill count
-function updateSkillCount() {
-    const rows = document.querySelectorAll('.skill-row');
-    const enabledCount = document.querySelectorAll('.skill-row input[type="checkbox"]:checked').length;
-    const countDiv = document.querySelector('.text-muted.small');
-    if (countDiv) {
-        countDiv.innerHTML = `
-            <i class="bi bi-info-circle"></i>
-            <strong>${rows.length}</strong> skill(s) |
-            <strong>${enabledCount}</strong> enabled
-            | Double-click skill name to edit
-        `;
+// Save parsed skills
+function saveParsedSkills() {
+    const checkboxes = document.querySelectorAll('#parseResultPanel input[name="skills"]:checked');
+    if (checkboxes.length === 0) {
+        alert('Please select at least one skill');
+        return;
     }
-}
-
-// Handle parse result
-function handleParseResult() {
-    // If parse result is shown, add event listeners
-    document.querySelectorAll('.skill-checkbox').forEach(cb => {
-        cb.addEventListener('change', updateSelectedCount);
+    
+    const skillsToSave = Array.from(checkboxes).map(cb => JSON.parse(cb.value));
+    const formData = new FormData();
+    formData.append('skills_data', JSON.stringify(skillsToSave));
+    
+    const saveBtn = document.querySelector('#parseResultPanel .btn-success');
+    saveBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+    saveBtn.disabled = true;
+    
+    fetch(`/candidates/{{ candidate.id }}/skills/save-parsed`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+            saveBtn.innerHTML = 'Save Skills';
+            saveBtn.disabled = false;
+        }
     });
 }
 
-// Initialize on load
+// Discard parsed skills
+function discardParsedSkills() {
+    document.getElementById('parseResultPanel').style.display = 'none';
+    document.getElementById('skillsModalBody').style.display = 'block';
+    hideParsePanel();
+}
+
+// Initialize model selectors
 document.addEventListener('DOMContentLoaded', function() {
-    handleParseResult();
-    // Initialize model selectors
-    document.querySelectorAll('.model-selector-widget').forEach(function(widget) {
-        loadModelsForWidget(widget);
-    });
+    document.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
 });
 
-// Also handle HTMX content loads
 document.addEventListener('htmx:afterSwap', function(event) {
-    event.target.querySelectorAll('.model-selector-widget').forEach(function(widget) {
-        loadModelsForWidget(widget);
-    });
+    event.target.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
 });
 
-// Initialize immediately for inline scripts
 setTimeout(function() {
-    document.querySelectorAll('.model-selector-widget').forEach(function(widget) {
-        loadModelsForWidget(widget);
-    });
+    document.querySelectorAll('.model-selector-widget').forEach(loadModelsForWidget);
 }, 100);
 </script>

@@ -7,6 +7,7 @@ Prevents resource contention and reduces detection risk.
 import fcntl
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -20,8 +21,12 @@ class GlobalSearchLock:
     Uses flock for cross-process locking.
     """
     
-    def __init__(self, lock_file: str = "data/search.lock"):
-        self.lock_file = Path(lock_file)
+    def __init__(self, lock_file: str = None):
+        if lock_file is None:
+            from backend.config import DATA_DIR
+            self.lock_file = DATA_DIR / "search.lock"
+        else:
+            self.lock_file = Path(lock_file)
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
         self._lock_fd: Optional[int] = None
         self._locked = False
@@ -125,6 +130,64 @@ class GlobalSearchLock:
             logger.error(f"Error reading lock info: {e}")
             return None
     
+    def _get_lock_age_minutes(self) -> Optional[float]:
+        """Return how many minutes ago the lock file was last written, or None if no lock file."""
+        try:
+            mtime = self.lock_file.stat().st_mtime
+            return (time.time() - mtime) / 60
+        except FileNotFoundError:
+            return None
+        except Exception:
+            return None
+
+    def _is_stale(self, max_age_minutes: float = 120) -> bool:
+        """
+        Return True if the lock file is older than max_age_minutes.
+
+        Since fcntl.flock() is automatically released when a process dies, a truly
+        stale lock only occurs when a search has been running (or stuck) for longer
+        than the maximum reasonable search duration.
+        """
+        age = self._get_lock_age_minutes()
+        if age is None:
+            return False
+        if age > max_age_minutes:
+            logger.warning(
+                f"Lock file is {age:.1f} minutes old (threshold: {max_age_minutes}m). "
+                "The previous search may have gotten stuck."
+            )
+            return True
+        return False
+
+    def acquire_with_timeout(self, timeout_seconds: int = 300) -> bool:
+        """
+        Try to acquire the lock, polling every 2 seconds up to timeout_seconds.
+
+        Replaces acquire(blocking=True) which can wait forever. If the lock has been
+        held for longer than expected (e.g., a stuck search), this will give up and
+        log an error rather than hanging the caller.
+
+        Returns:
+            True if lock acquired within timeout, False otherwise.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        poll_interval = 2  # seconds between attempts
+
+        while time.monotonic() < deadline:
+            if self.acquire(blocking=False):
+                return True
+            # Check for stale lock and warn
+            self._is_stale()
+            remaining = deadline - time.monotonic()
+            logger.debug(f"Waiting for search lock ({remaining:.0f}s remaining)...")
+            time.sleep(min(poll_interval, max(0, remaining)))
+
+        logger.error(
+            f"Could not acquire search lock within {timeout_seconds}s. "
+            "Another search may be stuck. Giving up."
+        )
+        return False
+
     def __enter__(self):
         """Context manager entry"""
         self.acquire()

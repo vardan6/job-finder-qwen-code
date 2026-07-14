@@ -2,6 +2,7 @@
 Health Check Endpoint
 """
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from backend.database import SessionLocal
@@ -16,17 +17,22 @@ async def health_check():
     """
     try:
         db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-        
+        try:
+            db.execute(text("SELECT 1"))
+        finally:
+            db.close()
+
         return {
             "status": "ok",
             "database": "connected",
             "message": "Job Finder Web App is running"
         }
     except Exception as e:
-        return {
-            "status": "error",
-            "database": str(e),
-            "message": "Database connection failed"
-        }
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "database": str(e),
+                "message": "Database connection failed"
+            }
+        )

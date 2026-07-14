@@ -110,7 +110,7 @@ async def set_function_model(
     try:
         body = await request.json()
         model_id = body.get("model_id")
-    except:
+    except (ValueError, KeyError):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     # Get or create mapping

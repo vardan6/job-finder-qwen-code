@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ from backend.security import decrypt_json, encrypt_data
 from backend.services.job_analysis import get_job_analysis_service, JobAnalysis
 from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db
 from backend.services.rate_limiter import get_rate_limiter
+from backend.services.scraper_health import record_search_result
 from backend.scrapers.linkedin import LinkedInScraper, LinkedInJob
 from backend.scrapers.glassdoor import GlassdoorScraper, GlassdoorJob
 
@@ -90,25 +91,35 @@ class JobSearchService:
         self.deduplicator = get_deduplicator()
         self.analysis_service = get_job_analysis_service()
     
-    async def search(self, config: SearchConfig) -> SearchResult:
+    async def search(
+        self,
+        config: SearchConfig,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> SearchResult:
         """
         Execute a job search across configured platforms.
-        
+
         Args:
             config: Search configuration
-        
+            progress_callback: Optional callable(message) for real-time progress reporting
+
         Returns:
             SearchResult with statistics
         """
         logger.info(f"Starting job search for candidate {config.candidate_id}: '{config.query}'")
         
+        def emit(msg: str) -> None:
+            if progress_callback:
+                progress_callback(msg)
+
         errors = []
         platform_results = {}
         all_jobs = []
-        
+
         # Get candidate
         candidate = self.db.query(Candidate).filter(Candidate.id == config.candidate_id).first()
         if not candidate:
+            emit(f"Error: Candidate {config.candidate_id} not found")
             return SearchResult(
                 success=False,
                 total_found=0,
@@ -129,22 +140,30 @@ class JobSearchService:
             if skill_value:
                 candidate_skills.append(skill_value)
         
+        emit(f"Starting search on {len(config.platforms)} platform(s): {', '.join(config.platforms)}")
+
         # Search each platform
         for platform in config.platforms:
             try:
+                emit(f"--- Searching {platform.capitalize()} ---")
                 logger.info(f"Searching {platform}...")
-                
+
                 if platform == "linkedin":
-                    jobs = await self._search_linkedin(config, candidate)
+                    jobs = await self._search_linkedin(config, candidate, progress_callback=progress_callback)
                 elif platform == "glassdoor":
-                    jobs = await self._search_glassdoor(config, candidate)
+                    jobs = await self._search_glassdoor(config, candidate, progress_callback=progress_callback)
                 else:
                     logger.warning(f"Unknown platform: {platform}")
                     continue
-                
+
                 platform_results[platform] = len(jobs)
                 all_jobs.extend(jobs)
                 logger.info(f"Found {len(jobs)} jobs on {platform}")
+                emit(f"{platform.capitalize()}: {len(jobs)} jobs collected")
+
+                # Update scraper health tracker
+                record_search_result(platform, len(jobs))
+
                 if len(jobs) == 0:
                     rate_status = get_rate_limiter().get_status(platform)
                     if not rate_status.get("allowed", True):
@@ -159,27 +178,31 @@ class JobSearchService:
                         "or no matches for query/location."
                     )
                     errors.append(warnings_msg)
-                
+
             except Exception as e:
                 error_msg = f"{platform} search failed: {str(e)}"
                 logger.error(error_msg)
+                emit(f"Error on {platform}: {str(e)}")
                 errors.append(error_msg)
                 platform_results[platform] = 0
             
         
         total_found = len(all_jobs)
-        
+        emit(f"--- Post-processing {total_found} total jobs ---")
+
         # Deduplicate
+        emit(f"Deduplicating {total_found} jobs...")
         unique_jobs = self._deduplicate_jobs(all_jobs, config.candidate_id)
         total_unique = len(unique_jobs)
         total_duplicates = total_found - total_unique
-        
+
         logger.info(f"Deduplication: {total_found} found -> {total_unique} unique ({total_duplicates} duplicates)")
-        
+        emit(f"Deduplication: {total_unique} unique jobs ({total_duplicates} duplicates removed)")
+
         # Save to database
         jobs_saved = 0
         total_analyzed = 0
-        
+
         for job_data in unique_jobs:
             try:
                 # Create job record
@@ -188,36 +211,47 @@ class JobSearchService:
                 self.db.commit()
                 self.db.refresh(job)
                 jobs_saved += 1
-                
+                emit(
+                    f"Saved [{jobs_saved}/{total_unique}]: "
+                    f"{job_data.get('title', '?')} @ {job_data.get('company', '?')}"
+                )
+
                 # AI analysis (if enabled)
                 if config.analyze_with_ai and job.description:
                     try:
+                        emit(f"Analyzing with AI: {job_data.get('title', '?')} @ {job_data.get('company', '?')}")
                         analysis = await self.analysis_service.analyze_job(
                             job.description,
                             candidate_skills,
+                            db=self.db,
                         )
-                        
+
                         # Update job with analysis results
                         job.ai_remote_score = analysis.remote_score
                         self.db.commit()
                         total_analyzed += 1
-                        
+
                         logger.info(
                             f"Job {job.id} analyzed: remote_score={analysis.remote_score}, "
                             f"recommendation={analysis.recommendation}"
                         )
-                        
+
                     except Exception as e:
                         logger.error(f"AI analysis failed for job {job.id}: {e}")
                         # Continue without analysis
-                
+
             except Exception as e:
                 logger.error(f"Failed to save job: {e}")
                 if jobs_saved > 0:
                     self.db.rollback()
         
         success = jobs_saved > 0 or total_found > 0
-        
+        emit(
+            f"Search complete! {jobs_saved} jobs saved"
+            + (f", {total_analyzed} analyzed with AI" if total_analyzed else "")
+            + (f". Errors: {len(errors)}" if errors else ".")
+        )
+
         return SearchResult(
             success=success,
             total_found=total_found,
@@ -229,33 +263,43 @@ class JobSearchService:
             platform_results=platform_results,
         )
     
-    async def _search_linkedin(self, config: SearchConfig, candidate: Candidate) -> List[dict]:
+    async def _search_linkedin(
+        self,
+        config: SearchConfig,
+        candidate: Candidate,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[dict]:
         """Search LinkedIn for jobs"""
-        # Get cookies path
         cookies_path = self._get_cookies_path(candidate, "linkedin")
         self._ensure_cookies_file(candidate, "linkedin", cookies_path)
-        
+
         async with LinkedInScraper(headless=config.headless) as scraper:
             jobs = await scraper.search_jobs(
                 query=config.query,
                 location=config.location,
                 max_jobs=config.max_jobs_per_platform,
                 cookies_path=str(cookies_path),
+                progress_callback=progress_callback,
             )
             return [job.to_dict() for job in jobs]
-    
-    async def _search_glassdoor(self, config: SearchConfig, candidate: Candidate) -> List[dict]:
+
+    async def _search_glassdoor(
+        self,
+        config: SearchConfig,
+        candidate: Candidate,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[dict]:
         """Search Glassdoor for jobs"""
-        # Get cookies path
         cookies_path = self._get_cookies_path(candidate, "glassdoor")
         self._ensure_cookies_file(candidate, "glassdoor", cookies_path)
-        
+
         async with GlassdoorScraper(headless=config.headless) as scraper:
             jobs = await scraper.search_jobs(
                 query=config.query,
                 location=config.location,
                 max_jobs=config.max_jobs_per_platform,
                 cookies_path=str(cookies_path),
+                progress_callback=progress_callback,
             )
             return [job.to_dict() for job in jobs]
     
@@ -340,7 +384,8 @@ class JobSearchService:
     
     def _get_cookies_path(self, candidate: Candidate, platform: str) -> Path:
         """Get the cookies file path for a candidate and platform"""
-        return Path(f"data/cookies/{candidate.uuid}_{platform}.enc")
+        from backend.config import DATA_DIR
+        return DATA_DIR / "cookies" / f"{candidate.uuid}_{platform}.enc"
 
     def _ensure_cookies_file(self, candidate: Candidate, platform: str, cookies_path: Path) -> None:
         """
@@ -370,7 +415,7 @@ class JobSearchService:
                 return
 
             cookies_path.parent.mkdir(parents=True, exist_ok=True)
-            cookies_path.write_bytes(encrypt_data(json.dumps(cookies)))
+            cookies_path.write_text(encrypt_data(json.dumps(cookies)))
             logger.info(f"Restored {platform} cookies file from database for candidate {candidate.id}")
         except Exception as e:
             logger.warning(f"Could not restore {platform} cookies file from database: {e}")
@@ -426,10 +471,11 @@ async def run_job_search(
     max_jobs: int = 20,
     analyze: bool = True,
     headless: bool = False,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> SearchResult:
     """
     Convenience function to run a job search.
-    
+
     Args:
         db: Database session
         candidate_id: Candidate ID to search for
@@ -439,7 +485,8 @@ async def run_job_search(
         max_jobs: Max jobs per platform
         analyze: Whether to run AI analysis
         headless: Run browsers in headless mode
-    
+        progress_callback: Optional callable(message) for real-time progress
+
     Returns:
         SearchResult
     """
@@ -452,6 +499,6 @@ async def run_job_search(
         analyze_with_ai=analyze,
         headless=headless,
     )
-    
+
     service = JobSearchService(db)
-    return await service.search(config)
+    return await service.search(config, progress_callback=progress_callback)

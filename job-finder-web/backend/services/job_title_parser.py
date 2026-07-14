@@ -69,7 +69,8 @@ async def parse_document_for_job_titles(
                 # This handles cases where profile was parsed but didn't extract titles
 
         # Read document content
-        file_path = Path("data") / document.file_path
+        from backend.config import DATA_DIR
+        file_path = DATA_DIR / document.file_path
         if not file_path.exists():
             return False, [], f"File not found: {file_path}"
 
@@ -105,15 +106,15 @@ async def parse_document_for_job_titles(
         # Fallback to direct Ollama call if configured model failed
         if not result:
             try:
-                from litellm import acompletion
-                response = await acompletion(
+                from backend.services.llm_service import _async_completion
+                from backend.config import LLM_TIMEOUT_SECONDS
+                result = await _async_completion(
+                    LLM_TIMEOUT_SECONDS,
                     model="ollama/llama3",
                     messages=[{"role": "user", "content": full_prompt}],
-                    api_base="http://localhost:11434"
+                    api_base="http://localhost:11434",
                 )
-                result = response.choices[0].message.content if response else None
             except Exception as ollama_error:
-                print(f"Direct Ollama fallback failed: {ollama_error}")
                 return False, [], f"LLM call failed: {str(ollama_error)}"
 
         if not result:

@@ -16,6 +16,7 @@ from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.document import CandidateDocument
 from backend.config import DATA_DIR
+from backend.security import safe_resolve_path
 
 router = APIRouter()
 
@@ -34,6 +35,7 @@ DOCUMENT_TYPES = {
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {".md", ".txt", ".pdf"}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB per file
 
 
 def calculate_file_hash(file_path: Path) -> str:
@@ -82,6 +84,14 @@ async def upload_document(
     errors = []
 
     for file in files:
+        # Validate file size
+        contents = await file.read()
+        await file.seek(0)
+        if len(contents) > MAX_UPLOAD_SIZE:
+            error_count += 1
+            errors.append(f"{file.filename}: File too large (max {MAX_UPLOAD_SIZE // 1024 // 1024} MB)")
+            continue
+
         # Validate file extension
         file_ext = Path(file.filename).suffix.lower()
         if file_ext not in ALLOWED_EXTENSIONS:
@@ -195,11 +205,15 @@ async def view_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    # Read file content
-    file_path = Path(document.file_path)
-    if not file_path.is_absolute():
-        file_path = DATA_DIR / file_path
-    
+    # Read file content — resolve and confine to DATA_DIR
+    raw_path = Path(document.file_path)
+    if not raw_path.is_absolute():
+        raw_path = DATA_DIR / raw_path
+    try:
+        file_path = safe_resolve_path(str(raw_path), DATA_DIR)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     if not file_path.exists():
         return JSONResponse({
             "success": False,

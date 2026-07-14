@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from pathlib import Path
+import asyncio
 import time
 
 from backend.database import get_db
@@ -122,50 +123,9 @@ async def settings_index():
 
 
 @router.get("/llm", response_class=HTMLResponse)
-async def list_llm_providers(request: Request, db: Session = Depends(get_db)):
-    """List all LLM providers with their models"""
-    providers = db.query(LLMProvider).all()
-
-    # Merge with default providers
-    db_provider_names = {p.name for p in providers}
-    for name, default in DEFAULT_PROVIDERS.items():
-        if name not in db_provider_names:
-            # Create default provider
-            provider = LLMProvider(
-                name=name,
-                api_url=default["api_url"],
-                is_active=default["is_active"]
-            )
-            db.add(provider)
-            db.commit()
-            db.refresh(provider)
-            
-            # Add default models
-            for model_name in default["models"]:
-                model = LLMModel(
-                    provider_id=provider.id,
-                    model_name=model_name,
-                    display_name=model_name,
-                    is_default_for_provider=(model_name == default["models"][0]),
-                    is_active=True
-                )
-                db.add(model)
-            db.commit()
-            providers.append(provider)
-
-    # Load models for each provider
-    for provider in providers:
-        db.refresh(provider)  # This loads the models relationship
-
-    # Get current default provider
-    default_provider = get_default_provider(db)
-
-    return templates.TemplateResponse("settings/llm.html", {
-        "request": request,
-        "providers": providers,
-        "default_provider": default_provider,
-        "default_model": DEFAULT_LLM_MODEL
-    })
+async def list_llm_providers(request: Request):
+    """Render the canonical provider settings UI backed by the JSON AI config store."""
+    return templates.TemplateResponse("settings/llm.html", {"request": request})
 
 
 @router.post("/")
@@ -519,12 +479,12 @@ async def test_llm_provider(
         else:
             logger.warning(f"Provider {db_provider_name} not found in database, trying without API key")
 
-        # Check if using Ollama
+        # Check if using Ollama - use async request to avoid blocking
         if model.startswith("ollama/"):
             import requests
             try:
                 requests.get(OLLAMA_URL, timeout=2)
-            except Exception as e:
+            except (requests.ConnectionError, requests.Timeout):
                 return templates.TemplateResponse("settings/llm_test_result.html", {
                     "request": request,
                     "success": False,
@@ -533,6 +493,8 @@ async def test_llm_provider(
                     "model": model,
                     "time_ms": 0
                 })
+            except Exception:
+                pass  # Continue even if health check fails
 
         # Groq uses raw OpenAI-compatible model IDs against Groq's API base.
         if provider_name == "groq":
@@ -544,9 +506,19 @@ async def test_llm_provider(
         
         logger.info(f"Calling completion API with model: {litellm_model}")
 
-        response = completion(
-            model=litellm_model,
-            messages=[{"role": "user", "content": prompt}]
+        # Use dedicated LLM thread pool instead of asyncio.to_thread()
+        from backend.services.llm_executor import get_llm_executor
+        
+        loop = asyncio.get_event_loop()
+        executor = get_llm_executor()
+        response = await asyncio.wait_for(
+            loop.run_in_executor(
+                executor,
+                completion,
+                litellm_model,
+                [{"role": "user", "content": prompt}],
+            ),
+            timeout=120.0  # 2 minute timeout
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)

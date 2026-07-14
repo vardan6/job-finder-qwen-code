@@ -43,8 +43,12 @@ COOLDOWN_ON_CAPTCHA_MINUTES = 120  # 2 hours
 class RateLimiter:
     """SQLite-backed rate limiter for job platform scraping"""
     
-    def __init__(self, db_path: str = "data/rate_limits.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            from backend.config import DATA_DIR
+            self.db_path = DATA_DIR / "rate_limits.db"
+        else:
+            self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
     
@@ -309,27 +313,43 @@ class RateLimiter:
             "cooldown_remaining": self.get_cooldown_remaining(platform),
         }
     
-    def wait_if_needed(self, platform: str) -> bool:
-        """
-        Wait the required delay if needed. Returns True if waited, False if blocked.
-        Use check_rate_limit() first to ensure request is allowed.
-        """
+    def _get_wait_time(self, platform: str) -> float:
+        """Return how many seconds to wait before the next request, or 0 if no wait needed."""
         last_request = self._get_last_request_time(platform)
         if last_request:
             delay_range = RATE_LIMITS.get(platform, {}).get("delay_between_requests", (8, 15))
             min_delay, max_delay = delay_range
             elapsed = (datetime.now() - last_request).total_seconds()
-            
             if elapsed < min_delay:
-                # Add some randomness to make behavior less predictable
                 actual_delay = random.uniform(min_delay, max_delay)
-                wait_time = max(0, actual_delay - elapsed)
-                if wait_time > 0:
-                    import time
-                    logger.info(f"Waiting {wait_time:.1f}s for {platform} rate limit...")
-                    time.sleep(wait_time)
-                    return True
-        
+                return max(0.0, actual_delay - elapsed)
+        return 0.0
+
+    def wait_if_needed(self, platform: str) -> bool:
+        """
+        Wait the required delay if needed (synchronous). Returns True if waited.
+        Use check_rate_limit() first to ensure request is allowed.
+        NOTE: Do not call from async code — use async_wait_if_needed() instead.
+        """
+        wait_time = self._get_wait_time(platform)
+        if wait_time > 0:
+            import time as _time
+            logger.info(f"Waiting {wait_time:.1f}s for {platform} rate limit...")
+            _time.sleep(wait_time)
+            return True
+        return False
+
+    async def async_wait_if_needed(self, platform: str) -> bool:
+        """
+        Async-safe version of wait_if_needed(). Uses asyncio.sleep() to avoid
+        blocking the event loop. Call from async scrapers/services.
+        """
+        import asyncio
+        wait_time = self._get_wait_time(platform)
+        if wait_time > 0:
+            logger.info(f"Waiting {wait_time:.1f}s for {platform} rate limit...")
+            await asyncio.sleep(wait_time)
+            return True
         return False
     
     def record_failure(self, platform: str, reason: str):

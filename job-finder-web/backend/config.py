@@ -16,6 +16,9 @@ except ImportError:
 # Base directories
 BASE_DIR = Path(__file__).parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR.parent / "data"))
+AI_SETTINGS_PATH = Path(os.getenv("AI_SETTINGS_PATH", DATA_DIR / "ai-settings.json"))
+LLM_SECRETS_DB_PATH = Path(os.getenv("LLM_SECRETS_DB_PATH", DATA_DIR / "llm-secrets.sqlite3"))
+AI_SESSIONS_DB_PATH = Path(os.getenv("AI_SESSIONS_DB_PATH", DATA_DIR / "ai-sessions.sqlite3"))
 
 # Ensure data directories exist (quick check)
 for subdir in ["candidates", "cookies", "backups", "archive"]:
@@ -23,7 +26,7 @@ for subdir in ["candidates", "cookies", "backups", "archive"]:
     if not dir_path.exists():
         try:
             dir_path.mkdir(parents=True, exist_ok=True)
-        except:
+        except OSError:
             pass
 
 # Security
@@ -31,20 +34,20 @@ ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 
 # Auto-generate encryption key if missing (first-run only)
 if not ENCRYPTION_KEY:
+    from cryptography.fernet import Fernet
+    ENCRYPTION_KEY = Fernet.generate_key().decode()
+    # Write to .env so the key persists across restarts
+    _env_path = BASE_DIR.parent / ".env"
     try:
-        from cryptography.fernet import Fernet
-        ENCRYPTION_KEY = Fernet.generate_key().decode()
-        print("=" * 60)
-        print("⚠️  AUTO-GENERATED ENCRYPTION KEY (FIRST RUN)")
-        print("=" * 60)
-        print(f"ENCRYPTION_KEY={ENCRYPTION_KEY}")
-        print("=" * 60)
-        print("📝 Add this to your .env file to persist it:")
-        print(f"   ENCRYPTION_KEY={ENCRYPTION_KEY}")
-        print("=" * 60)
-    except Exception as e:
-        print(f"❌ CRITICAL: Cannot generate encryption key: {e}")
-        ENCRYPTION_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="  # Dummy key to prevent crash
+        with open(_env_path, "a") as f:
+            f.write(f"\nENCRYPTION_KEY={ENCRYPTION_KEY}\n")
+    except OSError:
+        pass
+    import logging as _log
+    _log.getLogger(__name__).warning(
+        "ENCRYPTION_KEY was not set. A new key has been generated and saved to .env. "
+        "Back up this key — losing it means all encrypted data becomes unrecoverable."
+    )
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-key-change-in-production")
 
@@ -56,10 +59,14 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "ollama/llama3")
 
 # App Configuration
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 9002))  # Changed from 8000 to 9002
+PORT = int(os.getenv("PORT", 9004))  # Changed from 8000 to 9002
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "Asia/Yerevan")
+
+# LLM Timeouts (seconds) - prevents hangs when LLM is slow/unresponsive
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT", "120"))       # 2 min for most LLM calls
+LLM_CHAT_TIMEOUT_SECONDS = int(os.getenv("LLM_CHAT_TIMEOUT", "180"))  # 3 min for interactive chat
 
 # Playwright
 PLAYWRIGHT_HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "false").lower() == "true"

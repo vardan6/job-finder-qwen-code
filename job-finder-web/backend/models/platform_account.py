@@ -1,7 +1,7 @@
 """
 Platform Account Model - For storing LinkedIn/Glassdoor credentials
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, func, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, func, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -24,8 +24,8 @@ class PlatformAccount(Base):
     candidate = relationship("Candidate", back_populates="platform_accounts")
 
     __table_args__ = (
-        # Unique constraint: one account per platform per candidate
-        {'sqlite_autoincrement': True}
+        UniqueConstraint('candidate_id', 'platform', name='uq_candidate_platform'),
+        {'sqlite_autoincrement': True},
     )
 
 
