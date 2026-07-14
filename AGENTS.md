@@ -1,1 +1,0 @@
-/mnt/c/Users/vardana/Documents/Proj/my-workflow/AGENTS.md
