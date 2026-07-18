@@ -18,7 +18,7 @@ present results in a best-match-first table.
 - Per file, **preferred titles and skills are extracted** (LLM-driven).
 - Extracted titles/skills are **manually editable** after extraction.
 - **Provenance is visible**: UI distinguishes extracted vs user-edited values
-  (exact UX open — see open-questions).
+  (UX decided in `docs/design/scoring-and-provenance.md`).
 - Acceptance: a user can see, per file, what was extracted, correct it, and
   the corrected set is what drives job search.
 
@@ -48,8 +48,8 @@ present results in a best-match-first table.
 ## R5. Job scoring
 
 - Every found job is **scored against the candidate profile**.
-- Scoring dimensions to support (final mix is an open design decision):
-  title match, skills overlap, and possibly whole-profile match.
+- Scoring dimensions: title match, skills overlap, optional LLM whole-profile
+  pass — approach decided in `docs/design/scoring-and-provenance.md`.
 - Score drives default sort order (best match first).
 
 ## R6. Remote-status verification

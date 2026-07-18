@@ -10,20 +10,14 @@ profile-page cards, missing requested features, unreliable LinkedIn login.
 Canonical target behavior now captured in `docs/requirements/product-vision.md`;
 the gap audit (roadmap Phase 9 first slice) turns it into a concrete fix list.
 
-## 1b. Scoring approach — needs decision
+## 1b. Scoring approach — DECIDED 2026-07-19
 
-Recommendation (see product-vision R5): **two-stage scoring** — search by
-titles (cheap recall), then score each result with a weighted composite:
-title similarity + skills overlap (deterministic, explainable, fast) with an
-optional LLM whole-profile pass for the top N only (cost control). Show the
-composite score plus per-dimension breakdown on hover/expand. Confirm or pick
-a different mix.
+Two-stage scoring approved → canonical in `docs/design/scoring-and-provenance.md`.
 
-## 1c. Extracted-vs-edited provenance UX — needs decision
+## 1c. Extracted-vs-edited provenance UX — DECIDED 2026-07-19
 
-Recommendation: store `source: extracted | edited` per item; UI shows a small
-badge/dot on extracted items that disappears (or changes) once edited, plus a
-"reset to extracted" affordance. Confirm or propose alternative.
+Badge + reset-to-extracted approved → canonical in
+`docs/design/scoring-and-provenance.md`.
 
 ## 2. Recreate vs. enhance — confirmation
 

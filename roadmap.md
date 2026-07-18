@@ -19,7 +19,8 @@ autonomously, HITL = needs maintainer decision/review.
 
 - [ ] AFK Gap audit: verify each R1–R7 requirement against implementation;
       write findings table to `docs/reviews/` (drives the rest of this phase)
-- [ ] HITL Decide scoring mix (open-questions 1b) and provenance UX (1c)
+- [x] HITL Decide scoring mix (1b) and provenance UX (1c) →
+      `docs/design/scoring-and-provenance.md` (2026-07-19)
 - [ ] AFK R2: unify profile-page cards into one shared card pattern
       (skills + preferred titles first: same fold/unfold, listing, edit)
 - [ ] AFK R1: verify/complete file-type classification (resume/CV/other)
