@@ -1,5 +1,18 @@
 # Roadmap
 
+## Phase S — Stabilization (active, on `stabilize/cleanup-foundation`)
+
+Decision 2026-07-19: enhance in place, do not recreate — backend is modular
+with 124 passing tests. Bug-fix inputs tracked in `docs/open-questions.md`.
+
+- [x] Archive root handoff/review files into `history/`
+- [x] Capture maintainer questions in `docs/open-questions.md`
+- [ ] Collect concrete bug list from maintainer (open-questions Q1)
+- [ ] Triage + fix confirmed bugs, one slice per bug, with regression tests
+- [ ] Extract inline JS from `chat.html` / `llm.html` / `candidates/detail.html`
+      into `frontend/static/js/` modules (pending Q4 approval)
+- [ ] Decide scraper fate: stabilize with tests, feature-flag, or drop (Q3)
+
 ## Phase 0 — Workflow Bootstrap
 
 - [x] Link shared agent controls, skills, and hooks from `my-workflow`
