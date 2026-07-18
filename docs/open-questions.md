@@ -1,5 +1,23 @@
 # Open Questions
 
+## 0. Proposed extensions — approve/reject individually (2026-07-19)
+
+Suggested by review to complete the vision; not yet requirements:
+
+- **P1 Application pipeline**: `JobApplication` model already exists but has no
+  real UI — add status tracking (interested → applied → interview → offer /
+  rejected) with a status column/board on the jobs table.
+- **P2 Per-job tailored documents**: generate a tailored resume/cover letter
+  for a specific job from the candidate's uploaded docs (reuses the existing
+  document store + LLM provider system).
+- **P3 Scheduled re-search with diff**: re-run a saved search on demand/schedule
+  and show "N new since last run" (pairs with R7b saved lists).
+- **P4 Result curation**: hide/dismiss jobs, min-score and verified-remote-only
+  filters, CSV export of a saved list.
+- **P5 Login health probe**: before a search runs, probe each platform session
+  and surface "cookie expired — re-login" instead of failing mid-search
+  (natural part of the R3 reliability rework).
+
 Questions for the maintainer before/while running the Stabilization phase.
 Answer inline or delete a question once resolved.
 

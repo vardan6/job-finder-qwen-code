@@ -22,12 +22,16 @@ present results in a best-match-first table.
 - Acceptance: a user can see, per file, what was extracted, correct it, and
   the corrected set is what drives job search.
 
-## R2. UI consistency (profile page)
+## R2. UI/UX consistency (app-wide)
 
 - All cards on the candidate profile page (skills, preferred titles, files,
   future cards) share **one consistent card behavior**: same fold/unfold,
   same listing pattern, same file-open affordances, same edit affordances.
 - Divergent per-card implementations are defects even when each works alone.
+- Beyond the profile page: **the whole app's UI/UX must be cross-compared and
+  made consistent** — dashboard, jobs pages, settings, chat all use the same
+  patterns for the same interactions (cards, tables, edit modes, modals,
+  status badges, loading/error states).
 
 ## R3. Platform logins
 

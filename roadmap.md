@@ -17,8 +17,15 @@ with 124 passing tests. Bug-fix inputs tracked in `docs/open-questions.md`.
 Thin vertical slices; each independently verifiable. AFK = can run
 autonomously, HITL = needs maintainer decision/review.
 
-- [ ] AFK Gap audit: verify each R1–R7 requirement against implementation;
-      write findings table to `docs/reviews/` (drives the rest of this phase)
+- [x] AFK Gap audit: verify each R1–R7 requirement against implementation →
+      `docs/reviews/gap-audit-2026-07-19.md` (drives the rest of this phase)
+- [ ] AFK R2 pre-review: behavior-level audit of all profile-page cards
+      (fold/unfold, file open, listing, edit flows) — enumerate per-card bugs
+      and divergences into `docs/reviews/` before unification
+- [ ] AFK R2 app-wide UI/UX cross-comparison: inventory patterns (cards,
+      tables, edit modes, modals, badges, loading/error states) across all
+      pages; findings + target pattern set to `docs/reviews/`, then align
+      pages one slice each
 - [x] HITL Decide scoring mix (1b) and provenance UX (1c) →
       `docs/design/scoring-and-provenance.md` (2026-07-19)
 - [ ] AFK R2: unify profile-page cards into one shared card pattern
