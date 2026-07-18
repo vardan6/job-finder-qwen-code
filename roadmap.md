@@ -23,11 +23,10 @@ provenance decisions (`docs/design/scoring-and-provenance.md`).
 
 ### 9B — Model groundwork before new tables (gated on Q8)
 
-- [ ] HITL Decide multi-user timing (open-questions Q8; recommended:
-      groundwork-now)
-- [ ] AFK Phase-10 groundwork (if Q8 approves): `User` model + `user_id` on
-      `Candidate` + seeded auto-login dev user (no login UI) — lands BEFORE
-      new tables below so nothing is migrated twice
+- [x] HITL Decide multi-user timing (Q8) → groundwork-now (2026-07-19)
+- [ ] AFK Phase-10 groundwork: `User` model + `user_id` on `Candidate` +
+      seeded auto-login dev user (no login UI) — lands BEFORE new tables
+      below so nothing is migrated twice
 
 ### 9C — Profile surface (maintainer's top pain)
 
@@ -50,13 +49,24 @@ provenance decisions (`docs/design/scoring-and-provenance.md`).
       columns, sortable, best-match default order, score breakdown on expand
 - [ ] AFK R7 slice 2: saveable named search lists (`SearchRun` model —
       after 9B groundwork), multiple lists, revisit past searches
+- [ ] AFK R7: result curation (P4) — hide/dismiss, min-score /
+      verified-remote filters, CSV export of a saved list
 
 ### 9E — Platform reliability (can interleave with 9C/9D; HITL-heavy)
 
 - [ ] HITL R3: LinkedIn login reliability rework — session-validity probe,
-      stateful login UI, visible failure reasons, guided re-login
+      stateful login UI, visible failure reasons, guided re-login; includes
+      pre-search login health probe (P5)
       (needs its own design pass + manual login testing)
 - [ ] HITL R3: add next platform per research doc (shared scraper interface)
+
+### 9F — Approved extensions (R11; after 9D)
+
+- [ ] AFK P1: application pipeline UI — status tracking on jobs table using
+      existing `JobApplication` model
+- [ ] AFK P3: scheduled re-search with "N new since last run" diff
+      (builds on 9D saved lists)
+- [ ] AFK P2: per-job tailored resume/cover letter via LLM provider system
 
 ## Phase 10 — Accounts & Multi-User (end-state; R8–R10)
 

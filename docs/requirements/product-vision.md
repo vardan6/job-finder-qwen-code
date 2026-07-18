@@ -41,6 +41,9 @@ present results in a best-match-first table.
   per platform, explicit re-login flow, visible failure reasons.
 - Current LinkedIn login is known-unreliable; reliability is a requirement,
   not a nice-to-have.
+- **Pre-search login health probe** (approved 2026-07-19): before a search
+  runs, each platform session is probed; expired sessions surface
+  "cookie expired — re-login" instead of failing mid-search.
 
 ## R4. Job search
 
@@ -75,6 +78,19 @@ present results in a best-match-first table.
   as a list identified by search date plus another distinguishing detail in
   the name (e.g. query/titles used); the user can keep and revisit multiple
   saved lists.
+- **Result curation** (approved 2026-07-19): hide/dismiss jobs, min-score and
+  verified-remote-only filters, CSV export of a saved list.
+
+## R11. Application tracking & search automation (approved 2026-07-19)
+
+- **Application pipeline**: track per-job status
+  (interested → applied → interview → offer / rejected) on the jobs table
+  (`JobApplication` model exists; needs real UI).
+- **Per-job tailored documents**: generate a tailored resume/cover letter for
+  a specific job from the candidate's uploaded docs via the existing LLM
+  provider system.
+- **Scheduled re-search with diff**: re-run a saved search on demand/schedule
+  and show "N new since last run" (builds on saved lists).
 
 ## R8. Accounts & multi-user (end-state; captured 2026-07-19)
 
