@@ -76,10 +76,39 @@ present results in a best-match-first table.
   the name (e.g. query/titles used); the user can keep and revisit multiple
   saved lists.
 
+## R8. Accounts & multi-user (end-state; captured 2026-07-19)
+
+- The application becomes **multi-user** with real accounts. Timing of the
+  switch is a deliberate decision (see open-questions Q8) — end-state yes,
+  but groundwork may land earlier to avoid re-migrating data models.
+- **Account types**: job-seeking accounts (professionals/employees) now;
+  job-providing accounts (recruiters, hiring managers, companies) later —
+  current design must not preclude them.
+- Job-providing accounts will **search and match public candidate profiles**.
+- **Dev/testing convenience**: a seeded, auto-logged-in dev user must exist so
+  local testing never starts from a login screen (login bypass or cached
+  session in dev mode).
+
+## R9. Multiple profiles per user
+
+- One user owns **multiple candidate profiles**, each targeting a different
+  career track (e.g. "AI Engineer" profile vs "Software Developer" profile),
+  each with its own titles, skills, files/resumes, and searches.
+- Mapping note: today's `Candidate` records already behave like profiles;
+  under multi-user each `User` owns N candidate profiles — the existing
+  multi-candidate support is the migration path, not a rewrite.
+
+## R10. Profile visibility status
+
+- Each profile has a **visibility status**: `draft` (still working on it) /
+  `private` / `public`.
+- Only `public` profiles are discoverable by future job-providing accounts.
+
 ## Non-goals (current)
 
 - Auto-applying to jobs.
-- Multi-user / hosted deployment (local-first app).
+- Employer/recruiter-side features (matching UI, company pages) — future,
+  but data model must leave room (account type, profile visibility).
 
 ## Quality bar
 

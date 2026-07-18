@@ -44,6 +44,23 @@ autonomously, HITL = needs maintainer decision/review.
 - [ ] AFK R4: platform research doc in `docs/research/` ranking job platforms
 - [ ] HITL R3: add next platform (per research doc, e.g. We Work Remotely)
 
+## Phase 10 — Accounts & Multi-User (end-state; requirements R8–R10)
+
+Timing gate: HITL decision in `docs/open-questions.md` Q8 (groundwork-now
+vs all-at-end). Groundwork slices may move ahead of Phase 9 model work.
+
+- [ ] HITL Decide multi-user timing (Q8)
+- [ ] AFK Groundwork: `User` model + `user_id` on `Candidate` + seeded
+      auto-login dev user (no login UI) — if Q8 chooses groundwork-now
+- [ ] AFK R10: profile visibility status (`draft`/`private`/`public`) on
+      profiles with UI control
+- [ ] AFK R9: profiles-per-user UX — present candidates as "my profiles"
+      (per-track: titles, files, searches scoped per profile)
+- [ ] HITL R8: real auth — registration, login, sessions, per-user isolation
+- [ ] HITL R8: account types (job-seeking vs job-providing) in data model
+- [ ] Future R8: employer/recruiter side — search/match public profiles
+      (explicitly deferred; keep models compatible)
+
 ## Phase 0 — Workflow Bootstrap
 
 - [x] Link shared agent controls, skills, and hooks from `my-workflow`

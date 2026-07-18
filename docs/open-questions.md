@@ -37,6 +37,22 @@ Two-stage scoring approved → canonical in `docs/design/scoring-and-provenance.
 Badge + reset-to-extracted approved → canonical in
 `docs/design/scoring-and-provenance.md`.
 
+## Q8. When to do the multi-user switch — needs decision
+
+Maintainer wants multi-user (R8) but at the right time. Recommendation:
+**split groundwork from the full switch.**
+
+1. **Now-ish (before model-heavy Phase 9 slices)**: add a `User` model, a
+   `user_id` FK on `Candidate`, and a seeded auto-logged-in dev user. Cheap
+   while data is small; avoids re-migrating every new table (saved search
+   lists, provenance) a second time. No login UI, no permissions — invisible
+   groundwork + the dev-user testing convenience.
+2. **At the end (per maintainer)**: real auth (registration, login, sessions),
+   account types, per-user data isolation, profile visibility enforcement.
+
+Alternative (simplest): defer everything multi-user to the end and accept one
+larger migration then. Decide: groundwork-now (recommended) vs all-at-end.
+
 ## 2. Recreate vs. enhance — confirmation
 
 My assessment: the backend is in good shape (modular FastAPI app, 124 passing

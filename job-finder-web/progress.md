@@ -2,3 +2,4 @@
 - 2026-07-19: Captured product vision — `docs/requirements/product-vision.md` (R1–R7 incl. app-wide UI/UX consistency, saved search lists) via /planning-capture.
 - 2026-07-19: Decided scoring + provenance design — two-stage composite scoring and extracted-vs-edited badges in `docs/design/scoring-and-provenance.md`.
 - 2026-07-19: Ran R1–R7 gap audit — verdict table + priority order in `docs/reviews/gap-audit-2026-07-19.md`; proposed extensions P1–P5 await approval in `docs/open-questions.md`.
+- 2026-07-19: Captured accounts/multi-user vision — R8–R10 (account types, multiple profiles per user, visibility status) in product-vision.md, Phase 10 roadmap, timing decision Q8 in open-questions.
