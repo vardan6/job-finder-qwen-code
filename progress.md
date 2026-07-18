@@ -31,3 +31,4 @@
 - 2026-06-05: Add typed read-only tool definitions for `list_data_surfaces` and `candidate_skills_lookup` — added the `backend.ai_agent` schema/registry layer with validation tests.
 - 2026-07-19: Applied recommended answers — Q8 groundwork-now approved, P1–P5 extensions approved into R3/R7/R11 + roadmap 9D/9E/9F, legacy scripts archived to `history/legacy-scripts/`.
 - 2026-07-19: Resolved Q6 — per-model capabilities, verification probe, route-first/degrade-visibly agent fallback (remote-rover pattern reviewed and improved) in `docs/design/agent-provider-capabilities.md`; open questions now zero.
+- 2026-07-19: Plan-review triage complete — all 9 GPT-5 findings accepted and fixed at doc level: 4 design contracts (scoring/provenance rework, search-runs+snapshot lists, 9B ownership groundwork, remote verification), roadmap 9B/9C/9D/10 slices updated, review file marked RESOLVED.

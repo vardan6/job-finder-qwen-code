@@ -24,31 +24,45 @@ provenance decisions (`docs/design/scoring-and-provenance.md`).
 ### 9B — Model groundwork before new tables (gated on Q8)
 
 - [x] HITL Decide multi-user timing (Q8) → groundwork-now (2026-07-19)
-- [ ] AFK Phase-10 groundwork: `User` model + `user_id` on `Candidate` +
-      seeded auto-login dev user (no login UI) — lands BEFORE new tables
-      below so nothing is migrated twice
+- [ ] AFK Phase-10 groundwork per `docs/design/ownership-groundwork.md`:
+      `User` model (+ `account_type` discriminator) + `Candidate.user_id`
+      (nullable → backfill → NOT NULL) + idempotent seeded auto-login dev user
+      (no login UI) + `get_current_user()` / `get_owned_candidate()` contract
+      that all new Phase 9 code must use — lands BEFORE new tables below so
+      nothing is migrated twice
 
 ### 9C — Profile surface (maintainer's top pain)
 
 - [ ] AFK R2: unify profile-page cards into one shared card pattern
       (skills + preferred titles first; extracts detail.html inline JS as a
       side effect)
-- [ ] AFK R1: provenance — persist extracted-vs-edited per title/skill and
-      surface badges + reset-to-extracted in the unified cards
+- [ ] AFK R1: provenance — extraction-occurrence table (per-file facts) +
+      extracted-vs-edited on curated values, badges + reset-to-extracted in
+      the unified cards (schema per `docs/design/scoring-and-provenance.md`)
 - [ ] AFK R1: content-aware file-type classification (resume/CV/other) to
       replace filename-keyword guessing
 
 ### 9D — Search → score → present pipeline (dependency chain, in order)
 
-- [ ] AFK R5 slice 1: deterministic title-match scoring + score column
+Contracts: `docs/design/scoring-and-provenance.md` (score),
+`docs/design/remote-verification.md` (R6),
+`docs/design/search-runs-and-lists.md` (R7/R11).
+
+- [ ] AFK R5 slice 1: deterministic title-match scoring + score column +
+      ordering-fixture regression tests (aliases, empty descriptions)
 - [ ] AFK R5 slice 2: skills-overlap scoring folded into weighted composite
-      (config weights, breakdown data)
-- [ ] AFK R6: LLM remote-status verification with contradiction evidence
-      (before the table so the table can show verified status)
+      (config weights + alias map, breakdown data, `scoring_version` persisted)
+- [ ] AFK R5 slice 3 (optional, after slice 2): LLM top-N refinement —
+      separate `llm_score`, accompanies composite, never replaces sort default
+- [ ] AFK R6: LLM remote-status verification per contract — enum +
+      restrictions + verbatim evidence + `unknown` fallback, mocked-provider
+      contradiction fixtures (before the table so it can show verified status)
 - [ ] AFK R7 slice 1: results table upgrade — salary/verified-remote/score
       columns, sortable, best-match default order, score breakdown on expand
-- [ ] AFK R7 slice 2: saveable named search lists (`SearchRun` model —
-      after 9B groundwork), multiple lists, revisit past searches
+- [ ] AFK R7 slice 2: saveable named search lists — `SearchRun` +
+      `SearchRunJob` snapshot rows (after 9B groundwork) + dedup rework
+      (attach sightings instead of dropping known jobs), multiple lists,
+      revisit past searches as historical snapshots
 - [ ] AFK R7: result curation (P4) — hide/dismiss, min-score /
       verified-remote filters, CSV export of a saved list
 
@@ -76,7 +90,10 @@ Groundwork slice lives in 9B. The rest is deliberately last (per maintainer).
 - [ ] AFK R9: profiles-per-user UX — present candidates as "my profiles"
       (per-track titles, files, searches scoped per profile)
 - [ ] HITL R8: real auth — registration, login, sessions, per-user isolation
-- [ ] HITL R8: account types (job-seeking vs job-providing) in data model
+      (sweep the retrofit inventory in `docs/design/ownership-groundwork.md`
+      onto `get_owned_candidate`)
+- [ ] HITL R8: account-type behavior/UI (job-seeking vs job-providing) —
+      schema discriminator already lands in 9B groundwork
 - [ ] Future R8: employer/recruiter side — search/match public profiles
       (explicitly deferred; keep models compatible)
 
