@@ -1,0 +1,4 @@
+- 2026-07-19: Stabilization review — full-project assessment (124/124 tests pass), enhance-not-recreate decision, root handoffs archived to `history/`, branch `stabilize/cleanup-foundation` created.
+- 2026-07-19: Captured product vision — `docs/requirements/product-vision.md` (R1–R7 incl. app-wide UI/UX consistency, saved search lists) via /planning-capture.
+- 2026-07-19: Decided scoring + provenance design — two-stage composite scoring and extracted-vs-edited badges in `docs/design/scoring-and-provenance.md`.
+- 2026-07-19: Ran R1–R7 gap audit — verdict table + priority order in `docs/reviews/gap-audit-2026-07-19.md`; proposed extensions P1–P5 await approval in `docs/open-questions.md`.
