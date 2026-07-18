@@ -3,15 +3,27 @@
 Questions for the maintainer before/while running the Stabilization phase.
 Answer inline or delete a question once resolved.
 
-## 1. Which bugs, concretely?
+## 1. Which bugs, concretely? — ANSWERED 2026-07-19
 
-The request said the project "has many, many bugs", but all 124 backend tests
-pass and the module structure is sound. The known-bug list is the single most
-valuable input for stabilization. Please list concrete symptoms (page, action,
-expected vs actual), even roughly — e.g. "chat stream hangs after stop",
-"skills modal loses edits". Without this, stabilization has to guess where the
-pain is (my guess: frontend templates and scrapers, since those have no test
-coverage).
+Bugs are misimplementations and UI inconsistencies, not crashes: inconsistent
+profile-page cards, missing requested features, unreliable LinkedIn login.
+Canonical target behavior now captured in `docs/requirements/product-vision.md`;
+the gap audit (roadmap Phase 9 first slice) turns it into a concrete fix list.
+
+## 1b. Scoring approach — needs decision
+
+Recommendation (see product-vision R5): **two-stage scoring** — search by
+titles (cheap recall), then score each result with a weighted composite:
+title similarity + skills overlap (deterministic, explainable, fast) with an
+optional LLM whole-profile pass for the top N only (cost control). Show the
+composite score plus per-dimension breakdown on hover/expand. Confirm or pick
+a different mix.
+
+## 1c. Extracted-vs-edited provenance UX — needs decision
+
+Recommendation: store `source: extracted | edited` per item; UI shows a small
+badge/dot on extracted items that disappears (or changes) once edited, plus a
+"reset to extracted" affordance. Confirm or propose alternative.
 
 ## 2. Recreate vs. enhance — confirmation
 

@@ -7,11 +7,34 @@ with 124 passing tests. Bug-fix inputs tracked in `docs/open-questions.md`.
 
 - [x] Archive root handoff/review files into `history/`
 - [x] Capture maintainer questions in `docs/open-questions.md`
-- [ ] Collect concrete bug list from maintainer (open-questions Q1)
-- [ ] Triage + fix confirmed bugs, one slice per bug, with regression tests
+- [x] Collect concrete bug list from maintainer → captured as
+      `docs/requirements/product-vision.md` (2026-07-19)
 - [ ] Extract inline JS from `chat.html` / `llm.html` / `candidates/detail.html`
       into `frontend/static/js/` modules (pending Q4 approval)
-- [ ] Decide scraper fate: stabilize with tests, feature-flag, or drop (Q3)
+
+## Phase 9 — Product Completion (requirements: `docs/requirements/product-vision.md`)
+
+Thin vertical slices; each independently verifiable. AFK = can run
+autonomously, HITL = needs maintainer decision/review.
+
+- [ ] AFK Gap audit: verify each R1–R7 requirement against implementation;
+      write findings table to `docs/reviews/` (drives the rest of this phase)
+- [ ] HITL Decide scoring mix (open-questions 1b) and provenance UX (1c)
+- [ ] AFK R2: unify profile-page cards into one shared card pattern
+      (skills + preferred titles first: same fold/unfold, listing, edit)
+- [ ] AFK R1: verify/complete file-type classification (resume/CV/other)
+- [ ] AFK R1: provenance — persist extracted-vs-edited per title/skill and
+      surface it in the card UI (after 1c decision)
+- [ ] HITL R3: LinkedIn login reliability rework — stateful login UI, visible
+      failure reasons, re-login flow (needs manual login testing)
+- [ ] AFK R5 slice 1: title-match scoring + score column in results
+- [ ] AFK R5 slice 2: skills-overlap scoring folded into composite score
+- [ ] AFK R6: LLM remote-status verification pass with contradiction evidence
+- [ ] AFK R7 slice 1: results table upgrade — key columns, best-match sort
+- [ ] AFK R7 slice 2: saveable named search lists (date + distinguishing
+      detail), multiple lists, revisit past searches
+- [ ] AFK R4: platform research doc in `docs/research/` ranking job platforms
+- [ ] HITL R3: add next platform (per research doc, e.g. We Work Remotely)
 
 ## Phase 0 — Workflow Bootstrap
 
