@@ -1,95 +1,54 @@
 # Open Questions
 
-## 0. Proposed extensions — approve/reject individually (2026-07-19)
+Answer inline or delete a question once resolved. Resolved items move to the
+bottom section.
 
-Suggested by review to complete the vision; not yet requirements:
+## STILL OPEN — answers unblock work
 
-- **P1 Application pipeline**: `JobApplication` model already exists but has no
-  real UI — add status tracking (interested → applied → interview → offer /
-  rejected) with a status column/board on the jobs table.
-- **P2 Per-job tailored documents**: generate a tailored resume/cover letter
-  for a specific job from the candidate's uploaded docs (reuses the existing
-  document store + LLM provider system).
-- **P3 Scheduled re-search with diff**: re-run a saved search on demand/schedule
-  and show "N new since last run" (pairs with R7b saved lists).
-- **P4 Result curation**: hide/dismiss jobs, min-score and verified-remote-only
-  filters, CSV export of a saved list.
-- **P5 Login health probe**: before a search runs, probe each platform session
-  and surface "cookie expired — re-login" instead of failing mid-search
-  (natural part of the R3 reliability rework).
+### Q8. Multi-user timing — blocks 9B (and ideally precedes 9D saved lists)
 
-Questions for the maintainer before/while running the Stabilization phase.
-Answer inline or delete a question once resolved.
+Recommendation: **groundwork-now** — `User` model + `user_id` on `Candidate` +
+seeded auto-login dev user (no login UI, no permissions), so later tables are
+never migrated twice and testing skips login. Full auth/accounts stay at the
+end per maintainer. Alternative: all-at-end, accepting one larger migration.
+**Default if unanswered: groundwork-now** (it is invisible and reversible).
 
-## 1. Which bugs, concretely? — ANSWERED 2026-07-19
+### P1–P5. Proposed extensions — approve/reject individually (optional)
 
-Bugs are misimplementations and UI inconsistencies, not crashes: inconsistent
-profile-page cards, missing requested features, unreliable LinkedIn login.
-Canonical target behavior now captured in `docs/requirements/product-vision.md`;
-the gap audit (roadmap Phase 9 first slice) turns it into a concrete fix list.
+Not blocking; on approval they slot per `docs/reviews/roadmap-reorder-2026-07-19.md`:
 
-## 1b. Scoring approach — DECIDED 2026-07-19
+- **P1 Application pipeline**: UI for the existing unused `JobApplication`
+  model (interested → applied → interview → offer/rejected).
+- **P2 Per-job tailored documents**: tailored resume/cover letter per job from
+  uploaded docs via existing LLM provider system.
+- **P3 Scheduled re-search with diff**: re-run a saved search, show "N new".
+- **P4 Result curation**: hide/dismiss, min-score / verified-remote filters,
+  CSV export.
+- **P5 Login health probe**: pre-search session probe, "cookie expired —
+  re-login" instead of mid-search failure (joins R3 rework).
 
-Two-stage scoring approved → canonical in `docs/design/scoring-and-provenance.md`.
+### Q7. Legacy root scripts (housekeeping, non-blocking)
 
-## 1c. Extracted-vs-edited provenance UX — DECIDED 2026-07-19
+`migrate_platform_accounts.py`, `migrate_skills.py`, `copy_candidate_files.py`
+at the app root: move to `scripts/`/`history/` or still needed?
 
-Badge + reset-to-extracted approved → canonical in
-`docs/design/scoring-and-provenance.md`.
+### Q6. Provider capability config shape (only when Phase 6 resumes)
 
-## Q8. When to do the multi-user switch — needs decision
+Confirm capability config shape before wiring agent-mode fallback. Deferred
+with Phase 6; not blocking Phase 9.
 
-Maintainer wants multi-user (R8) but at the right time. Recommendation:
-**split groundwork from the full switch.**
+## RESOLVED
 
-1. **Now-ish (before model-heavy Phase 9 slices)**: add a `User` model, a
-   `user_id` FK on `Candidate`, and a seeded auto-logged-in dev user. Cheap
-   while data is small; avoids re-migrating every new table (saved search
-   lists, provenance) a second time. No login UI, no permissions — invisible
-   groundwork + the dev-user testing convenience.
-2. **At the end (per maintainer)**: real auth (registration, login, sessions),
-   account types, per-user data isolation, profile visibility enforcement.
-
-Alternative (simplest): defer everything multi-user to the end and accept one
-larger migration then. Decide: groundwork-now (recommended) vs all-at-end.
-
-## 2. Recreate vs. enhance — confirmation
-
-My assessment: the backend is in good shape (modular FastAPI app, 124 passing
-tests, ADRs, clean docs tree) and a full rewrite would lose working behavior
-for little gain. Recommendation is **enhance/stabilize on this branch, not
-recreate**. Confirm you accept this, or say if there is a deeper reason to
-rebuild (e.g. you want a different stack/architecture).
-
-## 3. Are the scrapers still a live feature?
-
-`backend/scrapers/linkedin.py` and `glassdoor.py` are untested, browser-driven,
-and full of broad `except Exception` handlers — the most likely bug nest.
-Are LinkedIn/Glassdoor scraping actively used? Options: stabilize with tests,
-put behind a feature flag, or drop.
-
-## 4. Frontend refactor appetite
-
-`frontend/templates/chat.html` is ~2,100 lines with large inline scripts
-(likewise `settings/llm.html`, `candidates/detail.html`). This is the second
-most likely bug source and is untestable as-is. OK to extract inline JS into
-`frontend/static/js/` modules as part of stabilization, even though it is a
-sizable diff with no visible feature change?
-
-## 5. Remote-rover parity — still a goal?
-
-Phases 4–5 chased `remote-rover` parity and Phase 7 continues it. Is parity
-still the target, or has job-finder diverged enough that Phase 7 items should
-be re-prioritized on their own merit?
-
-## 6. Provider capability config shape (carried over)
-
-Pre-existing open question from `activeContext.md`: confirm the provider
-capability config shape before wiring agent-mode fallback (Phase 6, third
-sub-item).
-
-## 7. Root-level legacy scripts
-
-`job-finder-web/migrate_platform_accounts.py`, `migrate_skills.py`, and
-`copy_candidate_files.py` sit at the app root. Are these one-time migrations
-that can move to `history/` (or a `scripts/` dir), or still needed?
+- **Q1 Which bugs (2026-07-19)**: misimplementations + UI inconsistencies →
+  captured as `docs/requirements/product-vision.md`; gap audit ran
+  (`docs/reviews/gap-audit-2026-07-19.md`).
+- **Q1b scoring / Q1c provenance (2026-07-19)**: approved →
+  `docs/design/scoring-and-provenance.md`.
+- **Q2 recreate vs enhance (2026-07-19)**: enhance in place — maintainer
+  proceeded on this basis all session.
+- **Q3 scrapers live? (2026-07-19)**: yes — vision R3 makes login/scraping
+  reliability a requirement; stabilize, don't drop.
+- **Q4 inline-JS extraction (2026-07-19)**: implicitly approved — folded into
+  9A/9C UI-consistency slices (R2 requires it).
+- **Q5 remote-rover parity (2026-07-19)**: no longer a driving goal — Phase 7
+  demoted to Deferred; overlapping items fold into R2 work.
