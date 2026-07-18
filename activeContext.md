@@ -6,5 +6,5 @@
 - Next atomic step: 9A slice 1 — behavior-level audit of profile-page cards into `docs/reviews/` (per-card bugs/divergences in fold/unfold, file open, listing, edit flows).
 - Next after that: 9A app-wide UI/UX cross-comparison; then 9B groundwork slice (approved) before any new-table slice.
 - Blockers/env: None — Q8 and P1–P5 resolved 2026-07-19; 9B groundwork approved. Use `./job-finder-web/venv/bin/pytest -s ...`; local `python3` lacks `pytest`.
-- Open questions: only Q6 (provider capability shape, deferred with Phase 6) — see `docs/open-questions.md`.
+- Open questions: none — all resolved 2026-07-19 (`docs/open-questions.md`).
 - Discarded as noise: Full rewrite (rejected — 124/124 tests pass); doing provenance before card unification (rework); scheduling new tables before Q8 groundwork (double migration).
