@@ -1,10 +1,10 @@
 # Active Context
 
-- Mode: stabilization
-- Phase: Phase S — Stabilization (branch `stabilize/cleanup-foundation`)
-- State: Full-project review done (2026-07-19): 124/124 tests pass; verdict is enhance-in-place, not recreate. Root handoff/review docs archived to `history/`; maintainer questions captured in `docs/open-questions.md`.
-- Next atomic step: R2 pre-review — behavior-level audit of profile-page cards (per-card bugs/divergences) into `docs/reviews/`.
-- Next after that: app-wide UI/UX cross-comparison review; maintainer verdicts on open-questions §0 proposed extensions P1–P5.
-- Blockers/env: Use `./job-finder-web/venv/bin/pytest -s ...` for focused tests; local `python3` lacks `pytest`.
-- Open questions: See `docs/open-questions.md` (7 items, includes carried-over provider capability config shape).
-- Discarded as noise: Full rewrite of the app — rejected 2026-07-19, would lose working tested behavior.
+- Mode: implementation (Phase 9 product completion)
+- Phase: 9A — reviews first, branch `stabilize/cleanup-foundation`
+- State: All planning captured and committed through 08d7700 — vision R1–R10, scoring/provenance design, gap audit, roadmap reordered into execution order (9A→9E, rationale in `docs/reviews/roadmap-reorder-2026-07-19.md`).
+- Next atomic step: 9A slice 1 — behavior-level audit of profile-page cards into `docs/reviews/` (per-card bugs/divergences in fold/unfold, file open, listing, edit flows).
+- Next after that: 9A app-wide UI/UX cross-comparison; then 9B needs HITL Q8 verdict before any new-table slice.
+- Blockers/env: HITL pending — Q8 multi-user timing + P1–P5 extension approvals in `docs/open-questions.md`. Use `./job-finder-web/venv/bin/pytest -s ...`; local `python3` lacks `pytest`.
+- Open questions: `docs/open-questions.md` — Q8 (groundwork-now recommended), §0 P1–P5, Q3 scraper fate, Q4 inline-JS approval (now folded into 9A/9C), Q5 parity relevance, Q7 legacy scripts.
+- Discarded as noise: Full rewrite (rejected — 124/124 tests pass); doing provenance before card unification (rework); scheduling new tables before Q8 groundwork (double migration).
