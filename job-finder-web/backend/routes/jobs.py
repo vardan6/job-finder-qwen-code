@@ -380,7 +380,7 @@ async def perform_job_search(
     db: Session = Depends(get_db),
     candidate_id: int = Form(...),
     query: str = Form(...),
-    location: str = Form(""),
+    location: str = Form(...),
     platforms: list = Form(default_factory=lambda: ["linkedin", "glassdoor"]),
     max_jobs: int = Form(20),
     analyze: str = Form("false"),  # Comes as 'true' or 'false' string
@@ -402,7 +402,17 @@ async def perform_job_search(
     # Parse string booleans
     analyze_bool = analyze.lower() == "true"
     headless_bool = headless.lower() == "true"
-    
+
+    if not location.strip():
+        return templates.TemplateResponse(
+            "components/error.html",
+            {
+                "request": request,
+                "error": "Location is required for job search.",
+            },
+            status_code=200,
+        )
+
     # Validate candidate
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
@@ -499,7 +509,7 @@ async def start_job_search_stream(
     db: Session = Depends(get_db),
     candidate_id: int = Form(...),
     query: str = Form(...),
-    location: str = Form(""),
+    location: str = Form(...),
     platforms: list = Form(default_factory=lambda: ["linkedin", "glassdoor"]),
     max_jobs: int = Form(20),
     analyze: str = Form("false"),
@@ -512,6 +522,9 @@ async def start_job_search_stream(
     """
     from backend.services.search_progress import create_progress_queue
     from backend.services.search_lock import is_search_running
+
+    if not location.strip():
+        return JSONResponse({"error": "Location is required for job search."}, status_code=400)
 
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
@@ -658,7 +671,7 @@ async def start_async_job_search(
     db: Session = Depends(get_db),
     candidate_id: int = Form(...),
     query: str = Form(...),
-    location: str = Form(""),
+    location: str = Form(...),
     platforms: list = Form(default_factory=lambda: ["linkedin", "glassdoor"]),
     max_jobs: int = Form(20),
     analyze: bool = Form(False),
@@ -666,9 +679,12 @@ async def start_async_job_search(
 ):
     """
     Start an asynchronous job search (non-blocking).
-    
+
     Returns immediately with a search ID, then runs the search in the background.
     """
+    if not location.strip():
+        return {"error": "Location is required for job search."}
+
     # Validate candidate
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:

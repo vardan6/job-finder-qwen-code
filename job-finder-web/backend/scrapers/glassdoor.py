@@ -393,18 +393,28 @@ class GlassdoorScraper:
             return False
     
     async def _is_captcha(self, page: Page) -> bool:
-        """Check if CAPTCHA is present"""
-        captcha_indicators = [
-            "captcha",
-            "verify you are human",
-            "unusual traffic",
-            "access denied",
-        ]
-        
+        """Check if a CAPTCHA/challenge is actually blocking the page.
+
+        A blind substring search over the full page HTML false-positives on
+        normal pages that merely reference "captcha" in scripts, meta tags,
+        or anti-bot bundles (e.g. PerimeterX) loaded defensively. Require
+        either a challenge URL or a visible CAPTCHA widget, and never flag it
+        if real job listings are already rendered.
+        """
         try:
-            content = await page.content()
-            content_lower = content.lower()
-            return any(indicator in content_lower for indicator in captcha_indicators)
+            url = (page.url or "").lower()
+            if any(token in url for token in ["/verify", "unusual traffic", "px-captcha", "access denied"]):
+                return True
+
+            has_listings = await page.query_selector('[data-test="jobListing"]') is not None
+            if has_listings:
+                return False
+
+            has_captcha_widget = await page.query_selector(
+                "iframe[src*='captcha' i], iframe[title*='captcha' i], "
+                ".g-recaptcha, .h-captcha, #px-captcha, [id*='captcha' i]"
+            ) is not None
+            return has_captcha_widget
         except Exception:
             return False
     

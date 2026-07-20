@@ -108,11 +108,12 @@
                         <label class="form-label">
                             <i class="bi bi-geo-alt"></i> Location
                         </label>
-                        <input type="text" 
-                               name="location" 
-                               class="form-control" 
+                        <input type="text"
+                               name="location"
+                               class="form-control"
                                value="{{ location }}"
-                               id="locationInput">
+                               id="locationInput"
+                               required>
                         <small class="text-muted">Target job location or "Remote"</small>
                     </div>
                     <div class="col-md-6">
@@ -225,11 +226,9 @@
 
         <!-- Action Button -->
         <div class="d-grid gap-2 mb-4">
-            <button type="button" 
+            <button type="button"
                     class="btn btn-primary btn-search-lg"
-                    onclick="startSearch()"
-                    data-bs-toggle="modal" 
-                    data-bs-target="#confirmSearchModal">
+                    onclick="startSearch()">
                 <i class="bi bi-search"></i> Start Job Search
             </button>
         </div>
@@ -352,6 +351,7 @@
                     <span class="spinner-border spinner-border-sm text-primary me-2" id="progressSpinner" role="status"></span>
                     <span id="progressTitle">Searching Jobs...</span>
                 </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div id="progressLog"
@@ -360,7 +360,8 @@
                 </div>
             </div>
             <div class="modal-footer" id="progressFooter">
-                <small class="text-muted me-auto">Please do not close this page</small>
+                <small class="text-muted me-auto">The search keeps running in the background even if you close this</small>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
                 <a id="progressViewResults" href="#" class="btn btn-primary d-none">
                     <i class="bi bi-list-ul"></i> View Results
                 </a>
@@ -371,9 +372,15 @@
 
 <script>
 function startSearch() {
+    const locationInput = document.getElementById('locationInput');
+    if (!locationInput.value.trim()) {
+        locationInput.reportValidity();
+        return;
+    }
+
     // Update hidden form fields from visible inputs
     const customQuery = document.getElementById('customQueryInput').value;
-    const location = document.getElementById('locationInput').value;
+    const location = locationInput.value;
     const remoteOnly = document.getElementById('remoteOnlyToggle').checked;
     const maxJobs = document.getElementById('maxJobsInput').value;
     const analyze = document.getElementById('analyzeToggle').checked;
@@ -403,6 +410,8 @@ function startSearch() {
     
     // Store platforms for submission
     window.selectedPlatforms = selectedPlatforms;
+
+    new bootstrap.Modal(document.getElementById('confirmSearchModal')).show();
 }
 
 function submitSearch() {
@@ -416,7 +425,6 @@ function submitSearch() {
     document.getElementById('progressTitle').textContent = 'Searching Jobs...';
     document.getElementById('progressSpinner').classList.remove('d-none');
     document.getElementById('progressViewResults').classList.add('d-none');
-    document.querySelector('#progressFooter small').textContent = 'Please do not close this page';
 
     const progressModal = new bootstrap.Modal(document.getElementById('searchProgressModal'));
     progressModal.show();
@@ -447,7 +455,6 @@ function submitSearch() {
             appendLog(log, 'ERROR: ' + err.message, 'text-danger');
             document.getElementById('progressTitle').textContent = 'Search Failed';
             document.getElementById('progressSpinner').classList.add('d-none');
-            document.querySelector('#progressFooter small').textContent = '';
         });
 }
 
@@ -485,7 +492,6 @@ function openProgressStream(searchId, log) {
                 }
                 document.getElementById('progressTitle').textContent = 'Search Complete';
                 document.getElementById('progressSpinner').classList.add('d-none');
-                document.querySelector('#progressFooter small').textContent = '';
 
                 // Show View Results button
                 const candidateId = document.getElementById('searchForm').querySelector('[name=candidate_id]').value;

@@ -378,17 +378,28 @@ class LinkedInScraper:
             return False
     
     async def _is_captcha(self, page: Page) -> bool:
-        """Check if CAPTCHA is present"""
-        captcha_indicators = [
-            "captcha",
-            "verify you are human",
-            "unusual traffic",
-        ]
-        
+        """Check if a CAPTCHA/challenge is actually blocking the page.
+
+        A blind substring search over the full page HTML false-positives on
+        normal pages that merely reference "captcha" in scripts, meta tags,
+        or anti-bot bundles LinkedIn loads defensively. Require either a
+        challenge URL or a visible CAPTCHA widget, and never flag it if real
+        job listings are already rendered.
+        """
         try:
-            content = await page.content()
-            content_lower = content.lower()
-            return any(indicator in content_lower for indicator in captcha_indicators)
+            url = (page.url or "").lower()
+            if any(token in url for token in ["/checkpoint/challenge", "/checkpoint/challengesv2", "unusual traffic"]):
+                return True
+
+            has_job_cards = await page.query_selector(".job-search-card, .jobs-search__results-list li") is not None
+            if has_job_cards:
+                return False
+
+            has_captcha_widget = await page.query_selector(
+                "iframe[src*='captcha' i], iframe[title*='captcha' i], "
+                ".g-recaptcha, .h-captcha, #captcha-internal, [id*='captcha' i]"
+            ) is not None
+            return has_captcha_widget
         except Exception:
             return False
     
