@@ -31,6 +31,11 @@ class BrowserManager:
         self._playwright = None
         self._browser: Optional[Browser] = None
         self._contexts: Dict[str, BrowserContext] = {}
+        # Manual sign-in must survive an application reload long enough for
+        # the user to press "Finish Browser Login".  It therefore uses a
+        # dedicated Chromium profile rather than the process-local contexts
+        # used by scrapers.
+        self._manual_contexts: Dict[str, BrowserContext] = {}
         self._initialized = False
     
     async def initialize(self):
@@ -168,7 +173,7 @@ class BrowserManager:
             
             cookies_file = Path(cookies_path)
             cookies_file.parent.mkdir(parents=True, exist_ok=True)
-            cookies_file.write_bytes(encrypted)
+            cookies_file.write_text(encrypted)
             logger.info(f"Saved storage state for {platform} ({len(cookies)} cookies)")
         except Exception as e:
             logger.error(f"Failed to save cookies for {platform}: {e}")
@@ -192,6 +197,81 @@ class BrowserManager:
         except Exception as e:
             logger.warning(f"Failed to read storage state for {platform}: {e}")
             return {}
+
+    async def get_manual_context(self, session_key: str, profile_path: str) -> BrowserContext:
+        """Get the persistent context used exclusively for a manual sign-in.
+
+        ``launch_persistent_context`` keeps Chromium's profile on disk, so a
+        Uvicorn reload does not make an already-completed manual sign-in
+        invisible to the finish endpoint.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        context = self._manual_contexts.get(session_key)
+        if context:
+            return context
+
+        profile = Path(profile_path)
+        profile.mkdir(parents=True, exist_ok=True)
+        logger.info("Launching persistent manual-login browser for %s", session_key)
+        context = await self._playwright.chromium.launch_persistent_context(
+            str(profile),
+            headless=self.headless,
+            viewport={"width": 1920, "height": 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="en-US",
+            timezone_id="Asia/Yerevan",
+            color_scheme="light",
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+            ],
+        )
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        """)
+        self._manual_contexts[session_key] = context
+        return context
+
+    async def new_manual_page(self, session_key: str, profile_path: str) -> Page:
+        """Create a page in the persistent browser profile for manual login."""
+        context = await self.get_manual_context(session_key, profile_path)
+        return await context.new_page()
+
+    async def handoff_page_to_manual_login(
+        self,
+        source_page: Page,
+        session_key: str,
+        profile_path: str,
+    ) -> Page:
+        """Move an interrupted provider session into a visible manual profile."""
+        state = await source_page.context.storage_state()
+        context = await self.get_manual_context(session_key, profile_path)
+        cookies = state.get("cookies", [])
+        if cookies:
+            await context.add_cookies(cookies)
+        page = await context.new_page()
+        await page.goto(source_page.url, wait_until="domcontentloaded", timeout=60000)
+        await page.bring_to_front()
+        return page
+
+    async def get_manual_storage_state(self, session_key: str, profile_path: str) -> dict:
+        """Read the manual-login state, reopening its persistent profile if needed."""
+        try:
+            context = await self.get_manual_context(session_key, profile_path)
+            return await context.storage_state()
+        except Exception as e:
+            logger.warning("Failed to read manual login state for %s: %s", session_key, e)
+            return {}
+
+    async def close_manual_context(self, session_key: str):
+        """Close a manual-login browser once its encrypted session is saved."""
+        context = self._manual_contexts.pop(session_key, None)
+        if context:
+            await context.close()
     
     async def new_page(self, platform: str, cookies_path: Optional[str] = None) -> Page:
         """Create a new page in the platform's context"""
@@ -217,6 +297,9 @@ class BrowserManager:
     
     async def close_all(self):
         """Close all contexts and the browser"""
+        for session_key in list(self._manual_contexts.keys()):
+            await self.close_manual_context(session_key)
+
         # Close all contexts
         for platform in list(self._contexts.keys()):
             await self.close_context(platform)

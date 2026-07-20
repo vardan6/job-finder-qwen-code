@@ -113,6 +113,11 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up resources on shutdown"""
+    # This also releases persistent manual-login profiles before a Uvicorn
+    # reload starts the replacement process.
+    from backend.services.browser_manager import cleanup_browsers
+    await cleanup_browsers()
+
     from backend.database import engine
     engine.dispose()
     

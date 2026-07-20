@@ -1,51 +1,65 @@
 {% extends "base.html" %}
 
-{% block title %}Candidates - Job Finder{% endblock %}
+{% block title %}My Profiles - Job Finder{% endblock %}
 
 {% block content %}
 <div class="container">
     <div class="row mb-4">
         <div class="col-md-6">
-            <h1><i class="bi bi-people"></i> Candidates</h1>
+            <h1><i class="bi bi-person-vcard"></i> My Profiles</h1>
+            <p class="text-muted mb-0">Keep a separate profile for each career track. Files, preferences, and searches stay with that profile.</p>
         </div>
         <div class="col-md-6 text-end">
             <a href="/candidates/new" class="btn btn-primary">
-                <i class="bi bi-person-plus"></i> Add Candidate
+                <i class="bi bi-plus-circle"></i> Add Profile
             </a>
         </div>
     </div>
 
-    {% if candidates %}
+    {% if profiles %}
     <div class="row">
         <div class="col-12">
             <div class="table-responsive">
                 <table class="table table-hover">
                     <thead>
                         <tr>
-                            <th>Name</th>
+                            <th>Profile</th>
+                            <th>Career Track</th>
                             <th>Location</th>
                             <th>Timezone</th>
                             <th>Role</th>
                             <th>Experience</th>
+                            <th>Visibility</th>
                             <th>Platform Accounts</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for candidate in candidates %}
+                        {% for profile in profiles %}
+                        {% set candidate = profile.candidate %}
                         <tr>
                             <td>
                                 <a href="/candidates/{{ candidate.id }}">
                                     <strong>{{ candidate.name }}</strong>
                                 </a>
                             </td>
+                            <td>
+                                <span class="fw-semibold">{{ profile.track_title }}</span>
+                                <div class="small text-muted">{{ candidate.job_titles|length }} preferred title{{ '' if candidate.job_titles|length == 1 else 's' }} · {{ profile.file_count }} file{{ '' if profile.file_count == 1 else 's' }}</div>
+                            </td>
                             <td>{{ candidate.location }}</td>
                             <td>{{ candidate.timezone }}</td>
                             <td>{{ candidate.current_role or 'Not set' }}</td>
                             <td>{{ candidate.experience_years or 'Not set' }} years</td>
                             <td>
+                                {% set visibility_classes = {'draft': 'text-bg-secondary', 'private': 'text-bg-dark', 'public': 'text-bg-success'} %}
+                                <span class="badge {{ visibility_classes.get(candidate.visibility_status, 'text-bg-secondary') }}">
+                                    {{ candidate.visibility_status|default('draft', true)|title }}
+                                </span>
+                            </td>
+                            <td>
                                 <a href="/candidates/{{ candidate.id }}/accounts" class="btn btn-sm btn-outline-info">
-                                    <i class="bi bi-key"></i> Manage Accounts
+                                    <i class="bi bi-key"></i> Profile Accounts
                                 </a>
                             </td>
                             <td>
@@ -76,8 +90,8 @@
         <div class="col-12">
             <div class="alert alert-info">
                 <i class="bi bi-info-circle"></i>
-                <strong>No candidates yet.</strong>
-                <a href="/candidates/new" class="alert-link">Add your first candidate</a> to get started.
+                <strong>No profiles yet.</strong>
+                <a href="/candidates/new" class="alert-link">Create your first profile</a> to set up a career track.
             </div>
         </div>
     </div>

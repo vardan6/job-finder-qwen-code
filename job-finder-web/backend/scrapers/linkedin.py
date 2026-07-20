@@ -68,6 +68,7 @@ class LinkedInScraper:
         self.rate_limiter = get_rate_limiter()
         self.deduplicator = get_deduplicator()
         self.browser_pool = None
+        self.manual_challenge_handoff = False
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -75,8 +76,8 @@ class LinkedInScraper:
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
-        if self.browser_pool:
+        """Close scraper browser unless a CAPTCHA was handed to the user."""
+        if self.browser_pool and not self.manual_challenge_handoff:
             await self.browser_pool.close_all()
     
     async def search_jobs(
@@ -85,6 +86,10 @@ class LinkedInScraper:
         location: str = "",
         max_jobs: int = 20,
         cookies_path: Optional[str] = None,
+        rate_limit_scope: str = "linkedin",
+        rate_limit_settings: Optional[dict] = None,
+        manual_session_key: Optional[str] = None,
+        manual_profile_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> List[LinkedInJob]:
         """
@@ -114,7 +119,7 @@ class LinkedInScraper:
             
             try:
                 # Check rate limits
-                allowed, reason = self.rate_limiter.check_rate_limit("linkedin")
+                allowed, reason = self.rate_limiter.check_rate_limit(rate_limit_scope, rate_limit_settings)
                 if not allowed:
                     logger.warning(f"LinkedIn rate limited: {reason}")
                     if progress_callback:
@@ -159,11 +164,16 @@ class LinkedInScraper:
 
                 # Check for CAPTCHA
                 if await self._is_captcha(page):
-                    logger.error("LinkedIn CAPTCHA detected, setting cooldown")
+                    logger.error("LinkedIn CAPTCHA detected; handing browser to the user")
                     if progress_callback:
-                        progress_callback("LinkedIn: CAPTCHA detected — setting cooldown")
-                    self.rate_limiter.record_failure("linkedin", "CAPTCHA detected")
+                        progress_callback("LinkedIn: CAPTCHA detected — solve it in the open browser, then click Finish Browser Login")
+                    self.rate_limiter.record_failure(rate_limit_scope, "CAPTCHA detected")
                     await manager.save_cookies("linkedin", cookies_path)
+                    if manual_session_key and manual_profile_path:
+                        await manager.handoff_page_to_manual_login(
+                            page, manual_session_key, manual_profile_path,
+                        )
+                        self.manual_challenge_handoff = True
                     return []
 
                 if progress_callback:
@@ -177,8 +187,8 @@ class LinkedInScraper:
                     await manager.save_cookies("linkedin", cookies_path)
                 
                 # Log successful request
-                self.rate_limiter.log_request("linkedin", success=True)
-                self.rate_limiter.increment_daily_count("linkedin")
+                self.rate_limiter.log_request(rate_limit_scope, success=True)
+                self.rate_limiter.increment_daily_count(rate_limit_scope)
                 
             finally:
                 # Release lock
@@ -186,7 +196,7 @@ class LinkedInScraper:
         
         except Exception as e:
             logger.error(f"LinkedIn search error: {e}")
-            self.rate_limiter.record_failure("linkedin", str(e))
+            self.rate_limiter.record_failure(rate_limit_scope, str(e))
             # Return empty list instead of re-raising so the orchestrator can continue
         
         finally:

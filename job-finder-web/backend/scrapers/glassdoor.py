@@ -104,7 +104,7 @@ class GlassdoorScraper:
             List of GlassdoorJob objects
         """
         logger.info(f"Starting Glassdoor search: '{query}' in '{location}' (max: {max_jobs} jobs)")
-        
+
         jobs = []
         page = None
         

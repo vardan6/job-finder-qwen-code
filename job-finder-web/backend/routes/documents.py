@@ -15,8 +15,10 @@ from datetime import datetime
 from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.document import CandidateDocument
+from backend.models.supporting import ExtractionOccurrence
 from backend.config import DATA_DIR
 from backend.security import safe_resolve_path
+from backend.services.document_classification import classify_document_content
 
 router = APIRouter()
 
@@ -47,20 +49,37 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
-def detect_document_type(filename: str) -> str:
-    """Auto-detect document type from filename"""
-    filename_lower = filename.lower()
-    
-    if any(x in filename_lower for x in ["job_title", "preferred_title", "target_title"]):
-        return "job_titles"
-    elif any(x in filename_lower for x in ["profile", "about", "bio"]):
-        return "profile"
-    elif any(x in filename_lower for x in ["resume", "cv", "curriculum"]):
-        return "resume"
-    elif any(x in filename_lower for x in ["cover_letter", "coverletter", "letter"]):
-        return "cover_letter"
-    else:
-        return "custom"
+def detect_document_type(content: bytes, filename: str = "") -> str:
+    """Auto-detect a supported type from the uploaded file's content."""
+    return classify_document_content(content, filename)
+
+
+@router.get("/{candidate_id}/documents/{document_id}/extractions", response_class=JSONResponse)
+async def document_extractions(candidate_id: int, document_id: int, db: Session = Depends(get_db)):
+    """Return the extraction facts for one uploaded file, independent of edits."""
+    document = db.query(CandidateDocument).filter(
+        CandidateDocument.id == document_id, CandidateDocument.candidate_id == candidate_id,
+    ).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    occurrences = db.query(ExtractionOccurrence).filter(
+        ExtractionOccurrence.document_id == document_id,
+    ).order_by(ExtractionOccurrence.id).all()
+    return {
+        "document_id": document.id,
+        "filename": document.filename,
+        "extractions": [
+            {
+                "kind": "job_title" if occurrence.job_title_id else "skill",
+                "raw_extracted_value": occurrence.raw_extracted_value,
+                "extractor_version": occurrence.extractor_version,
+                "extracted_at": occurrence.extracted_at.isoformat() if occurrence.extracted_at else None,
+                "curated_value": occurrence.job_title.title if occurrence.job_title else occurrence.skill.skill_name,
+                "source": occurrence.job_title.source if occurrence.job_title else occurrence.skill.source,
+            }
+            for occurrence in occurrences
+        ],
+    }
 
 
 @router.post("/{candidate_id}/documents/upload", response_class=JSONResponse)
@@ -102,7 +121,7 @@ async def upload_document(
         # Auto-detect document type if not provided
         doc_type = document_type
         if not doc_type:
-            doc_type = detect_document_type(file.filename)
+            doc_type = detect_document_type(contents, file.filename)
 
         # Create candidate document folder
         candidate_folder = Path(candidate.folder_path) / "documents"

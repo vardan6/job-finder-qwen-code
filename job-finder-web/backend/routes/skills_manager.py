@@ -294,7 +294,9 @@ async def get_candidate_skills(candidate_id: int, db: Session = Depends(get_db))
                 "category": s.category,
                 "years_experience": s.years_experience,
                 "is_enabled": s.is_enabled,
-                "source_document_id": s.source_document_id
+                "source_document_id": s.extraction_occurrences[0].document_id if s.extraction_occurrences else None,
+                "source": s.source,
+                "original_extracted_value": s.original_extracted_value,
             }
             for s in skills
         ]

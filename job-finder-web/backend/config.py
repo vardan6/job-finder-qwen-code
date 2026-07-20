@@ -64,6 +64,41 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 9004))  # Changed from 8000 to 9002
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "Asia/Yerevan")
 
+# Deterministic R5 title-match aliases.  They are deliberately config rather
+# than scoring-code constants so the curated vocabulary can evolve without
+# changing the matching algorithm.
+TITLE_MATCH_ALIASES = {
+    "software engineer": ("swe", "software developer", "software development engineer"),
+    "data scientist": ("data science specialist",),
+}
+
+# R5 deterministic composite scoring.  Keep these as application configuration
+# rather than request parameters: a stored score records a fingerprint of this
+# vocabulary and weighting, so old search results remain explainable.
+JOB_SCORING_WEIGHTS = {
+    "title_similarity": 0.60,
+    "skills_overlap": 0.40,
+}
+SKILL_MATCH_ALIASES = {
+    "amazon web services": ("aws",),
+    "artificial intelligence": ("ai",),
+    "continuous delivery": ("cd",),
+    "continuous integration": ("ci",),
+    "google cloud platform": ("gcp", "google cloud"),
+    "javascript": ("js", "ecmascript"),
+    "machine learning": ("ml",),
+    "microsoft azure": ("azure",),
+    "node js": ("node", "nodejs"),
+    "postgresql": ("postgres", "psql"),
+    "react": ("react js", "reactjs"),
+    "typescript": ("ts",),
+}
+
+# R5's LLM stage is deliberately opt-in and bounded.  The deterministic score
+# remains the default ordering even when these refinements are available.
+JOB_LLM_REFINEMENT_TOP_N = int(os.getenv("JOB_LLM_REFINEMENT_TOP_N", "20"))
+JOB_LLM_REFINEMENT_PROMPT_VERSION = "r5-llm-refinement-v1"
+
 # LLM Timeouts (seconds) - prevents hangs when LLM is slow/unresponsive
 LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT", "120"))       # 2 min for most LLM calls
 LLM_CHAT_TIMEOUT_SECONDS = int(os.getenv("LLM_CHAT_TIMEOUT", "180"))  # 3 min for interactive chat

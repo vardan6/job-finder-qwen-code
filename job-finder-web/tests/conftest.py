@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 # Import Base to create all tables in the in-memory DB
 from backend.database import Base
+from backend.ownership import ensure_development_user
 
 
 @pytest.fixture
@@ -26,6 +27,7 @@ def db():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = Session()
+    ensure_development_user(session)
 
     yield session
 

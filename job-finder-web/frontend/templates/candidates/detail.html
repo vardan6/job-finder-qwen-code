@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ candidate.name }} - Job Finder{% endblock %}
+{% block title %}{{ candidate.name }} Profile - Job Finder{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -27,7 +27,8 @@
 <div class="container">
     <div class="page-header">
         <div>
-            <h1><i class="bi bi-person-circle"></i> {{ candidate.name }}</h1>
+            <h1><i class="bi bi-person-circle"></i> {{ candidate.name }} Profile</h1>
+            <p class="text-muted mb-0">Files, preferred titles, skills, platform accounts, and searches belong only to this profile.</p>
         </div>
         <div class="page-header-actions">
             <a href="/candidates/{{ candidate.id }}/edit" class="btn btn-primary">
@@ -66,6 +67,14 @@
                         <dt class="col-sm-4">Experience:</dt>
                         <dd class="col-sm-8">
                             {{ candidate.experience_years or 'Not set' }} years
+                        </dd>
+
+                        <dt class="col-sm-4">Visibility:</dt>
+                        <dd class="col-sm-8">
+                            {% set visibility_classes = {'draft': 'text-bg-secondary', 'private': 'text-bg-dark', 'public': 'text-bg-success'} %}
+                            <span class="badge {{ visibility_classes.get(candidate.visibility_status, 'text-bg-secondary') }}">
+                                {{ candidate.visibility_status|default('draft', true)|title }}
+                            </span>
                         </dd>
 
                         <dt class="col-sm-4">Created:</dt>
@@ -147,7 +156,7 @@
                                         <div class="col-md-4">
                                             <label class="form-label">Document Type</label>
                                             <select class="form-select" name="document_type">
-                                                <option value="">Auto-detect from filename</option>
+                                                <option value="">Auto-detect from content</option>
                                                 <option value="job_titles">Job Titles</option>
                                                 <option value="profile">Profile / Resume</option>
                                                 <option value="resume">Resume / CV</option>
@@ -386,17 +395,19 @@
     <!-- Row 3: Job Titles | Search Preferences -->
     <div class="row mt-4">
         <div class="col-md-6">
-            <!-- Preferred Job Titles Section (Collapsible) -->
-            <div class="card section-card shadow-sm">
-                <div class="card-header bg-white py-3" data-bs-toggle="collapse" data-bs-target="#jobTitlesSection" style="cursor: pointer;">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-robot text-primary me-2"></i> Preferred Job Titles (AI Extracted)
-                            <span class="badge bg-primary ms-2">{{ candidate.job_titles|length }}</span>
-                        </h5>
-                        <button class="btn btn-primary btn-sm" type="button" onclick="showFileSelectorModal(event)">
-                            <i class="bi bi-magic"></i> Parse from Files
+            <!-- Curated collection card: preferred titles -->
+            <div class="card section-card shadow-sm profile-collection-card" data-profile-card="job-titles">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <button class="profile-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#jobTitlesSection" aria-expanded="true" aria-controls="jobTitlesSection">
+                            <span><i class="bi bi-robot text-primary me-2"></i> Preferred Job Titles <span class="badge text-bg-primary ms-2">{{ candidate.job_titles|length }}</span></span>
+                            <i class="bi bi-chevron-down profile-card-chevron" aria-hidden="true"></i>
                         </button>
+                        <div class="profile-card-actions">
+                            <button class="btn btn-outline-primary btn-sm" type="button" onclick="showFileSelectorModal(event)">
+                                <i class="bi bi-magic"></i> Parse from Files
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="jobTitlesSection" class="collapse show">
@@ -477,6 +488,12 @@
                                                 <span class="badge bg-secondary">Low</span>
                                             {% endif %}
                                             <strong>{{ jt.title }}</strong>
+                                            {% if jt.source == 'extracted' %}
+                                                <span class="badge provenance-badge provenance-extracted" title="Extracted from an uploaded file"><i class="bi bi-file-earmark-arrow-down"></i> Extracted</span>
+                                            {% elif jt.original_extracted_value %}
+                                                <span class="badge provenance-badge provenance-edited" title="Edited from: {{ jt.original_extracted_value }}"><i class="bi bi-pencil"></i> Edited</span>
+                                                <button class="btn btn-link btn-sm p-0 provenance-reset" type="button" onclick="resetToExtracted('job-titles', {{ jt.id }})">Reset to extracted</button>
+                                            {% endif %}
                                         </div>
                                         {% if jt.description %}
                                         <small class="text-muted ms-4">
@@ -500,6 +517,12 @@
                                                 <span class="badge bg-secondary">Low</span>
                                             {% endif %}
                                             <strong>{{ jt.title }}</strong>
+                                            {% if jt.source == 'extracted' %}
+                                                <span class="badge provenance-badge provenance-extracted" title="Extracted from an uploaded file"><i class="bi bi-file-earmark-arrow-down"></i> Extracted</span>
+                                            {% elif jt.original_extracted_value %}
+                                                <span class="badge provenance-badge provenance-edited" title="Edited from: {{ jt.original_extracted_value }}"><i class="bi bi-pencil"></i> Edited</span>
+                                                <button class="btn btn-link btn-sm p-0 provenance-reset" type="button" onclick="resetToExtracted('job-titles', {{ jt.id }})">Reset to extracted</button>
+                                            {% endif %}
                                         </div>
                                         {% if jt.description %}
                                         <small class="text-muted ms-4">
@@ -509,7 +532,7 @@
                                     </div>
                                     {% endfor %}
                                 </div>
-                                <button class="btn btn-sm btn-link mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#jobTitlesListMore">
+                                <button class="btn btn-sm btn-link mt-2 collection-more-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#jobTitlesListMore" aria-expanded="false" aria-controls="jobTitlesListMore" data-more-label="Show {{ candidate.job_titles|length - 5 }} more job titles">
                                     <i class="bi bi-chevron-down"></i> Show {{ candidate.job_titles|length - 5 }} more job titles
                                 </button>
                                 {% endif %}
@@ -593,24 +616,29 @@
     <!-- Row 4: Skills | Search Jobs -->
     <div class="row mt-4">
         <div class="col-md-6">
-            <!-- Skills Section (Matches Job Titles Pattern Exactly) -->
-            <div class="card section-card shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="bi bi-collection text-success me-2"></i> Skills
-                            <span class="badge bg-success ms-2">{{ candidate.skills|length }}</span>
-                        </h5>
-                        <button class="btn btn-primary btn-sm" type="button" onclick="showSkillsManagerModal(event)">
-                            <i class="bi bi-magic"></i> Parse from Files
+            <!-- Curated collection card: skills -->
+            <div class="card section-card shadow-sm profile-collection-card" data-profile-card="skills">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <button class="profile-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#skillsSection" aria-expanded="true" aria-controls="skillsSection">
+                            <span><i class="bi bi-collection text-success me-2"></i> Skills <span class="badge text-bg-success ms-2">{{ candidate.skills|length }}</span></span>
+                            <i class="bi bi-chevron-down profile-card-chevron" aria-hidden="true"></i>
                         </button>
+                        <div class="profile-card-actions">
+                            <button class="btn btn-outline-success btn-sm" type="button" onclick="showSkillsManagerModal(event)">
+                                <i class="bi bi-magic"></i> Parse from Files
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm" type="button" onclick="showSkillsManagerModal(event)">
+                                <i class="bi bi-pencil"></i> Edit
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="card-body">
-                    <!-- Skills List View Only (No Edit Buttons on Card) -->
+                <div id="skillsSection" class="collapse show">
+                    <div class="card-body">
                     {% if candidate.skills %}
                     <div id="skillsListPreview" class="section-list">
-                        {% for skill in candidate.skills[:8] %}
+                        {% for skill in candidate.skills[:5] %}
                         <div class="list-group-item list-group-item-action py-2">
                             <div class="d-flex align-items-center gap-2">
                                 {% if skill.is_enabled %}
@@ -624,6 +652,12 @@
                                     <span class="badge bg-secondary">Preferred</span>
                                 {% endif %}
                                 <strong>{{ skill.skill_name }}</strong>
+                                {% if skill.source == 'extracted' %}
+                                    <span class="badge provenance-badge provenance-extracted" title="Extracted from an uploaded file"><i class="bi bi-file-earmark-arrow-down"></i> Extracted</span>
+                                {% elif skill.original_extracted_value %}
+                                    <span class="badge provenance-badge provenance-edited" title="Edited from: {{ skill.original_extracted_value }}"><i class="bi bi-pencil"></i> Edited</span>
+                                    <button class="btn btn-link btn-sm p-0 provenance-reset" type="button" onclick="resetToExtracted('skills', {{ skill.id }})">Reset to extracted</button>
+                                {% endif %}
                                 {% if skill.years_experience %}
                                     <small class="text-muted ms-2">
                                         <i class="bi bi-clock"></i> {{ skill.years_experience }} yrs
@@ -637,9 +671,9 @@
                         {% endfor %}
                     </div>
 
-                    {% if candidate.skills|length > 8 %}
+                    {% if candidate.skills|length > 5 %}
                     <div id="skillsListMore" class="collapse section-list">
-                        {% for skill in candidate.skills[8:] %}
+                        {% for skill in candidate.skills[5:] %}
                         <div class="list-group-item list-group-item-action py-2">
                             <div class="d-flex align-items-center gap-2">
                                 {% if skill.is_enabled %}
@@ -653,6 +687,12 @@
                                     <span class="badge bg-secondary">Preferred</span>
                                 {% endif %}
                                 <strong>{{ skill.skill_name }}</strong>
+                                {% if skill.source == 'extracted' %}
+                                    <span class="badge provenance-badge provenance-extracted" title="Extracted from an uploaded file"><i class="bi bi-file-earmark-arrow-down"></i> Extracted</span>
+                                {% elif skill.original_extracted_value %}
+                                    <span class="badge provenance-badge provenance-edited" title="Edited from: {{ skill.original_extracted_value }}"><i class="bi bi-pencil"></i> Edited</span>
+                                    <button class="btn btn-link btn-sm p-0 provenance-reset" type="button" onclick="resetToExtracted('skills', {{ skill.id }})">Reset to extracted</button>
+                                {% endif %}
                                 {% if skill.years_experience %}
                                     <small class="text-muted ms-2">
                                         <i class="bi bi-clock"></i> {{ skill.years_experience }} yrs
@@ -665,8 +705,8 @@
                         </div>
                         {% endfor %}
                     </div>
-                    <button class="btn btn-sm btn-link mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#skillsListMore">
-                        <i class="bi bi-chevron-down"></i> Show {{ candidate.skills|length - 8 }} more skills
+                    <button class="btn btn-sm btn-link mt-2 collection-more-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#skillsListMore" aria-expanded="false" aria-controls="skillsListMore" data-more-label="Show {{ candidate.skills|length - 5 }} more skills">
+                        <i class="bi bi-chevron-down"></i> Show {{ candidate.skills|length - 5 }} more skills
                     </button>
                     {% endif %}
 
@@ -677,6 +717,7 @@
                         <small class="text-muted">Click "Parse from Files" to extract skills from uploaded documents</small>
                     </div>
                     {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -1257,6 +1298,17 @@ function cancelJobTitlesEdit() {
     currentJobTitles = [];
 }
 
+function resetToExtracted(collection, itemId) {
+    const candidateId = window.location.pathname.split('/').pop();
+    fetch(`/candidates/${candidateId}/${collection}/${itemId}/reset-to-extracted`, { method: 'POST' })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) throw new Error(data.detail || data.message || 'Could not restore extracted value');
+            window.location.reload();
+        })
+        .catch(error => alert(`Could not reset value: ${error.message}`));
+}
+
 function discardParsedJobTitles() {
     if (confirm('Discard all parsed job titles?')) {
         parsedJobTitlesData = [];
@@ -1305,4 +1357,8 @@ function showSkillsManagerModal(event) {
 
 <!-- Include Skills Manager Modal -->
 {% include "skills/manager_modal.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/profile-cards.js"></script>
 {% endblock %}

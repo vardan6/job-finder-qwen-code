@@ -33,6 +33,33 @@ RATE_LIMITS = {
     },
 }
 
+LINKEDIN_DEFAULT_SETTINGS = {
+    "hourly_limit": 20,
+    "daily_limit": 100,
+    "min_delay_seconds": 8,
+    "max_delay_seconds": 15,
+    "operating_hours_start": 8,
+    "operating_hours_end": 22,
+}
+
+
+def normalize_linkedin_settings(value: Optional[dict]) -> dict:
+    """Normalize editable LinkedIn settings; zero disables the relevant limit."""
+    raw = value if isinstance(value, dict) else {}
+    settings = dict(LINKEDIN_DEFAULT_SETTINGS)
+    for key in settings:
+        try:
+            parsed = int(raw.get(key, settings[key]))
+        except (TypeError, ValueError):
+            parsed = settings[key]
+        settings[key] = max(0, parsed)
+    settings["min_delay_seconds"] = min(settings["min_delay_seconds"], settings["max_delay_seconds"])
+    if settings["operating_hours_start"] > 23:
+        settings["operating_hours_start"] = LINKEDIN_DEFAULT_SETTINGS["operating_hours_start"]
+    if settings["operating_hours_end"] > 23:
+        settings["operating_hours_end"] = LINKEDIN_DEFAULT_SETTINGS["operating_hours_end"]
+    return settings
+
 OPERATING_HOURS_START = 8  # 8 AM
 OPERATING_HOURS_END = 22   # 10 PM
 
@@ -191,7 +218,7 @@ class RateLimiter:
                 (platform, today)
             )
     
-    def check_rate_limit(self, platform: str) -> Tuple[bool, str]:
+    def check_rate_limit(self, platform: str, settings: Optional[dict] = None) -> Tuple[bool, str]:
         """
         Check if we can make a request to the platform.
         Returns (allowed, reason) tuple.
@@ -202,26 +229,30 @@ class RateLimiter:
             return False, f"Cooldown active ({cooldown_remaining}s remaining)"
         
         # Check operating hours
+        limits = normalize_linkedin_settings(settings) if platform.startswith("linkedin") else None
         now = datetime.now()
-        if now.hour < OPERATING_HOURS_START or now.hour >= OPERATING_HOURS_END:
+        if limits and limits["operating_hours_start"] and limits["operating_hours_end"]:
+            if now.hour < limits["operating_hours_start"] or now.hour >= limits["operating_hours_end"]:
+                return False, f"Outside operating hours ({limits['operating_hours_start']}:00-{limits['operating_hours_end']}:00)"
+        elif not limits and (now.hour < OPERATING_HOURS_START or now.hour >= OPERATING_HOURS_END):
             return False, f"Outside operating hours ({OPERATING_HOURS_START}:00-{OPERATING_HOURS_END}:00)"
         
         # Check hourly limit
         hourly_count = self.get_request_count(platform, "hour")
-        hourly_limit = RATE_LIMITS.get(platform, {}).get("max_requests_per_hour", 20)
-        if hourly_count >= hourly_limit:
+        hourly_limit = limits["hourly_limit"] if limits else RATE_LIMITS.get(platform, {}).get("max_requests_per_hour", 20)
+        if hourly_limit and hourly_count >= hourly_limit:
             return False, f"Hourly limit reached ({hourly_count}/{hourly_limit})"
         
         # Check daily limit
         daily_count = self.get_daily_count(platform)
-        daily_limit = RATE_LIMITS.get(platform, {}).get("max_requests_per_day", 100)
-        if daily_count >= daily_limit:
+        daily_limit = limits["daily_limit"] if limits else RATE_LIMITS.get(platform, {}).get("max_requests_per_day", 100)
+        if daily_limit and daily_count >= daily_limit:
             return False, f"Daily limit reached ({daily_count}/{daily_limit})"
         
         # Check delay between requests
         last_request = self._get_last_request_time(platform)
         if last_request:
-            delay_range = RATE_LIMITS.get(platform, {}).get("delay_between_requests", (8, 15))
+            delay_range = (limits["min_delay_seconds"], limits["max_delay_seconds"]) if limits else RATE_LIMITS.get(platform, {}).get("delay_between_requests", (8, 15))
             min_delay = delay_range[0]
             elapsed = (datetime.now() - last_request).total_seconds()
             if elapsed < min_delay:
@@ -229,6 +260,13 @@ class RateLimiter:
                 return False, f"Rate limit delay ({wait_time}s)"
         
         return True, "OK"
+
+    def reset(self, platform: str):
+        """Clear request history and cooldown for one account/platform scope."""
+        with self._db() as conn:
+            conn.execute("DELETE FROM request_log WHERE platform = ?", (platform,))
+            conn.execute("DELETE FROM daily_counts WHERE platform = ?", (platform,))
+            conn.execute("DELETE FROM cooldowns WHERE platform = ?", (platform,))
     
     def _get_last_request_time(self, platform: str) -> Optional[datetime]:
         """Get timestamp of last request"""

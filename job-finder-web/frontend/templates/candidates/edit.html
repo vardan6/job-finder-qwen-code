@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}{{ action }} Candidate - Job Finder{% endblock %}
+{% block title %}{{ action }} Profile - Job Finder{% endblock %}
 
 {% block content %}
 <div class="container">
     <div class="row mb-4">
         <div class="col-12">
-            <h1><i class="bi bi-person-{{ 'plus' if action == 'Create' else 'pencil' }}"></i> {{ action }} Candidate</h1>
+            <h1><i class="bi bi-person-{{ 'plus' if action == 'Create' else 'pencil' }}"></i> {{ action }} Profile</h1>
         </div>
     </div>
 
@@ -21,7 +21,7 @@
                 
                 <div class="card mb-4">
                     <div class="card-header">
-                        <i class="bi bi-person"></i> Basic Information
+                        <i class="bi bi-person"></i> Profile Information
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -70,12 +70,23 @@
                                        min="0" max="50" placeholder="e.g., 5">
                             </div>
                         </div>
+
+                        <div class="mb-3">
+                            <label for="visibility_status" class="form-label">Profile visibility</label>
+                            <select class="form-select" id="visibility_status" name="visibility_status">
+                                {% set selected_visibility = candidate.visibility_status if candidate else 'draft' %}
+                                <option value="draft" {% if selected_visibility == 'draft' %}selected{% endif %}>Draft — still working on this profile</option>
+                                <option value="private" {% if selected_visibility == 'private' %}selected{% endif %}>Private — only visible to you</option>
+                                <option value="public" {% if selected_visibility == 'public' %}selected{% endif %}>Public — discoverable by future employers</option>
+                            </select>
+                            <div class="form-text">Only public profiles will be discoverable when employer features are available.</div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="d-flex gap-2">
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-circle"></i> {{ action }} Candidate
+                        <i class="bi bi-check-circle"></i> {{ action }} Profile
                     </button>
                     <a href="/candidates" class="btn btn-secondary">
                         <i class="bi bi-x-circle"></i> Cancel
@@ -92,15 +103,15 @@
                 <div class="card-body">
                     <p class="text-muted mb-2">
                         {% if candidate %}
-                        Update the candidate's information. Changes will be saved immediately.
+                        Update this profile's information. Changes will be saved immediately.
                         {% else %}
-                        Create a new candidate profile. All fields except name are optional and can be updated later.
+                        Create a profile for a distinct career track. All fields except name are optional and can be updated later.
                         {% endif %}
                     </p>
                     <hr>
                     <small class="text-muted">
                         <i class="bi bi-lightbulb"></i>
-                        <strong>Tip:</strong> After creating a candidate, you'll be able to configure their job preferences, skills, and search queries.
+                        <strong>Tip:</strong> Each profile has its own files, preferred titles, skills, platform accounts, and searches.
                     </small>
                 </div>
             </div>

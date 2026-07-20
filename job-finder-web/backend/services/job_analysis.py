@@ -13,13 +13,16 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session
 
 from backend.services.llm_service import send_message
 
 logger = logging.getLogger(__name__)
+
+REMOTE_VERIFICATION_PROMPT_VERSION = "remote-verification-v1"
+REMOTE_STATUSES = {"fully_remote", "remote_restricted", "hybrid", "onsite", "unknown"}
 
 
 @dataclass
@@ -60,6 +63,13 @@ class JobAnalysis:
     
     # Recommendation
     recommendation: str  # "Apply", "Consider", "Skip"
+
+    # R6's persisted, canonical remote shape.  Defaults retain compatibility
+    # with cached analyses from before verification was introduced.
+    verified_remote_status: str = "unknown"
+    remote_restrictions: Optional[dict] = None
+    remote_evidence: Optional[dict] = None
+    remote_verified_version: Optional[str] = None
     
     def to_dict(self) -> dict:
         """Convert to dictionary"""
@@ -77,6 +87,10 @@ class JobAnalysis:
             "red_flags": self.red_flags,
             "summary": self.summary,
             "recommendation": self.recommendation,
+            "verified_remote_status": self.verified_remote_status,
+            "remote_restrictions": self.remote_restrictions,
+            "remote_evidence": self.remote_evidence,
+            "remote_verified_version": self.remote_verified_version,
         }
 
 
@@ -133,6 +147,9 @@ Provide your analysis in valid JSON format with this exact structure:
   "red_flags": ["flag1", "flag2", ...],
   "summary": "<2-3 sentence summary>",
   "recommendation": "<Apply|Consider|Skip>"
+  ,"verified_remote_status": "<fully_remote|remote_restricted|hybrid|onsite|unknown>",
+  "remote_restrictions": {{"regions": ["US"], "citizenship": null, "timezone_overlap": null, "office_visits": "<never|occasional|regular|unknown>"}},
+  "remote_evidence": ["<exact quote from the job posting>"]
 }}
 
 **Job Posting:**
@@ -186,6 +203,7 @@ class JobAnalysisService:
         use_cache: bool = True,
         model_name: Optional[str] = None,
         db: Optional[Session] = None,
+        platform_remote_attribute: Optional[str] = None,
     ) -> JobAnalysis:
         """
         Analyze a job posting using AI.
@@ -199,8 +217,24 @@ class JobAnalysisService:
         Returns:
             JobAnalysis object with detailed assessment
         """
+        # Missing text cannot be verified; avoid an unnecessary provider call.
+        if not job_description or not job_description.strip():
+            return JobAnalysis(
+                remote_score=0, remote_type="Unknown", location_requirement="Unknown",
+                citizenship_required=None, office_visits="Unknown", timezone_requirement=None,
+                matched_skills=[], missing_skills=[], skill_match_score=0,
+                experience_level="Unknown", red_flags=[], summary="No job description available.",
+                recommendation="Consider", verified_remote_status="unknown",
+                remote_verified_version=REMOTE_VERIFICATION_PROMPT_VERSION,
+            )
+
         # Check cache
-        cache_key = self._get_cache_key(job_description, candidate_skills)
+        # The platform claim affects whether evidence is required, so it is
+        # part of the cached verification identity.
+        cache_description = job_description
+        if platform_remote_attribute:
+            cache_description = f"{job_description}|||platform-remote:{platform_remote_attribute}"
+        cache_key = self._get_cache_key(cache_description, candidate_skills)
         if use_cache:
             cached = self._load_from_cache(cache_key)
             if cached:
@@ -254,6 +288,12 @@ class JobAnalysisService:
                 summary=data.get("summary", ""),
                 recommendation=data.get("recommendation", "Consider"),
             )
+            self._canonicalize_remote_verification(
+                analysis, job_description, platform_remote_attribute,
+                raw_restrictions=data.get("remote_restrictions"),
+                raw_evidence=data.get("remote_evidence"),
+                raw_status=data.get("verified_remote_status"),
+            )
             
             # Save to cache
             if use_cache:
@@ -266,7 +306,7 @@ class JobAnalysisService:
             logger.error(f"Failed to analyze job: {e}")
             # Return a default analysis on failure
             return JobAnalysis(
-                remote_score=50,
+                remote_score=0,
                 remote_type="Unknown",
                 location_requirement="Unknown",
                 citizenship_required=None,
@@ -279,7 +319,97 @@ class JobAnalysisService:
                 red_flags=[f"Analysis failed: {str(e)}"],
                 summary="Job analysis failed. Please review manually.",
                 recommendation="Consider",
+                verified_remote_status="unknown",
+                remote_verified_version=REMOTE_VERIFICATION_PROMPT_VERSION,
             )
+
+    def _canonicalize_remote_verification(
+        self,
+        analysis: JobAnalysis,
+        description: str,
+        platform_remote_attribute: Optional[str],
+        raw_restrictions: Any,
+        raw_evidence: Any,
+        raw_status: Any,
+    ) -> None:
+        """Make LLM remote data safe to persist without guessing on failures."""
+        if not description or not description.strip():
+            analysis.verified_remote_status = "unknown"
+            analysis.remote_restrictions = None
+            analysis.remote_evidence = None
+            analysis.remote_verified_version = REMOTE_VERIFICATION_PROMPT_VERSION
+            analysis.remote_score = 0
+            return
+
+        restrictions = self._normalize_restrictions(raw_restrictions, analysis)
+        status = str(raw_status or "").strip().lower()
+        provider_supplied_status = status in REMOTE_STATUSES
+        if not provider_supplied_status:
+            status = self._status_from_legacy_analysis(analysis, restrictions)
+        if restrictions and status == "fully_remote":
+            status = "remote_restricted"
+        quotes = self._verbatim_evidence(raw_evidence, description)
+        # A platform remote claim contradicted by the text must retain an exact
+        # quote; otherwise verification is deliberately unknown, never guessed.
+        contradiction = self._claims_remote(platform_remote_attribute) and status in {"remote_restricted", "hybrid", "onsite"}
+        if contradiction and not quotes:
+            status = "unknown"
+            restrictions = None
+        analysis.verified_remote_status = status
+        analysis.remote_restrictions = restrictions if status == "remote_restricted" else None
+        # A contradiction records both the platform claim and exact source
+        # spans, so a later UI never presents an LLM paraphrase as evidence.
+        analysis.remote_evidence = (
+            {"platform_attribute": platform_remote_attribute, "description_quotes": quotes}
+            if contradiction and quotes else None
+        )
+        analysis.remote_verified_version = REMOTE_VERIFICATION_PROMPT_VERSION
+        # Old cached/provider responses have no canonical status.  Keep their
+        # historical convenience score while persisting the canonical fields;
+        # R6-shaped responses derive the convenience score from the enum.
+        if provider_supplied_status:
+            analysis.remote_score = self._score_for_status(status)
+
+    @staticmethod
+    def _claims_remote(attribute: Optional[str]) -> bool:
+        return bool(attribute and str(attribute).strip().lower() in {"remote", "fully_remote", "fully remote"})
+
+    @staticmethod
+    def _verbatim_evidence(value: Any, description: str) -> list:
+        values = value if isinstance(value, list) else [value] if isinstance(value, str) else []
+        return [quote.strip() for quote in values if quote and quote.strip() in description]
+
+    @staticmethod
+    def _normalize_restrictions(value: Any, analysis: JobAnalysis) -> Optional[dict]:
+        source = value if isinstance(value, dict) else {}
+        region_map = {"united states": "US", "usa": "US", "us": "US", "european union": "EU", "eu": "EU"}
+        regions = source.get("regions", [])
+        if isinstance(regions, str):
+            regions = [regions]
+        normalized_regions = [region_map.get(str(region).strip().lower(), str(region).strip().upper()) for region in regions if str(region).strip()]
+        citizenship = source.get("citizenship") or analysis.citizenship_required
+        timezone = source.get("timezone_overlap") or analysis.timezone_requirement
+        visits = str(source.get("office_visits") or analysis.office_visits or "unknown").strip().lower()
+        visits = {"never": "never", "occasional": "occasional", "regular": "regular"}.get(visits, "unknown")
+        result = {"regions": normalized_regions, "citizenship": citizenship, "timezone_overlap": timezone, "office_visits": visits}
+        return result if normalized_regions or citizenship or timezone or visits != "unknown" else None
+
+    @staticmethod
+    def _status_from_legacy_analysis(analysis: JobAnalysis, restrictions: Optional[dict]) -> str:
+        remote_type = (analysis.remote_type or "").strip().lower()
+        if "onsite" in remote_type:
+            return "onsite"
+        if "hybrid" in remote_type:
+            return "hybrid"
+        if restrictions:
+            return "remote_restricted"
+        if "fully" in remote_type or remote_type == "remote":
+            return "fully_remote"
+        return "unknown"
+
+    @staticmethod
+    def _score_for_status(status: str) -> int:
+        return {"fully_remote": 100, "remote_restricted": 60, "hybrid": 35, "onsite": 0, "unknown": 0}[status]
     
     def calculate_armenia_compatibility(self, analysis: JobAnalysis) -> tuple[bool, List[str]]:
         """

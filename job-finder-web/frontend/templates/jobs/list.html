@@ -3,6 +3,12 @@
 {% block title %}Jobs - Job Finder{% endblock %}
 
 {% block content %}
+{% macro sort_link(label, key) -%}
+    {% set next_direction = 'asc' if selected_sort == key and selected_direction == 'desc' else 'desc' %}
+    <a class="text-reset text-decoration-none" href="{{ request.url.include_query_params(sort=key, direction=next_direction) }}">
+        {{ label }}{% if selected_sort == key %} <span aria-hidden="true">{{ '▲' if selected_direction == 'asc' else '▼' }}</span>{% endif %}
+    </a>
+{%- endmacro %}
 <div class="container">
     <div class="row mb-4">
         <div class="col-md-8">
@@ -11,6 +17,9 @@
         <div class="col-md-4 text-end">
             <a href="/jobs/search" class="btn btn-primary">
                 <i class="bi bi-search"></i> New Search
+            </a>
+            <a href="/jobs/lists" class="btn btn-outline-secondary">
+                <i class="bi bi-bookmark"></i> Saved Lists
             </a>
         </div>
     </div>
@@ -30,6 +39,25 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label" for="min_score">Minimum score</label>
+                    <input id="min_score" name="min_score" type="number" min="0" max="100" class="form-control" value="{{ min_score if min_score is not none else '' }}" placeholder="Any">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <div class="form-check">
+                        <input id="verified_remote_only" name="verified_remote_only" class="form-check-input" type="checkbox" value="true" {% if verified_remote_only %}checked{% endif %}>
+                        <label for="verified_remote_only" class="form-check-label">Fully remote only</label>
+                    </div>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <div class="form-check">
+                        <input id="include_dismissed" name="include_dismissed" class="form-check-input" type="checkbox" value="true" {% if include_dismissed %}checked{% endif %}>
+                        <label for="include_dismissed" class="form-check-label">Show dismissed</label>
+                    </div>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-outline-primary">Apply filters</button>
+                </div>
                 <div class="col-md-4">
                     <label class="form-label">Status</label>
                     <select name="status" class="form-select" onchange="this.form.submit()">
@@ -40,6 +68,17 @@
                         <option value="rejected" {% if selected_status == 'rejected' %}selected{% endif %}>Rejected</option>
                     </select>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label">Application status</label>
+                    <select name="application_status" class="form-select" onchange="this.form.submit()">
+                        <option value="">Any</option>
+                        {% for pipeline_status in application_pipeline_statuses %}
+                        <option value="{{ pipeline_status }}" {% if selected_application_status == pipeline_status %}selected{% endif %}>
+                            {{ pipeline_status|capitalize }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
             </form>
         </div>
     </div>
@@ -48,22 +87,30 @@
     {% if jobs %}
     <div class="card">
         <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <p class="mb-0 text-muted small">Sorted by {{ 'best match' if selected_sort == 'score' and selected_direction == 'desc' else selected_sort|replace('_', ' ') }}.</p>
+                <span class="text-muted small">{{ jobs|length }} result(s)</span>
+            </div>
             <div class="table-responsive">
                 <table class="table table-hover">
                     <thead>
                         <tr>
-                            <th>Title</th>
-                            <th>Company</th>
-                            <th>Location</th>
-                            <th>Platform</th>
-                            <th>Remote Score</th>
-                            <th>Status</th>
-                            <th>Found</th>
+                            <th>{{ sort_link('Title', 'title') }}</th>
+                            <th>{{ sort_link('Company', 'company') }}</th>
+                            <th>{{ sort_link('Location', 'location') }}</th>
+                            <th>{{ sort_link('Platform', 'platform') }}</th>
+                            <th>{{ sort_link('Salary', 'salary') }}</th>
+                            <th>{{ sort_link('Verified remote', 'remote') }}</th>
+                            <th>{{ sort_link('Score', 'score') }}</th>
+                            <th>{{ sort_link('Status', 'status') }}</th>
+                            <th>Application</th>
+                            <th>{{ sort_link('Found', 'found') }}</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for job in jobs %}
+                        {% set application_status = job.application.status if job.application else 'interested' %}
                         <tr>
                             <td>
                                 <a href="/jobs/{{ job.id }}">
@@ -82,16 +129,31 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if job.ai_remote_score %}
-                                    {% if job.ai_remote_score >= 80 %}
-                                    <span class="badge bg-success">{{ job.ai_remote_score }}</span>
-                                    {% elif job.ai_remote_score >= 60 %}
-                                    <span class="badge bg-warning text-dark">{{ job.ai_remote_score }}</span>
-                                    {% else %}
-                                    <span class="badge bg-danger">{{ job.ai_remote_score }}</span>
-                                    {% endif %}
+                                {{ job.salary or '—' }}
+                            </td>
+                            <td>
+                                {% set remote_status = job.verified_remote_status or 'unknown' %}
+                                {% if remote_status == 'fully_remote' %}
+                                <span class="badge bg-success">Fully remote</span>
+                                {% elif remote_status == 'remote_restricted' %}
+                                <span class="badge bg-warning text-dark">Remote restricted</span>
+                                {% elif remote_status == 'hybrid' %}
+                                <span class="badge bg-info text-dark">Hybrid</span>
+                                {% elif remote_status == 'onsite' %}
+                                <span class="badge bg-secondary">Onsite</span>
                                 {% else %}
-                                <span class="text-muted">-</span>
+                                <span class="text-muted">Unknown</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if job.deterministic_score is not none %}
+                                <button class="btn btn-sm btn-outline-secondary" type="button"
+                                        data-bs-toggle="collapse" data-bs-target="#score-breakdown-{{ job.id }}"
+                                        aria-expanded="false" aria-controls="score-breakdown-{{ job.id }}">
+                                    {{ job.deterministic_score }} <span class="visually-hidden">Show score breakdown</span>
+                                </button>
+                                {% else %}
+                                <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -104,6 +166,17 @@
                                     {% else %}bg-secondary{% endif %}">
                                     {{ job.status }}
                                 </span>
+                            </td>
+                            <td>
+                                <form method="post" action="/jobs/{{ job.id }}/application-status" class="d-flex align-items-center gap-1">
+                                    <select name="status" class="form-select form-select-sm application-status-select bg-{{ 'secondary' if application_status == 'interested' else 'info' if application_status == 'applied' else 'warning' if application_status == 'interview' else 'success' if application_status == 'offer' else 'danger' }} text-white" onchange="this.form.submit()">
+                                        {% for pipeline_status in application_pipeline_statuses %}
+                                        <option value="{{ pipeline_status }}" {% if application_status == pipeline_status %}selected{% endif %}>
+                                            {{ pipeline_status|capitalize }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
                             </td>
                             <td class="text-muted small">
                                 {{ job.found_at.strftime('%Y-%m-%d') if job.found_at else 'Unknown' }}
@@ -119,6 +192,32 @@
                                             hx-swap="outerHTML">
                                         <i class="bi bi-trash"></i>
                                     </button>
+                                    {% if not job.is_dismissed %}
+                                    <form method="post" action="/jobs/{{ job.id }}/dismiss" class="d-inline">
+                                        <button class="btn btn-outline-secondary" title="Dismiss and hide this job">
+                                            <i class="bi bi-eye-slash"></i><span class="visually-hidden">Dismiss</span>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span class="badge bg-secondary align-self-center">Dismissed</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="11" class="bg-light small">
+                                <div id="score-breakdown-{{ job.id }}" class="collapse">
+                                <strong>Score breakdown</strong>
+                                {% if job.score_details %}
+                                <dl class="row mb-0 mt-2">
+                                    {% set breakdown = job.score_details %}
+                                    <dt class="col-sm-3">Title similarity</dt><dd class="col-sm-9">{{ breakdown.title_similarity }}{% if breakdown.skills_overlap is none %} (skills: no description){% endif %}</dd>
+                                    <dt class="col-sm-3">Skills overlap</dt><dd class="col-sm-9">{{ breakdown.skills_overlap if breakdown.skills_overlap is not none else 'No description' }}</dd>
+                                    {% if job.llm_score is not none %}<dt class="col-sm-3">LLM refinement</dt><dd class="col-sm-9">{{ job.llm_score }}{% if job.llm_rationale %} — {{ job.llm_rationale }}{% endif %}</dd>{% endif %}
+                                </dl>
+                                {% else %}
+                                <span class="text-muted">No score details were stored for this result.</span>
+                                {% endif %}
                                 </div>
                             </td>
                         </tr>

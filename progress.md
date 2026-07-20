@@ -32,3 +32,25 @@
 - 2026-07-19: Applied recommended answers — Q8 groundwork-now approved, P1–P5 extensions approved into R3/R7/R11 + roadmap 9D/9E/9F, legacy scripts archived to `history/legacy-scripts/`.
 - 2026-07-19: Resolved Q6 — per-model capabilities, verification probe, route-first/degrade-visibly agent fallback (remote-rover pattern reviewed and improved) in `docs/design/agent-provider-capabilities.md`; open questions now zero.
 - 2026-07-19: Plan-review triage complete — all 9 GPT-5 findings accepted and fixed at doc level: 4 design contracts (scoring/provenance rework, search-runs+snapshot lists, 9B ownership groundwork, remote verification), roadmap 9B/9C/9D/10 slices updated, review file marked RESOLVED.
+- 2026-07-19: R2 profile-card pre-review — audited all profile-page cards and recorded reproducible P0–P2 behavior divergences and the shared target pattern.
+- 2026-07-19: Phase-10 ownership groundwork — added a seeded development principal, candidate ownership boundary, legacy backfill migration, and regression coverage.
+- 2026-07-19: R4 platform research — ranked platform options and selected We Work Remotely as the next post-LinkedIn integration target.
+- 2026-07-19: Roadmap restructured into three parallel non-blocking threads (T1 profile/UI, T2 data model/pipeline, T3 platforms) — one cross-thread edge (T1 provenance needs T2 groundwork) neutralized by slice ordering.
+- 2026-07-19: R2 app-wide UI/UX cross-comparison — recorded the cross-page pattern inventory and target pattern set for future UI slices.
+- 2026-07-19: R5 deterministic title-match scoring — added alias-aware persisted title scores, best-match ordering, and regression fixtures.
+- 2026-07-19: R3 LinkedIn login reliability preparation — added a pre-search session probe with explicit failure reasons and focused coverage; guided UI/manual validation remains HITL.
+- 2026-07-19: R2 shared profile cards — unified preferred titles and skills with consistent collapsible previews, actions, and shared styling/behavior.
+- 2026-07-19: R5 weighted composite scoring — added title/skills weights, alias-safe skill matching, persisted breakdown/version, and regression coverage.
+- 2026-07-19: R1 extraction provenance — recorded per-document extraction occurrences, migrated legacy source links, and added extracted/edited/reset controls to profile cards.
+- 2026-07-19: R5 LLM top-N refinement — added opt-in, idempotent candidate-analysis refinement that persists companion score/rationale without changing deterministic ranking.
+- 2026-07-19: R1 content-aware document classification — classified resume/CV content independently of misleading filenames and retained Other for non-resume documents.
+- 2026-07-19: R6 remote-status verification — persisted canonical verified-remote facts with restrictions/evidence/version, unknown fallback, and mocked contradiction coverage.
+- 2026-07-19: R7 results-table upgrade — added sortable salary, verified-remote, and score columns with best-match ordering and expandable score details.
+- 2026-07-19: R10 profile visibility — added draft/private/public status, legacy migration, validation, profile UI, and regression coverage.
+- 2026-07-19: R7 saved search lists — added named historical search snapshots and sightings-based deduplication for known jobs.
+- 2026-07-19: R9 profiles-per-user UX — scoped “My Profiles” to the current user with ownership enforcement and per-profile summaries.
+- 2026-07-19: R3 WWR adapter foundation — added a policy-gated, fixture-tested provider-neutral adapter; live authorization and search wiring remain.
+- 2026-07-19: R7 result curation — added non-destructive dismissal, score/remote filters, and filtered saved-list CSV exports.
+- 2026-07-19: R3 WWR search wiring — made the policy-gated adapter selectable and fail closed without live provider access.
+- 2026-07-19: R3 LinkedIn login recovery — added persistent manual sign-in, per-account rate-limit controls, and a CAPTCHA browser handoff; manual validation remains required.
+- 2026-07-19: R11 T2 P1 application pipeline UI — status tracking (interested/applied/interview/offer/rejected) on `JobApplication`, filter + badges on jobs list, sidebar card on job detail; 187 tests passing.

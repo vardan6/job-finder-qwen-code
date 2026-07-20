@@ -6,6 +6,12 @@
 
 set -e  # Exit on error
 
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$APP_DIR/venv"
+PYTHON_BIN="$VENV_DIR/bin/python"
+
+cd "$APP_DIR"
+
 echo "🚀 Job Finder Web App - Setup Script"
 echo "======================================"
 
@@ -15,36 +21,32 @@ python_version=$(python3 --version 2>&1 | cut -d' ' -f2)
 echo "   Python version: $python_version"
 
 # Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
+if [ ! -x "$PYTHON_BIN" ]; then
     echo "📦 Creating virtual environment..."
-    python3 -m venv venv
+    python3 -m venv "$VENV_DIR"
     echo "   ✓ Virtual environment created"
 else
     echo "   ✓ Virtual environment already exists"
 fi
 
-# Activate virtual environment
-echo "🔌 Activating virtual environment..."
-source venv/bin/activate
-
 # Upgrade pip
 echo "📌 Upgrading pip..."
-pip install --upgrade pip
+"$PYTHON_BIN" -m pip install --upgrade pip
 
 # Install dependencies
 echo "📦 Installing dependencies..."
-pip install -r requirements.txt
+"$PYTHON_BIN" -m pip install -r requirements.txt
 echo "   ✓ Dependencies installed"
 
 # Install Playwright browsers
 echo "🌐 Installing Playwright browsers..."
-playwright install
+"$PYTHON_BIN" -m playwright install chromium
 echo "   ✓ Playwright browsers installed"
 
 # Install Playwright system dependencies (Linux only)
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "🔧 Installing Playwright system dependencies..."
-    playwright install-deps || echo "   ⚠️  Could not install system dependencies (may need sudo)"
+    "$PYTHON_BIN" -m playwright install-deps chromium || echo "   ⚠️  Could not install system dependencies (may need sudo)"
 fi
 
 # Generate encryption key if .env doesn't exist
@@ -53,11 +55,11 @@ if [ ! -f ".env" ]; then
     cp .env.example .env
     
     # Generate encryption key
-    ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+    ENCRYPTION_KEY=$("$PYTHON_BIN" -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
     sed -i "s/your-encryption-key-here/$ENCRYPTION_KEY/" .env
     
     # Generate secret key
-    SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+    SECRET_KEY=$("$PYTHON_BIN" -c "import secrets; print(secrets.token_urlsafe(32))")
     sed -i "s/your-secret-key-here/$SECRET_KEY/" .env
     
     echo "   ✓ .env file created with secure keys"
@@ -80,6 +82,6 @@ echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
 echo "1. Review .env file and configure LLM API keys if needed"
-echo "2. Run the app: python run.py"
+echo "2. Run the app: $PYTHON_BIN run.py"
 echo "3. Open browser: http://localhost:8000"
 echo ""

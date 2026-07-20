@@ -4,9 +4,11 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
-env/
-ENV/
+# Local Python virtual environments
+/venv/
+/.venv/
+/env/
+/ENV/
 build/
 develop-eggs/
 dist/

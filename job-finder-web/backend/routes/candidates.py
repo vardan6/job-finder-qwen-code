@@ -4,34 +4,66 @@ Candidate Routes - CRUD operations
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import Optional
 from pathlib import Path
 import uuid
 
 from backend.database import get_db
+from backend.ownership import get_current_user, get_owned_candidate
 from backend.models.candidate import Candidate
+from backend.models.user import User
 from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences
 from backend.models.document import CandidateDocument
 from backend.config import DATA_DIR
 
 router = APIRouter()
+VISIBILITY_STATUSES = {"draft", "private", "public"}
 
 # Setup templates
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 templates = Jinja2Templates(directory=templates_path)
 
 
+def profile_track_title(candidate: Candidate) -> str:
+    """Return the candidate's primary career track for the profile index."""
+    titles = sorted(
+        (title for title in candidate.job_titles if title.is_active),
+        key=lambda title: (title.priority if title.priority is not None else 99, title.id or 0),
+    )
+    if titles:
+        return titles[0].title
+    return candidate.current_role or "Career track not set"
+
+
 @router.get("/", response_class=HTMLResponse)
-async def list_candidates(request: Request, db: Session = Depends(get_db)):
-    """List all candidates"""
-    candidates = db.query(Candidate).filter(Candidate.is_active == True).all()
-    return templates.TemplateResponse("candidates/list.html", {"request": request, "candidates": candidates})
+async def list_candidates(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List the current user's candidate profiles, each with its own career track."""
+    candidates = (
+        db.query(Candidate)
+        .options(selectinload(Candidate.job_titles), selectinload(Candidate.documents))
+        .filter(Candidate.user_id == user.id, Candidate.is_active == True)
+        .order_by(Candidate.created_at.desc(), Candidate.id.desc())
+        .all()
+    )
+    profiles = [
+        {
+            "candidate": candidate,
+            "track_title": profile_track_title(candidate),
+            "file_count": len([document for document in candidate.documents if document.is_active]),
+        }
+        for candidate in candidates
+    ]
+    return templates.TemplateResponse("candidates/list.html", {"request": request, "profiles": profiles})
 
 
 @router.get("/new", response_class=HTMLResponse)
 async def new_candidate_form(request: Request):
-    """Show form to create new candidate"""
+    """Show form to create a profile."""
     return templates.TemplateResponse("candidates/edit.html", {"request": request, "candidate": None, "action": "Create"})
 
 
@@ -44,10 +76,14 @@ async def create_candidate(
     timezone: str = Form("Asia/Yerevan"),
     experience_years: Optional[int] = Form(None),
     current_role: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    visibility_status: str = Form("draft"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Create a new candidate"""
     try:
+        if visibility_status not in VISIBILITY_STATUSES:
+            raise ValueError("Visibility status must be draft, private, or public")
         # Generate UUID and folder path
         candidate_uuid = str(uuid.uuid4())
         folder_path = DATA_DIR / "candidates" / candidate_uuid
@@ -62,7 +98,9 @@ async def create_candidate(
             experience_years=experience_years,
             current_role=current_role,
             folder_path=str(folder_path),
-            uuid=candidate_uuid
+            uuid=candidate_uuid,
+            user_id=user.id,
+            visibility_status=visibility_status,
         )
         
         db.add(candidate)
@@ -85,8 +123,13 @@ async def create_candidate(
 
 
 @router.get("/{candidate_id}", response_class=HTMLResponse)
-async def view_candidate(request: Request, candidate_id: int, db: Session = Depends(get_db)):
-    """View candidate details"""
+async def view_candidate(
+    request: Request,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """View one of the current user's profiles."""
     from sqlalchemy.orm import joinedload
     from backend.models.supporting import CandidateSkill, CandidateJobTitle
     from backend.models.document import CandidateDocument, LLMFunctionMapping
@@ -96,7 +139,7 @@ async def view_candidate(request: Request, candidate_id: int, db: Session = Depe
         joinedload(Candidate.skills),
         joinedload(Candidate.job_titles),
         joinedload(Candidate.documents)
-    ).filter(Candidate.id == candidate_id).first()
+    ).filter(Candidate.id == candidate_id, Candidate.user_id == user.id).first()
 
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -120,12 +163,14 @@ async def view_candidate(request: Request, candidate_id: int, db: Session = Depe
 
 
 @router.get("/{candidate_id}/edit", response_class=HTMLResponse)
-async def edit_candidate_form(request: Request, candidate_id: int, db: Session = Depends(get_db)):
-    """Show form to edit candidate"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+async def edit_candidate_form(
+    request: Request,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Show form to edit one of the current user's profiles."""
+    candidate = get_owned_candidate(db, user, candidate_id)
     
     return templates.TemplateResponse("candidates/edit.html", {"request": request, "candidate": candidate, "action": "Update"})
 
@@ -140,15 +185,16 @@ async def update_candidate(
     timezone: str = Form("Asia/Yerevan"),
     experience_years: Optional[int] = Form(None),
     current_role: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    visibility_status: str = Form("draft"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Update an existing candidate"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    candidate = get_owned_candidate(db, user, candidate_id)
     
     try:
+        if visibility_status not in VISIBILITY_STATUSES:
+            raise ValueError("Visibility status must be draft, private, or public")
         # Update fields
         candidate.name = name
         candidate.email = email
@@ -156,6 +202,7 @@ async def update_candidate(
         candidate.timezone = timezone
         candidate.experience_years = experience_years
         candidate.current_role = current_role
+        candidate.visibility_status = visibility_status
         
         db.commit()
         db.refresh(candidate)
@@ -169,12 +216,14 @@ async def update_candidate(
 
 
 @router.post("/{candidate_id}/delete")
-async def delete_candidate(request: Request, candidate_id: int, db: Session = Depends(get_db)):
-    """Delete a candidate (soft delete)"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+async def delete_candidate(
+    request: Request,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Delete one of the current user's profiles (soft delete)."""
+    candidate = get_owned_candidate(db, user, candidate_id)
     
     try:
         # Soft delete - mark as inactive

@@ -227,6 +227,7 @@ async def bulk_save_job_titles(
     Replaces the entire list with the provided data.
     """
     from backend.models.supporting import CandidateJobTitle
+    from backend.services.provenance import record_title_extraction
     from sqlalchemy import func
     
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
@@ -240,26 +241,39 @@ async def bulk_save_job_titles(
     
     job_titles_data = body.get("job_titles", [])
     
-    # Delete all existing job titles for this candidate
-    db.query(CandidateJobTitle).filter(
-        CandidateJobTitle.candidate_id == candidate_id
-    ).delete()
-    db.commit()
-    
-    # Add new job titles
+    # Preserve curated rows (and their occurrence history) when the UI edits
+    # an existing title.  Only explicitly removed rows are deleted.
+    existing_by_id = {
+        item.id: item for item in db.query(CandidateJobTitle).filter(
+            CandidateJobTitle.candidate_id == candidate_id
+        ).all()
+    }
+    retained_ids = {item.get("id") for item in job_titles_data if item.get("id") in existing_by_id}
+    for item_id, item in existing_by_id.items():
+        if item_id not in retained_ids:
+            db.delete(item)
+
+    # Update existing titles or add new ones.
     count = 0
     for title_data in job_titles_data:
         if not title_data.get("title", "").strip():
             continue
         
-        job_title = CandidateJobTitle(
-            candidate_id=candidate_id,
-            title=title_data["title"].strip(),
-            priority=title_data.get("priority", 2),
-            description=title_data.get("description", ""),
-            source_document_id=title_data.get("source_document_id")
-        )
-        db.add(job_title)
+        existing = existing_by_id.get(title_data.get("id"))
+        if existing:
+            new_title = title_data["title"].strip()
+            if new_title != existing.title:
+                existing.title = new_title
+                existing.source = "edited"
+            existing.priority = title_data.get("priority", 2)
+            existing.description = title_data.get("description", "")
+        elif (document_id := title_data.get("source_document_id")):
+            record_title_extraction(db, candidate_id, document_id, title_data["title"].strip(),
+                                    priority=title_data.get("priority", 2), description=title_data.get("description", ""),
+                                    extractor_version="job_titles_parser")
+        else:
+            db.add(CandidateJobTitle(candidate_id=candidate_id, title=title_data["title"].strip(),
+                                     priority=title_data.get("priority", 2), description=title_data.get("description", ""), source="edited"))
         count += 1
     
     db.commit()
@@ -327,7 +341,10 @@ async def update_job_title(
     
     # Update fields
     if "title" in body:
-        job_title.title = body["title"].strip()
+        new_title = body["title"].strip()
+        if new_title != job_title.title:
+            job_title.title = new_title
+            job_title.source = "edited"
     if "priority" in body:
         job_title.priority = body["priority"]
     if "description" in body:
@@ -339,3 +356,20 @@ async def update_job_title(
         "success": True,
         "message": "Job title updated"
     }
+
+
+@router.post("/{candidate_id}/job-titles/{jt_id}/reset-to-extracted")
+async def reset_job_title_to_extracted(candidate_id: int, jt_id: int, db: Session = Depends(get_db)):
+    """Restore a curated title without removing its per-file extraction facts."""
+    from backend.models.supporting import CandidateJobTitle
+    item = db.query(CandidateJobTitle).filter(
+        CandidateJobTitle.id == jt_id, CandidateJobTitle.candidate_id == candidate_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Job title not found")
+    if not item.original_extracted_value:
+        raise HTTPException(status_code=409, detail="This title was not extracted from a file")
+    item.title = item.original_extracted_value
+    item.source = "extracted"
+    db.commit()
+    return {"success": True, "message": "Title restored to extracted value", "title": item.title}

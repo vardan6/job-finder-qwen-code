@@ -8,13 +8,16 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from pathlib import Path
 import json
+import re
+import shutil
 from typing import Optional
 
 from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.platform_account import PlatformAccount
-from backend.security import encrypt_json, decrypt_json, encrypt_data
+from backend.security import decrypt_data, encrypt_json, decrypt_json, encrypt_data
 from backend.services.browser_manager import get_browser_pool
+from backend.services.rate_limiter import normalize_linkedin_settings
 
 router = APIRouter(prefix="/candidates/{candidate_id}/accounts", tags=["platform_accounts"])
 
@@ -38,6 +41,74 @@ def _get_cookie_file_path(candidate: Candidate, platform: str) -> Path:
     return DATA_DIR / "cookies" / f"{candidate.uuid}_{platform}.enc"
 
 
+def _get_manual_login_profile_path(candidate: Candidate, platform: str) -> Path:
+    """Return the transient, per-account Chromium profile for manual login."""
+    if platform not in VALID_PLATFORMS:
+        raise ValueError(f"Invalid platform: {platform}")
+    from backend.config import DATA_DIR
+    return DATA_DIR / "browser-login-profiles" / f"{candidate.uuid}_{platform}"
+
+
+def _manual_login_session_key(candidate: Candidate, platform: str) -> str:
+    return f"{candidate.uuid}:{platform}"
+
+
+
+
+def _email_from_value(value) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value.strip())
+    return match.group(0) if match else None
+
+
+def _detect_account_email(state: dict) -> Optional[str]:
+    """Read an email only when a provider labels it as identity data."""
+    for origin in state.get("origins", []):
+        if not isinstance(origin, dict):
+            continue
+        for item in origin.get("localStorage", []):
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("name", "")).lower()
+            if "email" in key or "username" in key or "login" in key:
+                email = _email_from_value(item.get("value"))
+                if email:
+                    return email
+    for cookie in state.get("cookies", []):
+        if not isinstance(cookie, dict):
+            continue
+        key = str(cookie.get("name", "")).lower()
+        if "email" in key or "username" in key:
+            email = _email_from_value(cookie.get("value"))
+            if email:
+                return email
+    return None
+
+
+def _display_account_email(account: Optional[PlatformAccount]) -> Optional[str]:
+    if not account or not account.email_encrypted:
+        return None
+    try:
+        return decrypt_data(account.email_encrypted)
+    except Exception:
+        return None
+
+
+def _remove_saved_login_files(candidate: Candidate, platform: str) -> None:
+    """Remove this app's saved session and manual-login browser profile."""
+    _get_cookie_file_path(candidate, platform).unlink(missing_ok=True)
+    profile_path = _get_manual_login_profile_path(candidate, platform)
+    if profile_path.exists():
+        shutil.rmtree(profile_path)
+
+
+def _linkedin_rate_settings(account: Optional[PlatformAccount]) -> dict:
+    try:
+        raw = json.loads(account.rate_limit_settings) if account and account.rate_limit_settings else {}
+    except (TypeError, ValueError):
+        raw = {}
+    return normalize_linkedin_settings(raw)
 
 
 def _normalize_cookies(cookies_raw):
@@ -105,6 +176,71 @@ def _is_likely_authenticated(platform: str, cookies: list) -> bool:
     return len(cookie_names) > 0
 
 
+def _account_guidance(account: Optional[PlatformAccount]) -> dict:
+    """Describe the saved-session state without attempting a live login check.
+
+    Account status is deliberately kept separate from a live session probe: a
+    saved cookie is not proof that the provider still accepts it.
+    """
+    status = account.status if account else "not_connected"
+    if status == "active":
+        return {
+            "label": "Saved session present",
+            "detail": "Run Test Connection before searching; re-login if it reports an expired session.",
+            "action": "Test Connection",
+            "tone": "success",
+        }
+    if status == "login_pending":
+        return {
+            "label": "Manual login in progress",
+            "detail": "Complete sign-in yourself in the opened browser, including any 2FA or provider challenge, then finish the browser login.",
+            "action": "Finish Browser Login",
+            "tone": "primary",
+        }
+    if status == "login_failed":
+        return {
+            "label": "Manual login needs attention",
+            "detail": "The browser login was not completed. Open Browser Login again, complete sign-in yourself, then finish the browser login.",
+            "action": "Open Browser Login",
+            "tone": "warning",
+        }
+    if status == "captcha_required":
+        return {
+            "label": "CAPTCHA or verification required",
+            "detail": "Open Browser Login and complete the provider's challenge yourself, then finish the browser login.",
+            "action": "Re-login in browser",
+            "tone": "danger",
+        }
+    if status == "expired":
+        return {
+            "label": "Session expired — re-login required",
+            "detail": "Open Browser Login, sign in yourself, then finish the browser login to replace the saved session.",
+            "action": "Re-login in browser",
+            "tone": "warning",
+        }
+    return {
+        "label": "No saved session",
+        "detail": "Open Browser Login, sign in yourself, then finish the browser login to save the session.",
+        "action": "Open Browser Login",
+        "tone": "secondary",
+    }
+
+
+def _platform_status(account: Optional[PlatformAccount]) -> dict:
+    """Build display-only saved-session information for the account UI."""
+    return {"session": _account_guidance(account)}
+
+
+def _session_probe_outcome(current_url: str) -> tuple[bool, str, str]:
+    """Classify a completed user-operated session probe without guessing."""
+    url = (current_url or "").lower()
+    if "captcha" in url or "challenge" in url or "checkpoint" in url:
+        return False, "captcha_required", "A provider challenge or CAPTCHA is required. Complete it yourself in the browser, then re-login."
+    if "/login" in url or "signin" in url:
+        return False, "expired", "The saved session has expired. Open Browser Login and sign in yourself."
+    return True, "active", "Session is valid"
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_accounts(request: Request, candidate_id: int, db: Session = Depends(get_db)):
     """Show platform accounts management page"""
@@ -127,6 +263,12 @@ async def list_accounts(request: Request, candidate_id: int, db: Session = Depen
     for account in accounts:
         if account.platform in platforms:
             platforms[account.platform]["account"] = account
+
+    for platform, platform_info in platforms.items():
+        platform_info.update(_platform_status(platform_info["account"]))
+        platform_info["login_email"] = _display_account_email(platform_info["account"])
+        if platform == "linkedin":
+            platform_info["rate_limits"] = _linkedin_rate_settings(platform_info["account"])
     
     return templates.TemplateResponse("accounts/list.html", {
         "request": request,
@@ -197,6 +339,73 @@ async def delete_account(request: Request, candidate_id: int, account_id: int, d
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/{account_id}/logout", response_class=JSONResponse)
+async def logout_account(candidate_id: int, account_id: int, db: Session = Depends(get_db)):
+    """Forget this platform login locally, including its saved browser profile."""
+    account = db.query(PlatformAccount).filter(
+        PlatformAccount.id == account_id,
+        PlatformAccount.candidate_id == candidate_id,
+    ).first()
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not account or not candidate:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    platform = account.platform
+    try:
+        manager = await get_browser_pool(headless=False).get_manager()
+        await manager.close_manual_context(_manual_login_session_key(candidate, platform))
+        _remove_saved_login_files(candidate, platform)
+        db.delete(account)
+        db.commit()
+        return JSONResponse({"success": True, "message": f"{platform.capitalize()} login removed"})
+    except Exception as e:
+        db.rollback()
+        return JSONResponse({"success": False, "message": str(e)}, status_code=400)
+
+
+@router.post("/{account_id}/rate-limits", response_class=JSONResponse)
+async def save_linkedin_rate_limits(
+    candidate_id: int,
+    account_id: int,
+    hourly_limit: int = Form(...),
+    daily_limit: int = Form(...),
+    min_delay_seconds: int = Form(...),
+    max_delay_seconds: int = Form(...),
+    operating_hours_start: int = Form(...),
+    operating_hours_end: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    account = db.query(PlatformAccount).filter(
+        PlatformAccount.id == account_id,
+        PlatformAccount.candidate_id == candidate_id,
+        PlatformAccount.platform == "linkedin",
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="LinkedIn account not found")
+    settings = normalize_linkedin_settings({
+        "hourly_limit": hourly_limit, "daily_limit": daily_limit,
+        "min_delay_seconds": min_delay_seconds, "max_delay_seconds": max_delay_seconds,
+        "operating_hours_start": operating_hours_start, "operating_hours_end": operating_hours_end,
+    })
+    account.rate_limit_settings = json.dumps(settings)
+    db.commit()
+    return JSONResponse({"success": True, "settings": settings})
+
+
+@router.post("/{account_id}/rate-limits/reset", response_class=JSONResponse)
+async def reset_linkedin_rate_limits(candidate_id: int, account_id: int, db: Session = Depends(get_db)):
+    account = db.query(PlatformAccount).filter(
+        PlatformAccount.id == account_id,
+        PlatformAccount.candidate_id == candidate_id,
+        PlatformAccount.platform == "linkedin",
+    ).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="LinkedIn account not found")
+    from backend.services.rate_limiter import get_rate_limiter
+    get_rate_limiter().reset(f"linkedin:{candidate_id}")
+    return JSONResponse({"success": True, "message": "LinkedIn rate-limit usage reset"})
+
+
 @router.post("/{account_id}/test")
 async def test_account(request: Request, candidate_id: int, account_id: int, db: Session = Depends(get_db)):
     """Test if stored cookies are still valid"""
@@ -213,7 +422,7 @@ async def test_account(request: Request, candidate_id: int, account_id: int, db:
             "success": False,
             "message": "No cookies stored for this account"
         })
-    
+
     try:
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
         if not candidate:
@@ -247,17 +456,17 @@ async def test_account(request: Request, candidate_id: int, account_id: int, db:
         try:
             auth_check_url = "https://www.linkedin.com/feed/" if account.platform == "linkedin" else "https://www.glassdoor.com/"
             await page.goto(auth_check_url, wait_until="domcontentloaded", timeout=45000)
-            current_url = (page.url or "").lower()
-            is_valid = all(marker not in current_url for marker in ["/login", "signin", "challenge", "captcha"])
+            is_valid, outcome_status, outcome_message = _session_probe_outcome(page.url)
         finally:
             await page.close()
 
         if not is_valid:
-            account.status = "expired"
+            account.status = outcome_status
             db.commit()
             return JSONResponse({
                 "success": False,
-                "message": f"{account.platform.capitalize()} session appears expired. Please login again."
+                "state": outcome_status,
+                "message": f"{account.platform.capitalize()}: {outcome_message}"
             })
 
         account.status = "active"
@@ -313,9 +522,12 @@ async def start_browser_login(
     if platform not in PLATFORM_LOGIN_URLS:
         return JSONResponse({"success": False, "message": "Invalid platform"}, status_code=400)
 
-    cookies_path = _get_cookie_file_path(candidate, platform)
     manager = await get_browser_pool(headless=False).get_manager()
-    page = await manager.new_page(platform, str(cookies_path))
+    session_key = _manual_login_session_key(candidate, platform)
+    page = await manager.new_manual_page(
+        session_key,
+        str(_get_manual_login_profile_path(candidate, platform)),
+    )
 
     try:
         await page.goto(PLATFORM_LOGIN_URLS[platform], wait_until="domcontentloaded", timeout=60000)
@@ -324,9 +536,20 @@ async def start_browser_login(
         await page.close()
         return JSONResponse({"success": False, "message": f"Failed to open login page: {e}"}, status_code=500)
 
+    account = db.query(PlatformAccount).filter(
+        PlatformAccount.candidate_id == candidate_id,
+        PlatformAccount.platform == platform,
+    ).first()
+    if not account:
+        account = PlatformAccount(candidate_id=candidate_id, platform=platform)
+        db.add(account)
+    account.status = "login_pending"
+    db.commit()
+
     return JSONResponse({
         "success": True,
-        "message": f"{platform.capitalize()} login opened. Complete login in the browser, then click 'Finish Browser Login'."
+        "state": "login_pending",
+        "message": f"{platform.capitalize()} login opened. Complete sign-in yourself in the browser, including 2FA or any provider challenge, then click 'Finish Browser Login'."
     })
 
 
@@ -334,7 +557,6 @@ async def start_browser_login(
 async def finish_browser_login(
     candidate_id: int,
     platform: str = Form(...),
-    email: str = Form(None),
     db: Session = Depends(get_db),
 ):
     """Save cookies from active Playwright context after manual login."""
@@ -345,23 +567,24 @@ async def finish_browser_login(
     if platform not in PLATFORM_LOGIN_URLS:
         return JSONResponse({"success": False, "message": "Invalid platform"}, status_code=400)
 
-    cookies_path = _get_cookie_file_path(candidate, platform)
     manager = await get_browser_pool(headless=False).get_manager()
-
-    await manager.save_cookies(platform, str(cookies_path))
-    state = await manager.get_storage_state(platform)
+    session_key = _manual_login_session_key(candidate, platform)
+    profile_path = _get_manual_login_profile_path(candidate, platform)
+    state = await manager.get_manual_storage_state(session_key, str(profile_path))
     state = _normalize_storage_state(state if state else [])
     cookies = state["cookies"]
     if not cookies:
         return JSONResponse({
             "success": False,
-            "message": "No session cookies found. Please complete login in browser first."
+            "state": "login_pending",
+            "message": "No session cookies found. Complete sign-in yourself in the opened browser, then try Finish Browser Login again."
         }, status_code=400)
 
     if not _is_likely_authenticated(platform, cookies):
         return JSONResponse({
             "success": False,
-            "message": f"{platform.capitalize()} login not detected yet. Make sure you are fully signed in, then click Finish again."
+            "state": "login_pending",
+            "message": f"{platform.capitalize()} sign-in is not detected yet. Complete any 2FA or provider challenge yourself, then click Finish Browser Login again."
         }, status_code=400)
 
     try:
@@ -374,18 +597,21 @@ async def finish_browser_login(
             account = PlatformAccount(candidate_id=candidate_id, platform=platform)
             db.add(account)
         account.cookies_encrypted = encrypt_json(state)
-        if email:
-            account.email_encrypted = encrypt_data(email)
+        detected_email = _detect_account_email(state)
+        if detected_email:
+            account.email_encrypted = encrypt_data(detected_email)
         account.status = "active"
         account.last_used_at = datetime.utcnow()
 
         _persist_cookie_file(candidate, platform, cookies)
         db.commit()
+        await manager.close_manual_context(session_key)
     except Exception as e:
         db.rollback()
         return JSONResponse({"success": False, "message": str(e)}, status_code=400)
 
     return JSONResponse({
         "success": True,
+        "state": "active",
         "message": f"{platform.capitalize()} login saved successfully ({len(cookies)} cookies)"
     })

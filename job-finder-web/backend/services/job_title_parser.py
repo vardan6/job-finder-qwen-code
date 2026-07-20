@@ -15,6 +15,7 @@ from sqlalchemy import func
 from backend.models.document import CandidateDocument, DocumentParsePrompt, LLMFunctionMapping
 from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.models.supporting import CandidateJobTitle
+from backend.services.provenance import record_title_extraction
 from backend.services.llm_service import call_llm, extract_json_from_response, get_llm_for_function
 
 
@@ -287,18 +288,22 @@ def save_job_titles_to_candidate(
                 CandidateJobTitle.title == title_data["title"]
             ).first()
 
-            if existing:
-                continue
-
-            job_title = CandidateJobTitle(
-                candidate_id=candidate_id,
-                title=title_data["title"],
-                priority=title_data.get("priority", 2),
-                description=title_data.get("description", ""),
-                source_document_id=title_data.get("source_document_id")
-            )
-            db.add(job_title)
-            count += 1
+            document_id = title_data.get("source_document_id")
+            if document_id:
+                # Curated deduplication never discards the fact that another
+                # uploaded file produced this value.
+                record_title_extraction(
+                    db, candidate_id, document_id, title_data["title"],
+                    priority=title_data.get("priority", 2), description=title_data.get("description", ""),
+                    extractor_version="job_titles_parser",
+                )
+            elif not existing:
+                db.add(CandidateJobTitle(
+                    candidate_id=candidate_id, title=title_data["title"],
+                    priority=title_data.get("priority", 2), description=title_data.get("description", ""), source="edited",
+                ))
+            if not existing:
+                count += 1
 
         db.commit()
         return True, count, None
@@ -324,8 +329,9 @@ def get_candidate_job_titles_with_sources(
             "title": jt.title,
             "priority": jt.priority,
             "description": jt.description or "",
-            "source_document_id": jt.source_document_id,
-            "source_file": jt.source_document.filename if jt.source_document else "Manual"
+            "source": jt.source,
+            "original_extracted_value": jt.original_extracted_value,
+            "source_file": jt.extraction_occurrences[0].document.filename if jt.extraction_occurrences else "Manual"
         })
 
     return result

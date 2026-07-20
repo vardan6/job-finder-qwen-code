@@ -15,6 +15,7 @@ import logging
 from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.supporting import CandidateSkill, CandidatePreferences
+from backend.services.provenance import record_skill_extraction
 from backend.models.document import CandidateDocument, LLMFunctionMapping
 from backend.services.llm_service import extract_skills_from_text
 
@@ -157,7 +158,10 @@ async def update_skill(
 
     try:
         # Only update skill name (category and years_experience ignored in new UI)
-        skill.skill_name = skill_name.strip()
+        new_skill_name = skill_name.strip()
+        if new_skill_name != skill.skill_name:
+            skill.skill_name = new_skill_name
+            skill.source = "edited"
         db.commit()
 
         return JSONResponse({
@@ -172,6 +176,22 @@ async def update_skill(
     except Exception as e:
         db.rollback()
         return JSONResponse({"success": False, "message": str(e)}, status_code=400)
+
+
+@router.post("/{skill_id}/reset-to-extracted")
+async def reset_skill_to_extracted(candidate_id: int, skill_id: int, db: Session = Depends(get_db)):
+    """Restore a curated skill while preserving all its file occurrences."""
+    skill = db.query(CandidateSkill).filter(
+        CandidateSkill.id == skill_id, CandidateSkill.candidate_id == candidate_id,
+    ).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    if not skill.original_extracted_value:
+        raise HTTPException(status_code=409, detail="This skill was not extracted from a file")
+    skill.skill_name = skill.original_extracted_value
+    skill.source = "extracted"
+    db.commit()
+    return {"success": True, "message": "Skill restored to extracted value", "skill_name": skill.skill_name}
 
 
 @router.post("/{skill_id}/delete")
@@ -401,16 +421,24 @@ async def save_parsed_skills(
                 CandidateSkill.is_active == True
             ).first()
 
-            if not existing:
-                skill = CandidateSkill(
-                    candidate_id=candidate_id,
-                    skill_name=skill_data["skill_name"].strip(),
+            document_id = skill_data.get("source_document_id")
+            if document_id:
+                # Even a duplicate curated skill is a new per-file extraction
+                # fact, so do not discard its document association.
+                record_skill_extraction(
+                    db, candidate_id, document_id, skill_data["skill_name"].strip(),
                     category=skill_data.get("category", "preferred"),
                     years_experience=skill_data.get("years_experience"),
-                    is_enabled=skill_data.get("is_enabled", True),
-                    source_document_id=skill_data.get("source_document_id")
+                    is_enabled=skill_data.get("is_enabled", True), extractor_version="skill_extractor",
                 )
-                db.add(skill)
+            elif not existing:
+                db.add(CandidateSkill(
+                    candidate_id=candidate_id, skill_name=skill_data["skill_name"].strip(),
+                    category=skill_data.get("category", "preferred"),
+                    years_experience=skill_data.get("years_experience"),
+                    is_enabled=skill_data.get("is_enabled", True), source="edited",
+                ))
+            if not existing:
                 saved_count += 1
 
         db.commit()

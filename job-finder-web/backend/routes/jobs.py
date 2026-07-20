@@ -2,10 +2,12 @@
 Job Routes - Job search, listing, and management
 """
 import asyncio
+import csv
 import json
 import logging
 import uuid
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
@@ -16,14 +18,18 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.config import DATA_DIR
 from backend.models.candidate import Candidate
-from backend.models.job import Job
+from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
 from backend.models.llm_provider import LLMProvider
+from backend.ownership import get_current_user, get_owned_candidate
 from backend.security import safe_resolve_path
 from backend.services.job_search import run_job_search, SearchConfig
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["jobs"])
+
+# R11 application pipeline: fixed five-stage progression, not a general workflow.
+APPLICATION_PIPELINE_STATUSES = ("interested", "applied", "interview", "offer", "rejected")
 
 # Setup templates
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
@@ -36,20 +42,65 @@ async def list_jobs(
     db: Session = Depends(get_db),
     candidate_id: int = None,
     status: str = "active",
+    sort: str = "score",
+    direction: str = "desc",
+    min_score: int = None,
+    verified_remote_only: bool = False,
+    include_dismissed: bool = False,
+    application_status: str = None,
 ):
     """List all jobs with filtering"""
     query = db.query(Job)
-    
+
     if candidate_id:
         query = query.filter(Job.candidate_id == candidate_id)
-    
+
     if status:
         query = query.filter(Job.status == status)
-    
-    # Order by most recent first
-    query = query.order_by(Job.found_at.desc())
+    if not include_dismissed:
+        query = query.filter(Job.is_dismissed.is_(False))
+    if min_score is not None:
+        min_score = max(0, min(100, min_score))
+        query = query.filter(Job.deterministic_score >= min_score)
+    if verified_remote_only:
+        query = query.filter(Job.verified_remote_status == "fully_remote")
+    if application_status in APPLICATION_PIPELINE_STATUSES:
+        query = query.outerjoin(JobApplication, JobApplication.job_id == Job.id)
+        if application_status == "interested":
+            # No JobApplication row yet means the job is implicitly "interested".
+            query = query.filter(
+                (JobApplication.status == "interested") | (JobApplication.status.is_(None))
+            )
+        else:
+            query = query.filter(JobApplication.status == application_status)
+
+    sort_columns = {
+        "title": Job.title,
+        "company": Job.company,
+        "location": Job.location,
+        "platform": Job.platform,
+        "salary": Job.salary,
+        "remote": Job.verified_remote_status,
+        "score": Job.deterministic_score,
+        "status": Job.status,
+        "found": Job.found_at,
+    }
+    selected_sort = sort if sort in sort_columns else "score"
+    selected_direction = direction.lower() if direction.lower() in {"asc", "desc"} else "desc"
+    order_column = sort_columns[selected_sort]
+    order = order_column.asc() if selected_direction == "asc" else order_column.desc()
+
+    # R5's deterministic composite remains the best-match default.  A stable
+    # secondary sort prevents results with equal values from jumping around.
+    query = query.order_by(order, Job.found_at.desc(), Job.id.desc())
     
     jobs = query.all()
+    for job in jobs:
+        try:
+            job.score_details = json.loads(job.score_breakdown) if job.score_breakdown else None
+        except (TypeError, json.JSONDecodeError):
+            logger.warning("Job %s has invalid score breakdown JSON", job.id)
+            job.score_details = None
     
     # Get candidates for filter dropdown
     candidates = db.query(Candidate).filter(Candidate.is_active == True).all()
@@ -62,8 +113,118 @@ async def list_jobs(
             "candidates": candidates,
             "selected_candidate_id": candidate_id,
             "selected_status": status,
+            "selected_sort": selected_sort,
+            "selected_direction": selected_direction,
+            "min_score": min_score,
+            "verified_remote_only": verified_remote_only,
+            "include_dismissed": include_dismissed,
+            "selected_application_status": application_status,
+            "application_pipeline_statuses": APPLICATION_PIPELINE_STATUSES,
         },
     )
+
+
+@router.get("/lists", response_class=HTMLResponse)
+async def list_search_runs(request: Request, db: Session = Depends(get_db), candidate_id: int = None, current_user=Depends(get_current_user)):
+    """Show named searches that can be revisited as historical snapshots."""
+    query = db.query(SearchRun).join(Candidate).filter(Candidate.user_id == current_user.id)
+    if candidate_id:
+        query = query.filter(SearchRun.candidate_id == candidate_id)
+    runs = query.order_by(SearchRun.started_at.desc(), SearchRun.id.desc()).all()
+    for search_run in runs:
+        try:
+            search_run.platform_names = ", ".join(json.loads(search_run.platforms))
+        except (TypeError, json.JSONDecodeError):
+            search_run.platform_names = "Unknown"
+    candidates = db.query(Candidate).filter(Candidate.is_active == True, Candidate.user_id == current_user.id).all()
+    return templates.TemplateResponse("jobs/saved_lists.html", {
+        "request": request, "runs": runs, "candidates": candidates,
+        "selected_candidate_id": candidate_id,
+    })
+
+
+def _curated_search_run_jobs(
+    db: Session, search_run_id: int, min_score: int | None,
+    verified_remote_only: bool, include_dismissed: bool,
+):
+    """Return saved-list rows using run snapshots, never current job scores."""
+    query = db.query(SearchRunJob).join(Job).filter(SearchRunJob.search_run_id == search_run_id)
+    if not include_dismissed:
+        query = query.filter(Job.is_dismissed.is_(False))
+    if min_score is not None:
+        min_score = max(0, min(100, min_score))
+        query = query.filter(SearchRunJob.deterministic_score >= min_score)
+    if verified_remote_only:
+        query = query.filter(SearchRunJob.verified_remote_status == "fully_remote")
+    return query.order_by(
+        SearchRunJob.deterministic_score.desc(), SearchRunJob.id.desc(),
+    ).all(), min_score
+
+
+def _owned_search_run(db: Session, search_run_id: int, current_user):
+    search_run = db.query(SearchRun).join(Candidate).filter(
+        SearchRun.id == search_run_id, Candidate.user_id == current_user.id,
+    ).first()
+    if search_run is None:
+        raise HTTPException(status_code=404, detail="Saved search not found")
+    return search_run
+
+
+@router.get("/lists/{search_run_id}", response_class=HTMLResponse)
+async def view_search_run(
+    search_run_id: int, request: Request, db: Session = Depends(get_db),
+    min_score: int = None, verified_remote_only: bool = False,
+    include_dismissed: bool = False, current_user=Depends(get_current_user),
+):
+    """Render a saved list from SearchRunJob values, never live job scores."""
+    search_run = _owned_search_run(db, search_run_id, current_user)
+    memberships, min_score = _curated_search_run_jobs(
+        db, search_run.id, min_score, verified_remote_only, include_dismissed,
+    )
+    for membership in memberships:
+        try:
+            membership.platform_names = ", ".join(json.loads(membership.sighted_platforms))
+        except (TypeError, json.JSONDecodeError):
+            membership.platform_names = "Unknown"
+    return templates.TemplateResponse("jobs/saved_list.html", {
+        "request": request, "search_run": search_run, "memberships": memberships,
+        "min_score": min_score, "verified_remote_only": verified_remote_only,
+        "include_dismissed": include_dismissed,
+    })
+
+
+@router.get("/lists/{search_run_id}/export")
+async def export_search_run(
+    search_run_id: int, db: Session = Depends(get_db), min_score: int = None,
+    verified_remote_only: bool = False, include_dismissed: bool = False,
+    current_user=Depends(get_current_user),
+):
+    """Export the visible historical snapshot rows as a CSV file."""
+    search_run = _owned_search_run(db, search_run_id, current_user)
+    memberships, _ = _curated_search_run_jobs(
+        db, search_run.id, min_score, verified_remote_only, include_dismissed,
+    )
+    output = StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow([
+        "title", "company", "location", "platforms_sighted", "salary",
+        "verified_remote_status", "score", "first_sighting", "url",
+    ])
+    for membership in memberships:
+        try:
+            platforms = ", ".join(json.loads(membership.sighted_platforms))
+        except (TypeError, json.JSONDecodeError):
+            platforms = ""
+        writer.writerow([
+            membership.job.title, membership.job.company, membership.job.location or "",
+            platforms, membership.salary or "", membership.verified_remote_status or "unknown",
+            membership.deterministic_score if membership.deterministic_score is not None else "",
+            "yes" if membership.first_sighting else "no", membership.job.original_url or "",
+        ])
+    filename = f"saved-search-{search_run.id}.csv"
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="{filename}"',
+    })
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -141,15 +302,33 @@ async def get_candidate_search_config(
             connected_platforms.append(platform)
             platform_status.append({
                 "platform": platform,
+                "label": platform.capitalize(),
                 "connected": True,
+                "selectable": True,
                 "status": "active",
             })
         else:
             platform_status.append({
                 "platform": platform,
+                "label": platform.capitalize(),
                 "connected": False,
+                "selectable": False,
                 "status": "disconnected",
             })
+
+    # WWR is wired through the common adapter path, but live navigation is
+    # deliberately unavailable until the maintainer records authorization and
+    # completes manual validation.  Keep it visible and selectable so a
+    # requested search receives the explicit fail-closed result from the
+    # service instead of being mistaken for an unknown platform.
+    platform_status.append({
+        "platform": "we_work_remotely",
+        "label": "We Work Remotely",
+        "connected": False,
+        "selectable": True,
+        "status": "policy_gated",
+        "detail": "Live search is awaiting maintainer authorization and manual validation.",
+    })
     
     # Default to all platforms if none connected (user will need to connect)
     if not connected_platforms:
@@ -207,6 +386,7 @@ async def perform_job_search(
     analyze: str = Form("false"),  # Comes as 'true' or 'false' string
     headless: str = Form("false"),  # Comes as 'true' or 'false' string
     remote_only: str = Form("false"),  # Comes as 'true' or 'false' string (for override)
+    list_name: str = Form(""),
 ):
     """
     Perform a job search across platforms.
@@ -269,6 +449,7 @@ async def perform_job_search(
             db=db,
             candidate_id=candidate_id,
             query=query,
+            run_name=list_name,
             location=location,
             platforms=platforms,
             max_jobs=max_jobs,
@@ -286,6 +467,7 @@ async def perform_job_search(
             "jobs_saved": result.jobs_saved,
             "errors": result.errors,
             "platform_results": result.platform_results,
+            "search_run_id": result.search_run_id,
         }
         
         return templates.TemplateResponse(
@@ -322,6 +504,7 @@ async def start_job_search_stream(
     max_jobs: int = Form(20),
     analyze: str = Form("false"),
     headless: str = Form("false"),
+    list_name: str = Form(""),
 ):
     """
     Start a job search and return a search_id for SSE progress streaming.
@@ -355,6 +538,7 @@ async def start_job_search_stream(
         search_id,
         candidate_id,
         query,
+        list_name,
         location,
         platforms,
         max_jobs,
@@ -423,6 +607,7 @@ async def _run_search_with_progress(
     search_id: str,
     candidate_id: int,
     query: str,
+    list_name: str,
     location: str,
     platforms: list,
     max_jobs: int,
@@ -446,6 +631,7 @@ async def _run_search_with_progress(
             db=db,
             candidate_id=candidate_id,
             query=query,
+            run_name=list_name,
             location=location,
             platforms=platforms,
             max_jobs=max_jobs,
@@ -616,6 +802,60 @@ async def update_job_status(
     db.commit()
     
     return {"success": True, "job_id": job_id, "status": status}
+
+
+@router.post("/{job_id}/application-status")
+async def update_application_status(
+    request: Request,
+    job_id: int,
+    status: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Update the R11 application-pipeline status (interested/applied/interview/offer/rejected).
+
+    This tracks JobApplication.status, distinct from Job.status (the posting's
+    own lifecycle). Creates the JobApplication row on first status change.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    get_owned_candidate(db, current_user, job.candidate_id)
+
+    if status not in APPLICATION_PIPELINE_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid application status")
+
+    application = job.application
+    if application is None:
+        application = JobApplication(job_id=job.id, status=status)
+        db.add(application)
+    else:
+        application.status = status
+    if status == "applied" and application.applied_date is None:
+        application.applied_date = datetime.utcnow()
+    db.commit()
+
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(request.headers.get("referer", "/jobs/"), status_code=303)
+
+
+@router.post("/{job_id}/dismiss")
+async def dismiss_job(
+    request: Request, job_id: int, db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Hide a posting without deleting it or altering saved-list snapshots."""
+    job = db.query(Job).join(Candidate).filter(
+        Job.id == job_id, Candidate.user_id == current_user.id,
+    ).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.is_dismissed = True
+    db.commit()
+    # This endpoint is used by ordinary forms so the user lands back on the
+    # filtered result/list view they curated.
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(request.headers.get("referer", "/jobs/"), status_code=303)
 
 
 @router.delete("/{job_id}")

@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.models.document import CandidateDocument, DocumentParsePrompt, DocumentSection
-from backend.models.supporting import CandidateJobTitle
+from backend.services.provenance import record_title_extraction
 from backend.services.llm_service import send_message, extract_json_from_response
 
 
@@ -116,21 +116,11 @@ def process_job_titles(db: Session, document: CandidateDocument, job_titles: Lis
 
     for title_data in job_titles:
         if isinstance(title_data, dict) and "title" in title_data:
-            # Check if this job title already exists for this candidate
-            existing = db.query(CandidateJobTitle).filter(
-                CandidateJobTitle.candidate_id == candidate_id,
-                CandidateJobTitle.title == title_data["title"]
-            ).first()
-
-            if not existing:
-                job_title = CandidateJobTitle(
-                    candidate_id=candidate_id,
-                    title=title_data["title"],
-                    priority=title_data.get("priority", 3),
-                    description=title_data.get("description"),
-                    source_document_id=document.id
-                )
-                db.add(job_title)
+            record_title_extraction(
+                db, candidate_id, document.id, title_data["title"],
+                priority=title_data.get("priority", 3),
+                description=title_data.get("description"), extractor_version="document_parser",
+            )
 
 
 def process_profile_data(db: Session, document: CandidateDocument, profile_data: Dict) -> None:

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}{{ search_run.name }} - Job Finder{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h1><i class="bi bi-bookmark-fill"></i> {{ search_run.name }}</h1><p class="text-muted mb-0">Historical snapshot · {{ search_run.query }} · {{ search_run.location or 'Any location' }}</p></div>
+        <div>
+            <a href="/jobs/lists/{{ search_run.id }}/export{% if min_score is not none or verified_remote_only or include_dismissed %}?{% if min_score is not none %}min_score={{ min_score }}{% endif %}{% if verified_remote_only %}{% if min_score is not none %}&amp;{% endif %}verified_remote_only=true{% endif %}{% if include_dismissed %}{% if min_score is not none or verified_remote_only %}&amp;{% endif %}include_dismissed=true{% endif %}{% endif %}" class="btn btn-outline-primary"><i class="bi bi-download"></i> Export CSV</a>
+            <a href="/jobs/lists" class="btn btn-outline-secondary">All Saved Lists</a>
+        </div>
+    </div>
+    <form method="GET" class="card card-body mb-3"><div class="row g-3 align-items-end">
+        <div class="col-md-3"><label class="form-label" for="min_score">Minimum score</label><input id="min_score" name="min_score" type="number" min="0" max="100" class="form-control" value="{{ min_score if min_score is not none else '' }}" placeholder="Any"></div>
+        <div class="col-md-3"><div class="form-check"><input id="verified_remote_only" name="verified_remote_only" class="form-check-input" type="checkbox" value="true" {% if verified_remote_only %}checked{% endif %}><label for="verified_remote_only" class="form-check-label">Fully remote only</label></div></div>
+        <div class="col-md-3"><div class="form-check"><input id="include_dismissed" name="include_dismissed" class="form-check-input" type="checkbox" value="true" {% if include_dismissed %}checked{% endif %}><label for="include_dismissed" class="form-check-label">Show dismissed</label></div></div>
+        <div class="col-md-3"><button class="btn btn-outline-primary">Apply filters</button></div>
+    </div></form>
+    <div class="card"><div class="table-responsive"><table class="table table-hover mb-0">
+        <thead><tr><th>Title</th><th>Company</th><th>Platforms sighted</th><th>Salary</th><th>Verified remote</th><th>Score</th><th>First sighting</th><th>Actions</th></tr></thead>
+        <tbody>{% for membership in memberships %}<tr>
+            <td><a href="/jobs/{{ membership.job.id }}">{{ membership.job.title }}</a></td>
+            <td>{{ membership.job.company }}</td><td>{{ membership.platform_names or '—' }}</td><td>{{ membership.salary or '—' }}</td>
+            <td>{{ (membership.verified_remote_status or 'unknown')|replace('_', ' ') }}</td><td>{{ membership.deterministic_score if membership.deterministic_score is not none else '—' }}</td>
+            <td>{% if membership.first_sighting %}<span class="badge bg-success">New</span>{% else %}<span class="text-muted">Known</span>{% endif %}</td>
+            <td>{% if membership.job.is_dismissed %}<span class="badge bg-secondary">Dismissed</span>{% else %}<form method="post" action="/jobs/{{ membership.job.id }}/dismiss" class="d-inline"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye-slash"></i> Dismiss</button></form>{% endif %}</td>
+        </tr>{% else %}<tr><td colspan="8" class="text-muted">No saved results match these filters.</td></tr>{% endfor %}</tbody>
+    </table></div></div>
+</div>
+{% endblock %}

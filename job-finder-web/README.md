@@ -49,10 +49,9 @@ setup.bat
 ```bash
 cd job-finder-web
 python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-playwright install
-python run.py
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m playwright install chromium
+venv/bin/python run.py
 ```
 
 ## Configuration
@@ -74,7 +73,7 @@ See `backend/config.py` for current defaults.
 
 ```bash
 cd job-finder-web
-python3 -m pytest -q
+venv/bin/python -m pytest -q
 ```
 
 ## Notes

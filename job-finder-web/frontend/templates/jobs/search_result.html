@@ -12,6 +12,9 @@
             <a href="/jobs/" class="btn btn-primary">
                 <i class="bi bi-briefcase"></i> View All Jobs
             </a>
+            {% if result.search_run_id %}<a href="/jobs/lists/{{ result.search_run_id }}" class="btn btn-outline-primary">
+                <i class="bi bi-bookmark"></i> View Saved List
+            </a>{% endif %}
             <a href="/jobs/search" class="btn btn-secondary">
                 <i class="bi bi-search"></i> New Search
             </a>

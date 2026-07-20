@@ -1,7 +1,7 @@
 """
 Database Configuration
 """
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pathlib import Path
 
@@ -35,8 +35,9 @@ def init_db():
     """Initialize database tables - import all models first"""
     # Import all models to register them with Base
     from backend.models.candidate import Candidate
-    from backend.models.job import Job, JobApplication
-    from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences
+    from backend.models.user import User
+    from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
+    from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences, ExtractionOccurrence
     from backend.models.llm_provider import LLMProvider, LLMModel
     from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, LLMFunctionMapping
 
@@ -50,6 +51,17 @@ def migrate_database():
     """Run database migrations for schema updates"""
     from backend.models.llm_provider import LLMProvider, LLMModel
     from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, LLMFunctionMapping
+
+    migrate_ownership_groundwork()
+    migrate_deterministic_score()
+    migrate_extraction_provenance()
+    migrate_llm_job_refinement()
+    migrate_remote_verification()
+    migrate_job_salary()
+    migrate_job_curation()
+    migrate_profile_visibility()
+    migrate_search_runs()
+    migrate_platform_account_rate_limits()
 
     # Check if llm_models table exists by querying it
     conn = engine.connect()
@@ -134,6 +146,214 @@ def migrate_database():
 
     # Populate default LLM function mappings
     populate_default_function_mappings()
+
+
+def migrate_ownership_groundwork(bind=None, session_factory=None):
+    """Add candidate ownership without losing existing SQLite data.
+
+    Existing databases receive a nullable column, are backfilled to the seeded
+    development user, and rely on the ORM/creation paths for non-null
+    enforcement. Fresh databases get the non-null foreign key from metadata.
+    """
+    from backend.models.user import User
+    from backend.ownership import ensure_development_user
+
+    bind = bind or engine
+    session_factory = session_factory or SessionLocal
+    User.__table__.create(bind=bind, checkfirst=True)
+
+    table_names = inspect(bind).get_table_names()
+    if "candidates" not in table_names:
+        return
+
+    candidate_columns = {
+        column["name"] for column in inspect(bind).get_columns("candidates")
+    }
+    if "user_id" not in candidate_columns:
+        with bind.begin() as conn:
+            # SQLite cannot add a NOT NULL FK column to populated tables. The
+            # model is NOT NULL for new databases; this compatibility column is
+            # immediately backfilled below.
+            conn.execute(text("ALTER TABLE candidates ADD COLUMN user_id INTEGER"))
+
+    db = session_factory()
+    try:
+        user = ensure_development_user(db)
+        db.execute(
+            text("UPDATE candidates SET user_id = :user_id WHERE user_id IS NULL"),
+            {"user_id": user.id},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def migrate_deterministic_score(bind=None):
+    """Add persisted R5 deterministic-score fields to existing SQLite databases."""
+    bind = bind or engine
+    if "jobs" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("jobs")}
+    missing_columns = {
+        "deterministic_score": "INTEGER",
+        "score_breakdown": "TEXT",
+        "scoring_version": "VARCHAR",
+    }
+    pending_columns = [
+        (name, definition) for name, definition in missing_columns.items()
+        if name not in columns
+    ]
+    if pending_columns:
+        with bind.begin() as conn:
+            for name, definition in pending_columns:
+                conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {name} {definition}"))
+
+
+def migrate_platform_account_rate_limits(bind=None):
+    """Add per-account rate-limit settings without changing existing sessions."""
+    bind = bind or engine
+    if "platform_accounts" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("platform_accounts")}
+    if "rate_limit_settings" not in columns:
+        with bind.begin() as conn:
+            conn.execute(text("ALTER TABLE platform_accounts ADD COLUMN rate_limit_settings TEXT"))
+
+
+def migrate_extraction_provenance(bind=None):
+    """Migrate legacy single-document provenance into per-file occurrences."""
+    bind = bind or engine
+    tables = set(inspect(bind).get_table_names())
+    if not {"candidate_job_titles", "candidate_skills"}.issubset(tables):
+        return
+
+    from backend.models.supporting import ExtractionOccurrence
+    ExtractionOccurrence.__table__.create(bind=bind, checkfirst=True)
+    with bind.begin() as conn:
+        for table in ("candidate_job_titles", "candidate_skills"):
+            columns = {column["name"] for column in inspect(bind).get_columns(table)}
+            for name, definition in (
+                ("source", "VARCHAR NOT NULL DEFAULT 'edited'"),
+                ("original_extracted_value", "VARCHAR"),
+            ):
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+
+            # Old databases retain the legacy column for SQLite compatibility;
+            # application code no longer reads it after this one-time copy.
+            if "source_document_id" not in columns:
+                continue
+            value_column = "title" if table == "candidate_job_titles" else "skill_name"
+            fk_column = "job_title_id" if table == "candidate_job_titles" else "skill_id"
+            legacy = conn.execute(text(
+                f"SELECT id, source_document_id, {value_column} FROM {table} "
+                "WHERE source_document_id IS NOT NULL"
+            )).mappings()
+            for row in legacy:
+                exists = conn.execute(text(
+                    f"SELECT 1 FROM extraction_occurrences WHERE document_id = :document_id "
+                    f"AND {fk_column} = :value_id LIMIT 1"
+                ), {"document_id": row["source_document_id"], "value_id": row["id"]}).first()
+                if not exists:
+                    conn.execute(text(
+                        f"INSERT INTO extraction_occurrences (document_id, {fk_column}, raw_extracted_value) "
+                        "VALUES (:document_id, :value_id, :value)"
+                    ), {"document_id": row["source_document_id"], "value_id": row["id"], "value": row[value_column]})
+                conn.execute(text(
+                    f"UPDATE {table} SET source = 'extracted', "
+                    "original_extracted_value = COALESCE(original_extracted_value, " + value_column + ") "
+                    "WHERE id = :value_id"
+                ), {"value_id": row["id"]})
+
+
+def migrate_llm_job_refinement(bind=None):
+    """Add optional, separately stored R5 LLM-refinement fields."""
+    bind = bind or engine
+    if "jobs" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("jobs")}
+    missing_columns = {
+        "llm_score": "INTEGER",
+        "llm_rationale": "TEXT",
+        "llm_prompt_version": "VARCHAR",
+        "llm_profile_fingerprint": "VARCHAR",
+    }
+    pending_columns = [
+        (name, definition) for name, definition in missing_columns.items()
+        if name not in columns
+    ]
+    if pending_columns:
+        with bind.begin() as conn:
+            for name, definition in pending_columns:
+                conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {name} {definition}"))
+
+
+def migrate_profile_visibility(bind=None):
+    """Add the R10 visibility field to legacy candidate databases."""
+    bind = bind or engine
+    if "candidates" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("candidates")}
+    if "visibility_status" not in columns:
+        with bind.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE candidates ADD COLUMN visibility_status "
+                "VARCHAR NOT NULL DEFAULT 'draft'"
+            ))
+
+
+def migrate_remote_verification(bind=None):
+    """Add the persisted R6 remote-verification contract to existing jobs."""
+    bind = bind or engine
+    if "jobs" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("jobs")}
+    missing_columns = {
+        "verified_remote_status": "VARCHAR",
+        "remote_restrictions": "TEXT",
+        "remote_evidence": "TEXT",
+        "remote_verified_version": "VARCHAR",
+    }
+    with bind.begin() as conn:
+        for name, definition in missing_columns.items():
+            if name not in columns:
+                conn.execute(text(f"ALTER TABLE jobs ADD COLUMN {name} {definition}"))
+
+
+def migrate_job_salary(bind=None):
+    """Add the source-provided salary display field to existing jobs."""
+    bind = bind or engine
+    if "jobs" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("jobs")}
+    if "salary" not in columns:
+        with bind.begin() as conn:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN salary VARCHAR"))
+
+
+def migrate_job_curation(bind=None):
+    """Add the non-destructive R7 dismissal flag to legacy job tables."""
+    bind = bind or engine
+    if "jobs" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("jobs")}
+    if "is_dismissed" not in columns:
+        with bind.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE jobs ADD COLUMN is_dismissed BOOLEAN NOT NULL DEFAULT 0"
+            ))
+
+
+def migrate_search_runs(bind=None):
+    """Create R7's run headers and immutable result-membership snapshots."""
+    from backend.models.job import SearchRun, SearchRunJob
+
+    bind = bind or engine
+    SearchRun.__table__.create(bind=bind, checkfirst=True)
+    SearchRunJob.__table__.create(bind=bind, checkfirst=True)
 
 
 def ensure_llm_provider_auth_columns():

@@ -39,6 +39,10 @@
                             <span class="badge bg-warning"><i class="bi bi-exclamation-triangle"></i> Expired</span>
                         {% elif platform_info.account.status == 'captcha_required' %}
                             <span class="badge bg-danger"><i class="bi bi-shield-exclamation"></i> CAPTCHA</span>
+                        {% elif platform_info.account.status == 'login_pending' %}
+                            <span class="badge bg-primary"><i class="bi bi-hourglass-split"></i> Login in Progress</span>
+                        {% elif platform_info.account.status == 'login_failed' %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Login Needs Attention</span>
                         {% else %}
                             <span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> Inactive</span>
                         {% endif %}
@@ -47,6 +51,14 @@
                     {% endif %}
                 </div>
                 <div class="card-body">
+                    <div id="loginStatus-{{ platform_key }}" class="alert d-none small py-2" role="status" aria-live="polite"></div>
+                    <div class="mb-3" aria-live="polite">
+                        <p class="mb-1">
+                            <strong>Saved session:</strong>
+                            <span class="text-{{ platform_info.session.tone }}">{{ platform_info.session.label }}</span>
+                        </p>
+                        <p class="small text-muted mb-2">{{ platform_info.session.detail }}</p>
+                    </div>
                     {% if platform_info.account %}
                         <!-- Account Connected -->
                         <div class="row align-items-center">
@@ -55,13 +67,31 @@
                                     <strong>Status:</strong> 
                                     {% if platform_info.account.status == 'active' %}
                                         <span class="text-success">Connected and ready</span>
+                                    {% elif platform_info.account.status == 'login_pending' %}
+                                        <span class="text-primary">Complete sign-in in the browser, then finish</span>
+                                    {% elif platform_info.account.status == 'captcha_required' %}
+                                        <span class="text-danger">Complete the provider challenge, then re-login</span>
                                     {% else %}
                                         <span class="text-warning">Needs attention</span>
                                     {% endif %}
                                 </p>
-                                {% if platform_info.account.email_encrypted %}
+                                {% if platform_info.login_email %}
                                 <p class="mb-1 text-muted small">
-                                    <i class="bi bi-envelope"></i> Logged in as: [ENCRYPTED]
+                                    <i class="bi bi-envelope"></i> Logged in as: {{ platform_info.login_email }}
+                                    <button class="btn btn-sm btn-link text-danger p-0 ms-1 align-baseline" title="Log out and forget this saved login"
+                                            aria-label="Log out of {{ platform_info.name }}"
+                                            onclick="logoutAccount({{ platform_info.account.id }}, '{{ platform_key }}', '{{ platform_info.name }}')">
+                                        <i class="bi bi-box-arrow-right"></i>
+                                    </button>
+                                </p>
+                                {% else %}
+                                <p class="mb-1 text-muted small">
+                                    <i class="bi bi-person-check"></i> Signed in (email not provided by {{ platform_info.name }})
+                                    <button class="btn btn-sm btn-link text-danger p-0 ms-1 align-baseline" title="Log out and forget this saved login"
+                                            aria-label="Log out of {{ platform_info.name }}"
+                                            onclick="logoutAccount({{ platform_info.account.id }}, '{{ platform_key }}', '{{ platform_info.name }}')">
+                                        <i class="bi bi-box-arrow-right"></i>
+                                    </button>
                                 </p>
                                 {% endif %}
                                 {% if platform_info.account.last_used_at %}
@@ -72,10 +102,10 @@
                             </div>
                             <div class="col-md-4 text-end">
                                 <button class="btn btn-sm btn-primary mb-1" onclick="startBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
-                                    <i class="bi bi-box-arrow-up-right"></i> Open Browser Login
+                                    <i class="bi bi-box-arrow-up-right"></i> 1. Open Browser Login
                                 </button>
                                 <button class="btn btn-sm btn-success mb-1" onclick="finishBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
-                                    <i class="bi bi-check2-circle"></i> Finish Browser Login
+                                    <i class="bi bi-check2-circle"></i> 3. Finish Browser Login
                                 </button>
                                 <button class="btn btn-sm btn-outline-primary mb-1" onclick="testCookies({{ platform_info.account.id }})">
                                     <i class="bi bi-plug"></i> Test Connection
@@ -83,13 +113,28 @@
                                 <button class="btn btn-sm btn-outline-info mb-1" onclick="showCookieImporter('{{ platform_key }}', '{{ platform_info.name }}')">
                                     <i class="bi bi-download"></i> Update Cookies
                                 </button>
-                                <form method="POST" action="/candidates/{{ candidate.id }}/accounts/{{ platform_info.account.id }}/delete" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" 
-                                            onclick="return confirm('Remove this {{ platform_info.name }} account?')">
-                                        <i class="bi bi-trash"></i> Remove
-                                    </button>
-                                </form>
                             </div>
+                            {% if platform_key == 'linkedin' %}
+                            <details class="mt-3">
+                                <summary class="small text-primary">LinkedIn rate limits</summary>
+                                <p class="small text-muted mt-2 mb-2">Use <strong>0</strong> for unlimited requests, no delay, or no operating-hours restriction. This can increase the risk of LinkedIn restrictions.</p>
+                                <form id="linkedinRateLimits">
+                                    <div class="row g-2 small">
+                                        <div class="col-6"><label class="form-label">Per hour</label><input class="form-control form-control-sm" name="hourly_limit" type="number" min="0" value="{{ platform_info.rate_limits.hourly_limit }}"></div>
+                                        <div class="col-6"><label class="form-label">Per day</label><input class="form-control form-control-sm" name="daily_limit" type="number" min="0" value="{{ platform_info.rate_limits.daily_limit }}"></div>
+                                        <div class="col-6"><label class="form-label">Min delay (seconds)</label><input class="form-control form-control-sm" name="min_delay_seconds" type="number" min="0" value="{{ platform_info.rate_limits.min_delay_seconds }}"></div>
+                                        <div class="col-6"><label class="form-label">Max delay (seconds)</label><input class="form-control form-control-sm" name="max_delay_seconds" type="number" min="0" value="{{ platform_info.rate_limits.max_delay_seconds }}"></div>
+                                        <div class="col-6"><label class="form-label">Start hour</label><input class="form-control form-control-sm" name="operating_hours_start" type="number" min="0" max="23" value="{{ platform_info.rate_limits.operating_hours_start }}"></div>
+                                        <div class="col-6"><label class="form-label">End hour</label><input class="form-control form-control-sm" name="operating_hours_end" type="number" min="0" max="23" value="{{ platform_info.rate_limits.operating_hours_end }}"></div>
+                                    </div>
+                                    <div class="mt-2 d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="saveLinkedInRateLimits({{ platform_info.account.id }})">Save limits</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDefaultLinkedInRateLimits()">Set defaults</button>
+                                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="resetLinkedInUsage({{ platform_info.account.id }})">Reset usage</button>
+                                    </div>
+                                </form>
+                            </details>
+                            {% endif %}
                         </div>
                     {% else %}
                         <!-- No Account -->
@@ -101,10 +146,10 @@
                                 <small class="text-muted">Connect your account to enable job searching</small>
                             </p>
                             <button class="btn btn-{{ platform_info.color }} me-2 mb-2" onclick="startBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
-                                <i class="bi bi-box-arrow-up-right"></i> Open Browser Login
+                                <i class="bi bi-box-arrow-up-right"></i> 1. Open Browser Login
                             </button>
                             <button class="btn btn-outline-success mb-2" onclick="finishBrowserLogin('{{ platform_key }}', '{{ platform_info.name }}')">
-                                <i class="bi bi-check2-circle"></i> Finish Browser Login
+                                <i class="bi bi-check2-circle"></i> 3. Finish Browser Login
                             </button>
                             <br>
                             <button class="btn btn-{{ platform_info.color }}" onclick="showCookieImporter('{{ platform_key }}', '{{ platform_info.name }}')">
@@ -289,21 +334,20 @@ function startBrowserLogin(platform, platformName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert(`✓ ${data.message}`);
+            showLoginStatus(platform, data.message, 'success');
+            // Starting from an unconnected card creates a pending account.
+            // Refresh so its state-specific guidance and Finish action are visible.
+            window.setTimeout(() => location.reload(), 350);
         } else {
-            alert('Error: ' + data.message);
+            showLoginStatus(platform, data.message, 'danger');
         }
     })
-    .catch(error => alert('Error: ' + error));
+    .catch(error => showLoginStatus(platform, 'Could not start browser login: ' + error, 'danger'));
 }
 
-function finishBrowserLogin(platform, platformName) {
-    const email = prompt(`Optional: enter ${platformName} account email to store (or leave blank):`) || '';
+function finishBrowserLogin(platform) {
     const formData = new FormData();
     formData.append('platform', platform);
-    if (email.trim()) {
-        formData.append('email', email.trim());
-    }
 
     fetch('/candidates/{{ candidate.id }}/accounts/finish-browser-login', {
         method: 'POST',
@@ -312,13 +356,52 @@ function finishBrowserLogin(platform, platformName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('✓ ' + data.message);
+            showLoginStatus(platform, data.message, 'success');
             location.reload();
         } else {
-            alert('Error: ' + data.message);
+            showLoginStatus(platform, data.message, 'warning');
         }
     })
-    .catch(error => alert('Error: ' + error));
+    .catch(error => showLoginStatus(platform, 'Could not finish browser login: ' + error, 'danger'));
+}
+
+function logoutAccount(accountId, platform, platformName) {
+    if (!confirm(`Log out and remove the saved ${platformName} session from this app?`)) return;
+
+    fetch(`/candidates/{{ candidate.id }}/accounts/${accountId}/logout`, { method: 'POST' })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showLoginStatus(platform, data.message, 'success');
+            location.reload();
+        } else {
+            showLoginStatus(platform, data.message, 'danger');
+        }
+    })
+    .catch(error => showLoginStatus(platform, 'Could not log out: ' + error, 'danger'));
+}
+
+const linkedInRateLimitDefaults = {hourly_limit: 20, daily_limit: 100, min_delay_seconds: 8, max_delay_seconds: 15, operating_hours_start: 8, operating_hours_end: 22};
+
+function setDefaultLinkedInRateLimits() {
+    const form = document.getElementById('linkedinRateLimits');
+    Object.entries(linkedInRateLimitDefaults).forEach(([name, value]) => form.elements[name].value = value);
+}
+
+function saveLinkedInRateLimits(accountId) {
+    const form = document.getElementById('linkedinRateLimits');
+    fetch(`/candidates/{{ candidate.id }}/accounts/${accountId}/rate-limits`, {method: 'POST', body: new FormData(form)})
+    .then(response => response.json()).then(data => {
+        if (data.success) showLoginStatus('linkedin', 'LinkedIn rate limits saved.', 'success');
+        else showLoginStatus('linkedin', data.message || 'Could not save rate limits.', 'danger');
+    }).catch(error => showLoginStatus('linkedin', 'Could not save rate limits: ' + error, 'danger'));
+}
+
+function resetLinkedInUsage(accountId) {
+    if (!confirm('Reset LinkedIn request counts and cooldown for this account?')) return;
+    fetch(`/candidates/{{ candidate.id }}/accounts/${accountId}/rate-limits/reset`, {method: 'POST'})
+    .then(response => response.json()).then(data => showLoginStatus('linkedin', data.message, data.success ? 'success' : 'danger'))
+    .catch(error => showLoginStatus('linkedin', 'Could not reset usage: ' + error, 'danger'));
 }
 
 function testCookies(accountId) {
@@ -334,6 +417,13 @@ function testCookies(accountId) {
         }
     })
     .catch(error => alert('Error: ' + error));
+}
+
+function showLoginStatus(platform, message, tone) {
+    const status = document.getElementById(`loginStatus-${platform}`);
+    if (!status) return;
+    status.className = `alert alert-${tone} small py-2`;
+    status.textContent = message;
 }
 </script>
 {% endblock %}

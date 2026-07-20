@@ -330,7 +330,7 @@ Recommended fields to track for each application:
 
 This document serves as the foundation for automated job searching. The Queen Coder application should:
 
-1. **Scrape/monitor** these platforms for matching roles
+1. **Monitor** these platforms for matching roles
 2. **Filter** by: Remote, US/EU/Canada, SDET/EDA/Test Infrastructure titles
 3. **Match** against your LinkedIn profile skills and experience
 4. **Rank** opportunities by fit score

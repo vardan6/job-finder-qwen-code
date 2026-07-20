@@ -20,15 +20,18 @@ from typing import Callable, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from backend.models.candidate import Candidate
-from backend.models.job import Job
+from backend.models.job import Job, SearchRun, SearchRunJob
 from backend.models.platform_account import PlatformAccount
 from backend.security import decrypt_json, encrypt_data
 from backend.services.job_analysis import get_job_analysis_service, JobAnalysis
 from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db
+from backend.services.job_scoring import score_job
+from backend.services.job_llm_refinement import get_job_llm_refinement_service
 from backend.services.rate_limiter import get_rate_limiter
 from backend.services.scraper_health import record_search_result
 from backend.scrapers.linkedin import LinkedInScraper, LinkedInJob
 from backend.scrapers.glassdoor import GlassdoorScraper, GlassdoorJob
+from backend.scrapers.we_work_remotely import WeWorkRemotelyScraper
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +42,12 @@ class SearchConfig:
     
     candidate_id: int
     query: str
+    run_name: Optional[str] = None
     location: str = ""
     platforms: List[str] = None
     max_jobs_per_platform: int = 20
     analyze_with_ai: bool = True
+    refine_with_llm: bool = False
     headless: bool = False
     
     def __post_init__(self):
@@ -68,6 +73,7 @@ class SearchResult:
     jobs_saved: int
     errors: List[str]
     platform_results: Dict[str, int]
+    search_run_id: Optional[int] = None
     
     def to_dict(self) -> dict:
         """Convert to dictionary"""
@@ -80,6 +86,7 @@ class SearchResult:
             "jobs_saved": self.jobs_saved,
             "errors": self.errors,
             "platform_results": self.platform_results,
+            "search_run_id": self.search_run_id,
         }
 
 
@@ -139,6 +146,8 @@ class JobSearchService:
             skill_value = getattr(s, "skill_name", None) or getattr(s, "skill", None)
             if skill_value:
                 candidate_skills.append(skill_value)
+
+        search_run = self._create_search_run(config)
         
         emit(f"Starting search on {len(config.platforms)} platform(s): {', '.join(config.platforms)}")
 
@@ -152,6 +161,8 @@ class JobSearchService:
                     jobs = await self._search_linkedin(config, candidate, progress_callback=progress_callback)
                 elif platform == "glassdoor":
                     jobs = await self._search_glassdoor(config, candidate, progress_callback=progress_callback)
+                elif platform == WeWorkRemotelyScraper.platform:
+                    jobs = await self._search_we_work_remotely(config, progress_callback=progress_callback)
                 else:
                     logger.warning(f"Unknown platform: {platform}")
                     continue
@@ -165,10 +176,24 @@ class JobSearchService:
                 record_search_result(platform, len(jobs))
 
                 if len(jobs) == 0:
-                    rate_status = get_rate_limiter().get_status(platform)
-                    if not rate_status.get("allowed", True):
+                    if platform == "linkedin":
+                        account = self.db.query(PlatformAccount).filter(
+                            PlatformAccount.candidate_id == candidate.id,
+                            PlatformAccount.platform == "linkedin",
+                        ).first()
+                        try:
+                            settings = json.loads(account.rate_limit_settings) if account and account.rate_limit_settings else {}
+                        except (TypeError, ValueError):
+                            settings = {}
+                        allowed, reason = get_rate_limiter().check_rate_limit(
+                            f"linkedin:{candidate.id}", settings,
+                        )
+                    else:
+                        rate_status = get_rate_limiter().get_status(platform)
+                        allowed, reason = rate_status.get("allowed", True), rate_status.get("reason", "blocked")
+                    if not allowed:
                         warnings_msg = (
-                            f"{platform.capitalize()}: skipped by rate limiter - {rate_status.get('reason', 'blocked')}."
+                            f"{platform.capitalize()}: skipped by rate limiter - {reason}."
                         )
                         errors.append(warnings_msg)
                         continue
@@ -190,44 +215,62 @@ class JobSearchService:
         total_found = len(all_jobs)
         emit(f"--- Post-processing {total_found} total jobs ---")
 
-        # Deduplicate
+        # Deduplicate into candidate-level jobs while retaining every result as
+        # a membership in this named run.  Known postings are sightings, not
+        # discarded results.
         emit(f"Deduplicating {total_found} jobs...")
-        unique_jobs = self._deduplicate_jobs(all_jobs, config.candidate_id)
-        total_unique = len(unique_jobs)
+        memberships = self._plan_run_memberships(all_jobs, config.candidate_id)
+        total_unique = len(memberships)
         total_duplicates = total_found - total_unique
 
-        logger.info(f"Deduplication: {total_found} found -> {total_unique} unique ({total_duplicates} duplicates)")
-        emit(f"Deduplication: {total_unique} unique jobs ({total_duplicates} duplicates removed)")
+        logger.info(f"Deduplication: {total_found} found -> {total_unique} run memberships ({total_duplicates} repeats merged)")
+        emit(f"Deduplication: {total_unique} jobs in this saved list ({total_duplicates} repeated sightings merged)")
 
         # Save to database
         jobs_saved = 0
         total_analyzed = 0
 
-        for job_data in unique_jobs:
+        run_jobs = []
+        for job_data, existing_job, sighted_platforms in memberships:
             try:
-                # Create job record
-                job = self._create_job_record(job_data, config.candidate_id)
-                self.db.add(job)
+                first_sighting = existing_job is None
+                job = existing_job or self._create_job_record(job_data, config.candidate_id)
+                if first_sighting:
+                    self.db.add(job)
+                else:
+                    self._refresh_job_from_sighting(job, job_data)
                 self.db.commit()
                 self.db.refresh(job)
-                jobs_saved += 1
+                if first_sighting:
+                    jobs_saved += 1
                 emit(
-                    f"Saved [{jobs_saved}/{total_unique}]: "
+                    f"Saved [{len(run_jobs) + 1}/{total_unique}]: "
                     f"{job_data.get('title', '?')} @ {job_data.get('company', '?')}"
                 )
 
                 # AI analysis (if enabled)
-                if config.analyze_with_ai and job.description:
+                if first_sighting and config.analyze_with_ai and job_data.get("description"):
                     try:
                         emit(f"Analyzing with AI: {job_data.get('title', '?')} @ {job_data.get('company', '?')}")
                         analysis = await self.analysis_service.analyze_job(
-                            job.description,
+                            job_data.get("description"),
                             candidate_skills,
                             db=self.db,
+                            platform_remote_attribute=job_data.get("remote_attribute"),
                         )
 
                         # Update job with analysis results
                         job.ai_remote_score = analysis.remote_score
+                        job.verified_remote_status = analysis.verified_remote_status
+                        job.remote_restrictions = (
+                            json.dumps(analysis.remote_restrictions, sort_keys=True)
+                            if analysis.remote_restrictions else None
+                        )
+                        job.remote_evidence = (
+                            json.dumps(analysis.remote_evidence)
+                            if analysis.remote_evidence else None
+                        )
+                        job.remote_verified_version = analysis.remote_verified_version
                         self.db.commit()
                         total_analyzed += 1
 
@@ -244,6 +287,30 @@ class JobSearchService:
                 logger.error(f"Failed to save job: {e}")
                 if jobs_saved > 0:
                     self.db.rollback()
+                continue
+
+            run_jobs.append((job, first_sighting, sighted_platforms))
+
+        # This intentionally happens after all jobs receive their deterministic
+        # scores.  The optional LLM stage only sees the deterministic top-N and
+        # stores a companion score; it cannot influence default result ordering.
+        if config.refine_with_llm:
+            try:
+                refined = await get_job_llm_refinement_service(self.db).refine_top_jobs(candidate)
+                if refined:
+                    emit(f"Refined {refined} top deterministic matches with AI")
+            except Exception as e:
+                logger.error("LLM top-N refinement failed: %s", e)
+
+        # Snapshot only after optional scoring/refinement has completed.  The
+        # saved list must keep these values even if the live Job is later
+        # rescored or reverified.
+        for job, first_sighting, sighted_platforms in run_jobs:
+            self.db.add(self._create_run_membership(
+                search_run, job, first_sighting, sighted_platforms,
+            ))
+        search_run.finished_at = datetime.utcnow()
+        self.db.commit()
         
         success = jobs_saved > 0 or total_found > 0
         emit(
@@ -261,6 +328,7 @@ class JobSearchService:
             jobs_saved=jobs_saved,
             errors=errors,
             platform_results=platform_results,
+            search_run_id=search_run.id,
         )
     
     async def _search_linkedin(
@@ -272,6 +340,16 @@ class JobSearchService:
         """Search LinkedIn for jobs"""
         cookies_path = self._get_cookies_path(candidate, "linkedin")
         self._ensure_cookies_file(candidate, "linkedin", cookies_path)
+        from backend.models.platform_account import PlatformAccount
+        from backend.services.rate_limiter import normalize_linkedin_settings
+        account = self.db.query(PlatformAccount).filter(
+            PlatformAccount.candidate_id == candidate.id,
+            PlatformAccount.platform == "linkedin",
+        ).first()
+        try:
+            settings = normalize_linkedin_settings(json.loads(account.rate_limit_settings) if account and account.rate_limit_settings else {})
+        except (TypeError, ValueError):
+            settings = normalize_linkedin_settings({})
 
         async with LinkedInScraper(headless=config.headless) as scraper:
             jobs = await scraper.search_jobs(
@@ -279,8 +357,15 @@ class JobSearchService:
                 location=config.location,
                 max_jobs=config.max_jobs_per_platform,
                 cookies_path=str(cookies_path),
+                rate_limit_scope=f"linkedin:{candidate.id}",
+                rate_limit_settings=settings,
+                manual_session_key=f"{candidate.uuid}:linkedin",
+                manual_profile_path=str(cookies_path.parent.parent / "browser-login-profiles" / f"{candidate.uuid}_linkedin"),
                 progress_callback=progress_callback,
             )
+            if scraper.manual_challenge_handoff and account:
+                account.status = "captcha_required"
+                self.db.commit()
             return [job.to_dict() for job in jobs]
 
     async def _search_glassdoor(
@@ -302,6 +387,25 @@ class JobSearchService:
                 progress_callback=progress_callback,
             )
             return [job.to_dict() for job in jobs]
+
+    async def _search_we_work_remotely(
+        self,
+        config: SearchConfig,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> List[dict]:
+        """Run the WWR adapter, which rejects live access until R3 is authorized.
+
+        Keeping this dispatch path explicit makes WWR selectable in a search
+        configuration while ensuring an unapproved selection cannot silently
+        fall through to browser or network activity.
+        """
+        jobs = await WeWorkRemotelyScraper().search_jobs(
+            query=config.query,
+            location=config.location,
+            max_jobs=config.max_jobs_per_platform,
+            progress_callback=progress_callback,
+        )
+        return [job.to_dict() for job in jobs]
     
     def _deduplicate_jobs(self, jobs: List[dict], candidate_id: int) -> List[dict]:
         """Remove duplicate jobs"""
@@ -350,6 +454,70 @@ class JobSearchService:
                 unique_jobs.append(job_data)
         
         return unique_jobs
+
+    def _create_search_run(self, config: SearchConfig) -> SearchRun:
+        """Persist a list header before collecting results for it."""
+        default_name = f"{datetime.utcnow():%Y-%m-%d} — {config.query.strip() or 'Job search'}"
+        search_run = SearchRun(
+            candidate_id=config.candidate_id,
+            name=(config.run_name or "").strip() or default_name,
+            query=config.query,
+            location=config.location,
+            platforms=json.dumps(config.platforms, sort_keys=True),
+        )
+        self.db.add(search_run)
+        self.db.commit()
+        self.db.refresh(search_run)
+        return search_run
+
+    def _plan_run_memberships(self, jobs: List[dict], candidate_id: int):
+        """Match scraped postings to a job, merging only duplicate sightings."""
+        existing_jobs = self.db.query(Job).filter(Job.candidate_id == candidate_id).all()
+        planned = []
+        for job_data in jobs:
+            temp_job = Job(
+                title=job_data.get("title", ""), company=job_data.get("company", ""),
+                location=job_data.get("location", ""), platform=job_data.get("platform", ""),
+                platform_job_id=job_data.get("platform_job_id"), description_hash=job_data.get("description_hash"),
+            )
+            matched_job = next((job for job in existing_jobs if self.deduplicator.is_duplicate(temp_job, job)[0]), None)
+            matching_plan = None
+            if matched_job is None:
+                for plan in planned:
+                    planned_temp = Job(
+                        title=plan[0].get("title", ""), company=plan[0].get("company", ""),
+                        location=plan[0].get("location", ""), platform=plan[0].get("platform", ""),
+                        platform_job_id=plan[0].get("platform_job_id"), description_hash=plan[0].get("description_hash"),
+                    )
+                    if self.deduplicator.is_duplicate(temp_job, planned_temp)[0]:
+                        matching_plan = plan
+                        break
+            if matching_plan is not None:
+                platform = job_data.get("platform")
+                if platform and platform not in matching_plan[2]:
+                    matching_plan[2].append(platform)
+            else:
+                planned.append([job_data, matched_job, [job_data.get("platform")] if job_data.get("platform") else []])
+        return planned
+
+    @staticmethod
+    def _refresh_job_from_sighting(job: Job, job_data: dict) -> None:
+        """Refresh safe volatile source details without changing job identity."""
+        for field, source_key in (("salary", "salary"), ("original_url", "job_url"), ("location", "location")):
+            value = job_data.get(source_key)
+            if value:
+                setattr(job, field, value)
+
+    @staticmethod
+    def _create_run_membership(search_run, job, first_sighting, sighted_platforms) -> SearchRunJob:
+        return SearchRunJob(
+            search_run_id=search_run.id, job_id=job.id, first_sighting=first_sighting,
+            sighted_platforms=json.dumps(sighted_platforms, sort_keys=True),
+            deterministic_score=job.deterministic_score, scoring_version=job.scoring_version,
+            llm_score=job.llm_score, llm_prompt_version=job.llm_prompt_version,
+            verified_remote_status=job.verified_remote_status,
+            remote_verified_version=job.remote_verified_version, salary=job.salary,
+        )
     
     def _create_job_record(self, job_data: dict, candidate_id: int) -> Job:
         """Create a Job record from scraped data"""
@@ -357,9 +525,26 @@ class JobSearchService:
         platform = job_data.get("platform", "unknown")
         
         # Get description storage path
+        candidate = self.db.query(Candidate).filter(Candidate.id == candidate_id).first()
+        preferred_titles = [
+            job_title.title
+            for job_title in candidate.job_titles
+            if job_title.is_active and job_title.title.strip()
+        ] if candidate else []
+        candidate_skills = [
+            skill.skill_name
+            for skill in candidate.skills
+            if skill.is_active and skill.is_enabled and skill.skill_name.strip()
+        ] if candidate else []
+        score = score_job(
+            job_data.get("title"),
+            job_data.get("description") or job_data.get("snippet"),
+            preferred_titles,
+            candidate_skills,
+        )
+
         description_path = None
         if job_data.get("description"):
-            candidate = self.db.query(Candidate).filter(Candidate.id == candidate_id).first()
             if candidate:
                 desc_dir = Path(candidate.folder_path) / "job_descriptions"
                 desc_dir.mkdir(parents=True, exist_ok=True)
@@ -376,9 +561,13 @@ class JobSearchService:
             platform=platform,
             platform_job_id=job_data.get("platform_job_id"),
             original_url=job_data.get("job_url"),
+            salary=job_data.get("salary"),
             description_hash=job_data.get("description_hash"),
             description_snippet=job_data.get("snippet"),
             description_path=description_path,
+            deterministic_score=score.composite_score,
+            score_breakdown=json.dumps(score.as_dict(), sort_keys=True),
+            scoring_version=score.scoring_version,
             posted_date=self._parse_posted_date(job_data.get("posted_date")),
         )
     
@@ -466,6 +655,7 @@ async def run_job_search(
     db: Session,
     candidate_id: int,
     query: str,
+    run_name: Optional[str] = None,
     location: str = "",
     platforms: List[str] = None,
     max_jobs: int = 20,
@@ -493,6 +683,7 @@ async def run_job_search(
     config = SearchConfig(
         candidate_id=candidate_id,
         query=query,
+        run_name=run_name,
         location=location,
         platforms=platforms or ["linkedin", "glassdoor"],
         max_jobs_per_platform=max_jobs,

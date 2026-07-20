@@ -52,6 +52,11 @@
                     <strong><i class="bi bi-search"></i></strong>
                     <span class="ms-2">{{ query }}</span>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label" for="listName"><i class="bi bi-bookmark"></i> Saved list name</label>
+                    <input class="form-control" id="listName" type="text" placeholder="Optional — defaults to date and search query">
+                    <small class="text-muted">This search remains available as a historical snapshot.</small>
+                </div>
                 
                 <!-- Platform Status Cards -->
                 <div class="row g-3 mb-3">
@@ -62,18 +67,25 @@
                                 <div>
                                     {% if platform.platform == 'linkedin' %}
                                         <i class="bi bi-linkedin text-primary fs-4"></i>
+                                    {% elif platform.platform == 'we_work_remotely' %}
+                                        <i class="bi bi-globe-americas text-info fs-4"></i>
                                     {% else %}
                                         <i class="bi bi-building text-success fs-4"></i>
                                     {% endif %}
-                                    <span class="ms-2 fw-bold text-capitalize">{{ platform.platform }}</span>
+                                    <span class="ms-2 fw-bold">{{ platform.label }}</span>
                                     <br>
-                                    <small class="{{ 'text-success' if platform.connected else 'text-danger' }}">
+                                    <small class="{{ 'text-success' if platform.connected else 'text-warning' if platform.status == 'policy_gated' else 'text-danger' }}">
                                         {% if platform.connected %}
                                             <i class="bi bi-check-circle"></i> Connected
+                                        {% elif platform.status == 'policy_gated' %}
+                                            <i class="bi bi-shield-lock"></i> Live access pending authorization
                                         {% else %}
                                             <i class="bi bi-x-circle"></i> Not Connected
                                         {% endif %}
                                     </small>
+                                    {% if platform.detail %}
+                                    <br><small class="text-muted">{{ platform.detail }}</small>
+                                    {% endif %}
                                 </div>
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" 
@@ -81,7 +93,8 @@
                                            name="platforms" 
                                            value="{{ platform.platform }}"
                                            id="platform-{{ platform.platform }}"
-                                           {% if platform.connected %}checked{% else %}disabled{% endif %}>
+                                           {% if platform.connected %}checked{% endif %}
+                                           {% if not platform.selectable %}disabled{% endif %}>
                                 </div>
                             </div>
                         </div>
@@ -417,6 +430,7 @@ function submitSearch() {
     formData.append('max_jobs', document.getElementById('hiddenMaxJobs').value);
     formData.append('analyze', document.getElementById('hiddenAnalyze').value);
     formData.append('headless', document.getElementById('hiddenHeadless').value);
+    formData.append('list_name', document.getElementById('listName').value);
     (window.selectedPlatforms || []).forEach(p => formData.append('platforms', p));
 
     // POST to start search, then open SSE stream
