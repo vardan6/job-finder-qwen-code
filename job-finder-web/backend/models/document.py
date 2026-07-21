@@ -1,7 +1,7 @@
 """
 Candidate Document Models - For storing and managing uploaded documents
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, func, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
 import json
@@ -119,3 +119,38 @@ class DocumentParsePrompt(Base):
 
     def __repr__(self):
         return f"<DocumentParsePrompt(name='{self.name}', type='{self.document_type}')>"
+
+
+class GeneratedDocument(Base):
+    """Per-job tailored resume/cover letter generated via the LLM provider system (R11).
+
+    One row per (job, document_type): regenerating replaces the content in
+    place rather than keeping version history, matching this slice's scope.
+    """
+    __tablename__ = "generated_documents"
+    __table_args__ = (
+        UniqueConstraint("job_id", "document_type", name="uq_generated_document_job_type"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+
+    # resume or cover_letter
+    document_type = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+
+    # Provenance: which LLM produced the current content
+    llm_provider_name = Column(String, nullable=True)
+    llm_model_name = Column(String, nullable=True)
+
+    # Relationships - one-directional (no back_populates) to avoid coupling
+    # this slice to unrelated in-flight changes on Candidate/Job.
+    candidate = relationship("Candidate")
+    job = relationship("Job")
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<GeneratedDocument(id={self.id}, job_id={self.job_id}, type='{self.document_type}')>"

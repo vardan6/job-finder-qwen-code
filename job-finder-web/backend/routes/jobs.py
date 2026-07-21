@@ -11,17 +11,20 @@ from io import StringIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.config import DATA_DIR
 from backend.models.candidate import Candidate
+from backend.models.document import GeneratedDocument
 from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
 from backend.models.llm_provider import LLMProvider
+from backend.models.user import User
 from backend.ownership import get_current_user, get_owned_candidate
 from backend.security import safe_resolve_path
+from backend.services.document_generation import DocumentGenerationError, generate_tailored_document
 from backend.services.job_search import run_job_search, SearchConfig
 
 logger = logging.getLogger(__name__)
@@ -790,6 +793,12 @@ async def view_job(
             "custom_fit_score": job.custom_fit_score,
         }
     
+    # Existing tailored documents for this job (R11), keyed by document_type
+    generated_documents = {
+        doc.document_type: doc
+        for doc in db.query(GeneratedDocument).filter(GeneratedDocument.job_id == job.id).all()
+    }
+
     return templates.TemplateResponse(
         "jobs/detail.html",
         {
@@ -797,7 +806,71 @@ async def view_job(
             "job": job,
             "description": description,
             "ai_analysis": ai_analysis,
+            "generated_documents": generated_documents,
         },
+    )
+
+
+@router.post("/{job_id}/generate-document/{document_type}", response_class=HTMLResponse)
+async def generate_job_document(
+    request: Request,
+    job_id: int,
+    document_type: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate (or regenerate) a tailored resume/cover letter for this job (R11)."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    candidate = get_owned_candidate(db, current_user, job.candidate_id)
+
+    error = None
+    generated = None
+    try:
+        generated = await generate_tailored_document(db, candidate, job, document_type)
+    except DocumentGenerationError as e:
+        error = str(e)
+
+    return templates.TemplateResponse(
+        "jobs/_generated_document.html",
+        {
+            "request": request,
+            "job": job,
+            "document_type": document_type,
+            "generated": generated,
+            "error": error,
+        },
+        status_code=400 if error else 200,
+    )
+
+
+@router.get("/{job_id}/generated-document/{document_type}/download")
+async def download_generated_document(
+    job_id: int,
+    document_type: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download a previously generated tailored document (R11)."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    get_owned_candidate(db, current_user, job.candidate_id)  # ownership check only
+
+    generated = (
+        db.query(GeneratedDocument)
+        .filter(GeneratedDocument.job_id == job_id, GeneratedDocument.document_type == document_type)
+        .first()
+    )
+    if not generated:
+        raise HTTPException(status_code=404, detail="Generated document not found")
+
+    filename = f"{document_type}-job-{job_id}.md"
+    return Response(
+        content=generated.content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

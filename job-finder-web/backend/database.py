@@ -39,7 +39,7 @@ def init_db():
     from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
     from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences, ExtractionOccurrence
     from backend.models.llm_provider import LLMProvider, LLMModel
-    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt
+    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, GeneratedDocument
 
     Base.metadata.create_all(bind=engine)
 

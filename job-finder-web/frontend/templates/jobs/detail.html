@@ -98,6 +98,50 @@
 
         <!-- Sidebar -->
         <div class="col-md-4">
+            <!-- Tailored Documents (R11) -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-magic"></i> Tailored Documents
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Generate a resume or cover letter tailored to this job from your
+                        uploaded resume/CV.
+                    </p>
+
+                    <div class="mb-3">
+                        {% set document_type = "resume" %}
+                        {% set generated = generated_documents.resume %}
+                        {% set error = None %}
+                        <button class="btn btn-sm btn-outline-primary"
+                                hx-post="/jobs/{{ job.id }}/generate-document/resume"
+                                hx-target="#generated-document-resume"
+                                hx-swap="outerHTML"
+                                hx-indicator="#generating-resume">
+                            <i class="bi bi-file-earmark-text"></i>
+                            {% if generated_documents.resume %}Regenerate{% else %}Generate{% endif %} Tailored Resume
+                        </button>
+                        <span id="generating-resume" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
+                        {% include "jobs/_generated_document.html" with context %}
+                    </div>
+
+                    <div>
+                        {% set document_type = "cover_letter" %}
+                        {% set generated = generated_documents.cover_letter %}
+                        {% set error = None %}
+                        <button class="btn btn-sm btn-outline-primary"
+                                hx-post="/jobs/{{ job.id }}/generate-document/cover_letter"
+                                hx-target="#generated-document-cover_letter"
+                                hx-swap="outerHTML"
+                                hx-indicator="#generating-cover_letter">
+                            <i class="bi bi-envelope"></i>
+                            {% if generated_documents.cover_letter %}Regenerate{% else %}Generate{% endif %} Tailored Cover Letter
+                        </button>
+                        <span id="generating-cover_letter" class="htmx-indicator spinner-border spinner-border-sm ms-2"></span>
+                        {% include "jobs/_generated_document.html" with context %}
+                    </div>
+                </div>
+            </div>
             <!-- AI Analysis -->
             {% if ai_analysis %}
             <div class="card mb-4">
@@ -236,6 +280,15 @@
 
 .job-description p {
     margin-bottom: 1rem;
+}
+
+.generated-document-content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    margin-bottom: 0;
 }
 </style>
 {% endblock %}
