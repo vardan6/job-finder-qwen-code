@@ -12,11 +12,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from backend.models.document import CandidateDocument, DocumentParsePrompt, LLMFunctionMapping
-from backend.models.llm_provider import LLMProvider, LLMModel
+from backend.models.document import CandidateDocument, DocumentParsePrompt
 from backend.models.supporting import CandidateJobTitle
 from backend.services.provenance import record_title_extraction
-from backend.services.llm_service import call_llm, extract_json_from_response, get_llm_for_function
+from backend.services.llm_service import extract_json_from_response, send_message
 
 
 def get_parse_prompt(db: Session, document_type: str) -> Optional[DocumentParsePrompt]:
@@ -86,40 +85,17 @@ async def parse_document_for_job_titles(
         # Build the prompt
         full_prompt = prompt_template.prompt_template.replace("{{content}}", content)
 
-        # Get LLM model for job_title_parser function
-        model = get_llm_for_function(db, "job_title_parser")
-
-        # Fall back to default Ollama if not configured
-        if not model:
-            ollama = db.query(LLMProvider).filter(LLMProvider.name == "ollama").first()
-            if ollama:
-                model = db.query(LLMModel).filter(
-                    LLMModel.provider_id == ollama.id,
-                    LLMModel.is_default_for_provider == True
-                ).first()
-
-        if not model:
-            return False, [], "No LLM model configured for parsing"
-
-        # Call LLM (native async)
-        result = await call_llm(db, model, full_prompt)
-
-        # Fallback to direct Ollama call if configured model failed
-        if not result:
-            try:
-                from backend.services.llm_service import _async_completion
-                from backend.config import LLM_TIMEOUT_SECONDS
-                result = await _async_completion(
-                    LLM_TIMEOUT_SECONDS,
-                    model="ollama/llama3",
-                    messages=[{"role": "user", "content": full_prompt}],
-                    api_base="http://localhost:11434",
-                )
-            except Exception as ollama_error:
-                return False, [], f"LLM call failed: {str(ollama_error)}"
+        # Resolve the configured Document Analysis provider and model.  This is
+        # the same routing configured in AI Settings; function mappings are no
+        # longer consulted.
+        result = await send_message(
+            full_prompt,
+            db=db,
+            routing_purpose="document_analysis",
+        )
 
         if not result:
-            return False, [], "LLM returned empty response"
+            return False, [], "No usable Document Analysis provider is configured"
 
         # Extract JSON from response
         parsed_data = extract_json_from_response(result)

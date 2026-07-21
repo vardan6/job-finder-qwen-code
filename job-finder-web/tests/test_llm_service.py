@@ -92,38 +92,20 @@ class TestSendMessageTimeout:
         async def _hang(*args, **kwargs):
             await asyncio.sleep(9999)
 
-        # Set up a function mapping in the DB
-        from backend.models.document import LLMFunctionMapping
-        from backend.models.llm_provider import LLMProvider, LLMModel as DBLLMModel
-
-        provider = LLMProvider(name="ollama", api_url="http://localhost:11434", is_active=True)
-        db.add(provider)
-        db.flush()
-
-        llm_model = DBLLMModel(
-            provider_id=provider.id,
-            model_name="llama3",
-            is_default_for_provider=True,
-        )
-        db.add(llm_model)
-        db.flush()
-
-        mapping = LLMFunctionMapping(
-            function_name="ai_chat",
-            model_id=llm_model.id,
-            is_active=True,
-        )
-        db.add(mapping)
-        db.commit()
+        selection = MagicMock()
+        selection.model = make_llm_model()
+        selection.provider = selection.model.provider
 
         with patch("litellm.acompletion", side_effect=_hang):
             with patch("backend.config.LLM_TIMEOUT_SECONDS", 1):
-                from backend.services import llm_service
-                import importlib
-                importlib.reload(llm_service)
                 from backend.services.llm_service import send_message
-                result = await send_message("hello", function_name="ai_chat", db=db)
+                with patch(
+                    "backend.services.llm_service.resolve_chat_model_selection",
+                    return_value=selection,
+                ) as resolve:
+                    result = await send_message("hello", db=db, routing_purpose="general_chat")
                 assert result is None
+                resolve.assert_called_once_with(db, purpose="general_chat")
 
 
 class TestCompletionKwargs:
@@ -147,7 +129,7 @@ class TestCompletionKwargs:
         assert kwargs["api_base"] == "https://integrate.api.nvidia.com/v1"
         assert kwargs["model"] == "nvidia_nim/meta/llama3-70b-instruct"
 
-    def test_uses_groq_default_base_and_raw_model_name(self):
+    def test_uses_groq_default_base_and_openai_compatible_model_name(self):
         from backend.services.llm_service import _build_completion_kwargs
 
         model = make_llm_model(
@@ -166,6 +148,27 @@ class TestCompletionKwargs:
 
         assert kwargs["api_base"] == "https://api.groq.com/openai/v1"
         assert kwargs["model"] == "openai/gpt-oss-120b"
+
+    @pytest.mark.parametrize("provider_name", ["gemini", "mistral", "cohere", "together", "huggingface", "lm_studio"])
+    def test_uses_openai_compatible_prefix_for_template_providers(self, provider_name):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(
+            provider_name=provider_name,
+            model_name="example-model",
+            api_url="https://example.test/v1",
+            api_key_encrypted="encrypted-key",
+        )
+
+        with patch("backend.security.decrypt_data", return_value="secret"):
+            kwargs = _build_completion_kwargs(
+                model.provider,
+                model,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+
+        assert kwargs["model"] == "openai/example-model"
+        assert kwargs["api_base"] == "https://example.test/v1"
 
 
 # ---------------------------------------------------------------------------

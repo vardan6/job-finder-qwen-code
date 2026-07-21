@@ -142,9 +142,6 @@
             <p class="text-muted mb-0">Canonical provider registry, stored secrets, and purpose-based routing for the new AI foundation.</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="/settings/functions" class="btn btn-outline-primary btn-sm toolbar-btn">
-                <i class="bi bi-diagram-3"></i> Function Mappings
-            </a>
             <a href="/" class="btn btn-outline-secondary btn-sm toolbar-btn">
                 <i class="bi bi-arrow-left"></i> Dashboard
             </a>
@@ -315,12 +312,12 @@ const PROVIDER_TEMPLATES = {
         context_window: null,
     },
     openrouter: {
-        display_name: 'OpenRouter',
+        display_name: 'OpenRouter Claude Sonnet',
         provider_type: 'openrouter',
         auth_mode: 'env_var',
         secret_ref: 'OPENROUTER_API_KEY',
         base_url: 'https://openrouter.ai/api/v1',
-        model_id: 'openai/gpt-4.1-mini',
+        model_id: 'anthropic/claude-sonnet-4.5',
         enabled: true,
         capabilities: ['chat', 'tools'],
         context_window: 128000,
@@ -331,18 +328,18 @@ const PROVIDER_TEMPLATES = {
         auth_mode: 'env_var',
         secret_ref: 'ANTHROPIC_API_KEY',
         base_url: '',
-        model_id: 'claude-sonnet-4-0',
+        model_id: 'claude-sonnet-4-5-20250929',
         enabled: true,
         capabilities: ['chat', 'tools'],
         context_window: 200000,
     },
     openai: {
-        display_name: 'OpenAI',
+        display_name: 'OpenAI GPT-5 mini',
         provider_type: 'openai',
         auth_mode: 'env_var',
         secret_ref: 'OPENAI_API_KEY',
         base_url: 'https://api.openai.com/v1',
-        model_id: 'gpt-4.1-mini',
+        model_id: 'gpt-5-mini',
         enabled: true,
         capabilities: ['chat', 'tools'],
         context_window: 128000,
@@ -381,23 +378,23 @@ const PROVIDER_TEMPLATES = {
         context_window: 128000,
     },
     mistral: {
-        display_name: 'Mistral',
+        display_name: 'Mistral Large',
         provider_type: 'mistral',
         auth_mode: 'env_var',
         secret_ref: 'MISTRAL_API_KEY',
         base_url: 'https://api.mistral.ai/v1',
-        model_id: 'mistral-medium-latest',
+        model_id: 'mistral-large-latest',
         enabled: true,
         capabilities: ['chat', 'tools'],
         context_window: 128000,
     },
     together: {
-        display_name: 'Together',
+        display_name: 'Together GPT OSS',
         provider_type: 'together',
         auth_mode: 'env_var',
         secret_ref: 'TOGETHER_API_KEY',
         base_url: 'https://api.together.xyz/v1',
-        model_id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+        model_id: 'openai/gpt-oss-20b',
         enabled: true,
         capabilities: ['chat', 'tools'],
         context_window: 131072,
@@ -414,12 +411,12 @@ const PROVIDER_TEMPLATES = {
         context_window: 128000,
     },
     huggingface: {
-        display_name: 'HuggingFace Inference',
+        display_name: 'Hugging Face Router GPT OSS',
         provider_type: 'huggingface',
         auth_mode: 'env_var',
-        secret_ref: 'HUGGINGFACE_API_KEY',
+        secret_ref: 'HF_TOKEN',
         base_url: 'https://router.huggingface.co/v1',
-        model_id: 'meta-llama/Llama-3.1-8B-Instruct',
+        model_id: 'openai/gpt-oss-120b',
         enabled: true,
         capabilities: ['chat'],
         context_window: 32768,
@@ -528,7 +525,14 @@ function currentProvider() {
 }
 
 function templateClone(key) {
-    return structuredClone(PROVIDER_TEMPLATES[key]);
+    const template = PROVIDER_TEMPLATES[key];
+    if (!template) {
+        throw new Error(`Unknown provider template: ${key}`);
+    }
+    // Templates contain only scalar values and capabilities.  Copy the array
+    // explicitly instead of relying on structuredClone, which is unavailable
+    // in some embedded browser runtimes.
+    return { ...template, capabilities: [...template.capabilities] };
 }
 
 function providerSummary(provider) {
@@ -891,9 +895,7 @@ function fillForm(provider) {
 
 function applyTemplateToForm(templateKey) {
     const template = templateClone(templateKey);
-    if (!els.displayName.value || !state.editingProviderId) {
-        els.displayName.value = template.display_name;
-    }
+    els.displayName.value = template.display_name;
     els.providerType.value = template.provider_type;
     els.authMode.value = template.auth_mode;
     els.secretRef.value = template.secret_ref;
@@ -1024,7 +1026,20 @@ async function saveAllSettings(options = {}) {
 }
 
 document.getElementById('apply-provider-template').addEventListener('click', () => {
-    applyTemplateToForm(els.template.value);
+    try {
+        applyTemplateToForm(els.template.value);
+        showAlert('info', `${els.template.options[els.template.selectedIndex].text} template applied. Save Provider to persist it.`);
+    } catch (error) {
+        showAlert('danger', error.message || 'Could not apply provider template.');
+    }
+});
+
+els.template.addEventListener('change', () => {
+    try {
+        applyTemplateToForm(els.template.value);
+    } catch (error) {
+        showAlert('danger', error.message || 'Could not apply provider template.');
+    }
 });
 
 els.authMode.addEventListener('change', updateSecretInputs);

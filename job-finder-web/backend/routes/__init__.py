@@ -7,7 +7,6 @@ from backend.routes.llm_test import router as get_llm_router
 from backend.routes.llm_config import router as get_llm_config_router
 from backend.routes.documents import router as get_documents_router
 from backend.routes.candidate_parser import router as get_candidate_parser_router
-from backend.routes.llm_functions import router as get_llm_functions_router
 from backend.routes.chat import router as get_chat_router
 from backend.routes.skills import router as get_skills_router
 from backend.routes.skills_manager import router as get_skills_manager_router
@@ -26,7 +25,6 @@ __all__ = [
     'get_llm_config_router',
     'get_documents_router',
     'get_candidate_parser_router',
-    'get_llm_functions_router',
     'get_chat_router',
     'get_skills_router',
     'get_skills_manager_router',

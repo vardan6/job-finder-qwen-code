@@ -112,11 +112,61 @@ twice.
 
 ### Phase 6 — Real Agent Runtime
 
-- [ ] Add read-only model-driven agent runtime with typed tools and trace events
-  - [x] Typed read-only tool definitions for `list_data_surfaces` and `candidate_skills_lookup`
-  - [ ] Compact `AIContextService` for agent mode preserving plain chat behavior
-  - [ ] Route `run_mode=agent` through an agent loop for `/api/chat` + `/api/chat/stream`
-  - [ ] Enforce provider tool-calling capability/fallback for agent mode
+Design canon: `docs/design/ai-agent-graph.md` (loop stages + per-stage status
+table) and `docs/design/agent-provider-capabilities.md`; full decomposition in
+`history/ai-agent-architecture-review-2026-06-04.md`. Today `run_mode=agent` is
+a placeholder (one plain completion + synthetic trace events, no tools bound).
+Vertical slices below; do not duplicate design detail here.
+
+- [x] Typed read-only tool definitions for `list_data_surfaces` and `candidate_skills_lookup`
+- [ ] 6.1 AFK — Minimal real loop end-to-end: bind existing typed tools to the
+      model for `run_mode=agent`, single tool round-trip (validate args →
+      execute → feed result back once), emit a **real** trace event to the
+      stream UI. Stop reasons `final_answer` / `tool_call_validation_failed` /
+      `tool_execution_failed`.
+- [ ] 6.2 AFK — Full iteration + guards: loop to `max_iterations`,
+      repeated-failure detection; `iteration_limit` / `repeated_tool_failure`.
+- [ ] 6.3 AFK — Compact `AIContextService` + `list_data_surfaces` manifest: move
+      context out of `routes/chat.py`, stop eager candidate injection in agent
+      mode, load deeper data lazily via tools (co-designs with E.4 prompt-cache
+      prefix stability).
+- [ ] 6.4 AFK — Persisted trace store + `policy_engine`: replace remaining
+      synthetic events; enforce permission class / scopes / side-effects with
+      redaction.
+- [ ] 6.5 HITL — Capability gate + visible fallback: per-model *verified*
+      tool-calling probe, route past no-tools models, visible degrade (never
+      silent). Needs provider validation. Per `agent-provider-capabilities.md`.
+- [ ] 6.6 AFK — Expand typed read-tool catalog to the rest of the thin registry;
+      approval-in-loop for write tools.
+
+### Phase E — LLM Efficiency (latency + token cost)
+
+Design canon: `docs/design/ai-llm-efficiency-audit.md` (coverage table +
+prioritized tiers). All LLM calls funnel through `services/llm_service.py`
+(`_build_completion_kwargs` + `send_message`), so Tier-1 fixes are central.
+Independent of Phase 6 except where noted.
+
+- [ ] E.1 AFK — Ollama `keep_alive` in `_build_completion_kwargs` (stop
+      model reload-per-call on the default local model; biggest felt latency).
+- [ ] E.2 AFK — Config-driven `max_tokens` cap across the shared builder.
+- [ ] E.3 AFK — Verify/enable LiteLLM HTTP client reuse (persistent connection).
+- [ ] E.4 AFK — Provider-aware prompt caching (Anthropic `cache_control`
+      breakpoints on the stable system+context prefix; auto for OpenAI/Gemini).
+      Depends on prefix stability from 6.3.
+- [ ] E.5 AFK — JSON mode / `response_format` for parser call sites
+      (candidate/document/job-title/skills) to kill scrape-and-retry waste.
+- [ ] E.6 AFK — Optional Redis-backed response/semantic cache for repeated
+      analytical calls (`REDIS_URL` already in config, unused for LLM).
+- [ ] E.7 AFK — Token/cost + cache-hit aggregation for visibility.
+
+Revisit trigger: Phases 6 and E are specified enough to implement directly via
+`/next-slice` — no grilling needed. The only open design point is E.4's cached
+prefix stability (how the system+context prefix stays byte-stable across turns,
+given per-provider cache rules and minimum-token thresholds); resolve it as a
+short design decision when 6.3/E.4 are picked up, and only escalate to a
+`/grill-me` session if that prefix design proves contentious. Sequencing
+(whether Tier-1 efficiency E.1–E.3 is promoted above Phase 9 to address current
+latency) is a maintainer HITL call, not a planning gap.
 
 ### Phase 7 — Remote-Rover Parity P2 (UX polish)
 

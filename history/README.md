@@ -17,4 +17,5 @@ This folder contains preserved plans, implementation summaries, and one-off note
 - `JOB_SEARCH_REDESIGN_SUMMARY.md`
 - `SKILLS_MANAGER_COMPLETE_SUMMARY.md`
 - `LLM_NON_BLOCKING_FIX.md`
+- `handoff-2026-07-19-0444.md`
 - `tmp.md`

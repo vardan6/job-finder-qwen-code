@@ -31,7 +31,6 @@ from backend.routes import (
     get_llm_config_router,
     get_documents_router,
     get_candidate_parser_router,
-    get_llm_functions_router,
     get_chat_router,
     get_skills_router,
     get_preferences_router,
@@ -234,11 +233,6 @@ def get_candidate_parser_router():
     return candidate_parser.router
 
 
-def get_llm_functions_router():
-    from backend.routes import llm_functions
-    return llm_functions.router
-
-
 def get_chat_router():
     from backend.routes import chat
     return chat.router
@@ -291,7 +285,6 @@ app.include_router(get_llm_router(), prefix="/api/llm", tags=["LLM Test"])
 app.include_router(get_llm_config_router(), prefix="/settings", tags=["LLM Config"])
 app.include_router(get_documents_router(), prefix="/candidates", tags=["Documents"])
 app.include_router(get_candidate_parser_router(), prefix="/candidates", tags=["Candidate Parser"])
-app.include_router(get_llm_functions_router(), tags=["LLM Functions"])
 app.include_router(get_chat_router(), tags=["AI Chat"])
 app.include_router(get_skills_router(), tags=["Skills"])
 app.include_router(get_skills_manager_router, prefix="/candidates", tags=["Skills Manager"])

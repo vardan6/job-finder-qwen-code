@@ -252,7 +252,6 @@ class JobAnalysisService:
             logger.info(f"Analyzing job with LLM (model: {model_name or 'default'})...")
             response = await send_message(
                 prompt,
-                function_name="job_scorer",
                 model_override=model_name,
                 temperature=0.1,  # Low temperature for consistent analysis
                 db=db,

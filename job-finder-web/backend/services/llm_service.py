@@ -13,7 +13,6 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from backend.models.llm_provider import LLMProvider, LLMModel
-from backend.models.document import LLMFunctionMapping
 from backend.services.ai_routing import resolve_chat_model_selection
 
 logger = logging.getLogger(__name__)
@@ -24,13 +23,21 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER_PREFIXES = {
     "ollama": "ollama/",
-    "groq": "",
     "nvidia_nim": "nvidia_nim/",
     "nvidia": "nvidia_nim/",
     "openrouter": "openrouter/",
     "anthropic": "anthropic/",
+    # These providers expose an OpenAI-compatible chat-completions endpoint.
+    # Their configured base URL and credential are passed directly below.
     "openai": "openai/",
     "openai_compatible": "openai/",
+    "gemini": "openai/",
+    "groq": "openai/",
+    "mistral": "openai/",
+    "cohere": "openai/",
+    "together": "openai/",
+    "huggingface": "openai/",
+    "lm_studio": "openai/",
 }
 
 
@@ -44,19 +51,6 @@ def _normalize_api_base(provider_name: str, api_base: str | None) -> str | None:
     if not api_base:
         return None
     return api_base.strip() or None
-
-
-def get_llm_for_function(db: Session, function_name: str) -> Optional[LLMModel]:
-    """Get the LLM model configured for a specific function"""
-    mapping = db.query(LLMFunctionMapping).filter(
-        LLMFunctionMapping.function_name == function_name,
-        LLMFunctionMapping.is_active == True
-    ).first()
-
-    if not mapping or not mapping.model_id:
-        return None
-
-    return mapping.model
 
 
 def _build_completion_kwargs(
@@ -74,7 +68,8 @@ def _build_completion_kwargs(
         model_name = f"ollama/{model_name_raw}"
         api_base = provider_api_url or "http://localhost:11434"
     elif provider_name == "groq":
-        model_name = model_name_raw
+        prefix = _PROVIDER_PREFIXES[provider_name]
+        model_name = model_name_raw if model_name_raw.startswith(prefix) else prefix + model_name_raw
         api_base = provider_api_url or "https://api.groq.com/openai/v1"
     else:
         prefix = _PROVIDER_PREFIXES.get(provider_name, "")
@@ -171,14 +166,13 @@ async def call_llm(db: Session, model: LLMModel, prompt: str) -> Optional[str]:
 
 async def send_message(
     prompt: str,
-    function_name: str = "ai_chat",
     model_override: Optional[str] = None,
     temperature: float = 0.7,
     db: Optional[Session] = None,
     routing_purpose: Optional[str] = None,
 ) -> Optional[str]:
     """
-    Send a message to an LLM using the configured model for a function.
+    Send a message using an explicitly requested model or a configured routing purpose.
 
     Uses LiteLLM's async API so the event loop stays free.
     """
@@ -194,21 +188,11 @@ async def send_message(
         else:
             if not db:
                 return None
-            model = None
-            provider = None
             if routing_purpose:
-                try:
-                    selection = resolve_chat_model_selection(db, purpose=routing_purpose)
-                    model = selection.model
-                    provider = selection.provider
-                except Exception:
-                    model = None
-                    provider = None
-
-            if not model or not provider:
-                model = get_llm_for_function(db, function_name)
-                provider = model.provider if model else None
-            if not model or not provider:
+                selection = resolve_chat_model_selection(db, purpose=routing_purpose)
+                model = selection.model
+                provider = selection.provider
+            else:
                 return None
             kwargs = _build_completion_kwargs(
                 provider, model,
@@ -221,7 +205,7 @@ async def send_message(
     except asyncio.TimeoutError:
         logger.error(
             f"send_message timed out after {LLM_TIMEOUT_SECONDS}s "
-            f"(function={function_name}). LLM provider may be unresponsive."
+            f"(routing_purpose={routing_purpose}). LLM provider may be unresponsive."
         )
         return None
     except Exception as e:
@@ -278,55 +262,20 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
         prompt = SKILL_EXTRACTION_PROMPT.format(content=content)
         result_text = None
 
-        # Try configured model first
+        # Resolve the configured Candidate Analysis provider and model.
         if db:
-            model = None
-            provider = None
             try:
                 selection = resolve_chat_model_selection(db, purpose="candidate_analysis")
                 model = selection.model
                 provider = selection.provider
             except Exception:
-                model = None
-                provider = None
-
-            if not model:
-                model = get_llm_for_function(db, "skill_extractor")
-                provider = model.provider if model else None
-            if not model:
-                ollama = db.query(LLMProvider).filter(LLMProvider.name == "ollama").first()
-                if ollama:
-                    model = db.query(LLMModel).filter(
-                        LLMModel.provider_id == ollama.id,
-                        LLMModel.is_default_for_provider == True
-                    ).first()
-                    provider = model.provider if model else None
-            if model:
-                if provider:
-                    kwargs = _build_completion_kwargs(
-                        provider,
-                        model,
-                        messages=[{"role": "user", "content": prompt}],
-                    )
-                    result_text = await _async_completion(LLM_TIMEOUT_SECONDS, **kwargs)
-                else:
-                    result_text = await call_llm(db, model, prompt)
-
-        # Fallback to direct Ollama call
-        if not result_text:
-            try:
-                result_text = await _async_completion(
-                    LLM_TIMEOUT_SECONDS,
-                    model="ollama/llama3",
-                    messages=[{"role": "user", "content": prompt}],
-                    api_base="http://localhost:11434",
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"Direct Ollama fallback timed out after {LLM_TIMEOUT_SECONDS}s")
                 return []
-            except Exception as e:
-                logger.warning(f"Direct Ollama fallback failed: {e}")
-                return []
+            kwargs = _build_completion_kwargs(
+                provider,
+                model,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            result_text = await _async_completion(LLM_TIMEOUT_SECONDS, **kwargs)
 
         if not result_text:
             return []

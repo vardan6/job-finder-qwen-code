@@ -39,7 +39,7 @@ def init_db():
     from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
     from backend.models.supporting import CandidateJobTitle, CandidateSkill, CandidatePreferences, ExtractionOccurrence
     from backend.models.llm_provider import LLMProvider, LLMModel
-    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, LLMFunctionMapping
+    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt
 
     Base.metadata.create_all(bind=engine)
 
@@ -50,7 +50,7 @@ def init_db():
 def migrate_database():
     """Run database migrations for schema updates"""
     from backend.models.llm_provider import LLMProvider, LLMModel
-    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt, LLMFunctionMapping
+    from backend.models.document import CandidateDocument, DocumentSection, DocumentParsePrompt
 
     migrate_ownership_groundwork()
     migrate_deterministic_score()
@@ -144,8 +144,6 @@ def migrate_database():
     # Populate default document parse prompts
     populate_default_parse_prompts()
 
-    # Populate default LLM function mappings
-    populate_default_function_mappings()
 
 
 def migrate_ownership_groundwork(bind=None, session_factory=None):
@@ -493,46 +491,3 @@ Markdown content:
     finally:
         db.close()
 
-
-def populate_default_function_mappings():
-    """Populate default LLM function mappings"""
-    from backend.models.document import LLMFunctionMapping
-    from backend.models.llm_provider import LLMProvider, LLMModel
-
-    db = SessionLocal()
-    try:
-        default_functions = [
-            {"function_name": "job_title_parser", "display_name": "Job Title Parser"},
-            {"function_name": "job_scorer", "display_name": "Job Scorer (AI)"},
-            {"function_name": "resume_matcher", "display_name": "Resume-Job Matcher"},
-            {"function_name": "ai_chat", "display_name": "AI Chat Assistant"},
-        ]
-
-        # Get the default Ollama model for all functions
-        default_model = None
-        ollama_provider = db.query(LLMProvider).filter(LLMProvider.name == "ollama").first()
-        if ollama_provider:
-            default_model = db.query(LLMModel).filter(
-                LLMModel.provider_id == ollama_provider.id,
-                LLMModel.is_default_for_provider == True
-            ).first()
-
-        for func_data in default_functions:
-            existing = db.query(LLMFunctionMapping).filter(
-                LLMFunctionMapping.function_name == func_data["function_name"]
-            ).first()
-
-            if not existing:
-                mapping = LLMFunctionMapping(
-                    function_name=func_data["function_name"],
-                    display_name=func_data["display_name"],
-                    model_id=default_model.id if default_model else None
-                )
-                db.add(mapping)
-
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Warning: Could not populate default function mappings: {e}")
-    finally:
-        db.close()

@@ -132,7 +132,7 @@ async def view_candidate(
     """View one of the current user's profiles."""
     from sqlalchemy.orm import joinedload
     from backend.models.supporting import CandidateSkill, CandidateJobTitle
-    from backend.models.document import CandidateDocument, LLMFunctionMapping
+    from backend.models.document import CandidateDocument
 
     # Eager load relationships
     candidate = db.query(Candidate).options(
@@ -144,21 +144,9 @@ async def view_candidate(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    # Get current model configurations for AI functions
-    job_title_parser_mapping = db.query(LLMFunctionMapping).filter(
-        LLMFunctionMapping.function_name == "job_title_parser",
-        LLMFunctionMapping.is_active == True
-    ).first()
-    skill_extractor_mapping = db.query(LLMFunctionMapping).filter(
-        LLMFunctionMapping.function_name == "skill_extractor",
-        LLMFunctionMapping.is_active == True
-    ).first()
-
     return templates.TemplateResponse("candidates/detail.html", {
         "request": request,
         "candidate": candidate,
-        "job_title_parser_model_id": job_title_parser_mapping.model_id if job_title_parser_mapping else None,
-        "skill_extractor_model_id": skill_extractor_mapping.model_id if skill_extractor_mapping else None
     })
 
 

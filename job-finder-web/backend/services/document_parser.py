@@ -57,12 +57,9 @@ async def parse_document_content(db: Session, document: CandidateDocument) -> bo
         # Replace {{content}} placeholder with actual content
         full_prompt = prompt.prompt_template.replace("{{content}}", content)
 
-        # Get the LLM model for this function
-        function_name = f"{document_type}_parser"
-        # Call the LLM (native async) via shared routing-purpose resolver.
+        # Call the configured Document Analysis route (native async).
         result = await send_message(
             full_prompt,
-            function_name=function_name,
             db=db,
             routing_purpose="document_analysis",
         )

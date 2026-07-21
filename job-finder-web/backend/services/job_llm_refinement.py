@@ -123,7 +123,7 @@ class JobLLMRefinementService:
         )
         try:
             response = await send_message(
-                prompt, function_name="job_scorer", temperature=0.1, db=self.db,
+                prompt, temperature=0.1, db=self.db,
                 routing_purpose="candidate_analysis",
             )
         except Exception:

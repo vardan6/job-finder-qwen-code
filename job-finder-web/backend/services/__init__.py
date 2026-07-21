@@ -1,11 +1,7 @@
 """
 Services Package - Business logic layer
 """
-from backend.services.llm_service import (
-    get_llm_for_function,
-    call_llm,
-    extract_json_from_response,
-)
+from backend.services.llm_service import call_llm, extract_json_from_response
 from backend.services.document_parser import (
     parse_document_content,
     get_candidate_prompt,
@@ -19,7 +15,6 @@ from backend.services.job_title_parser import (
 
 __all__ = [
     # LLM Service
-    "get_llm_for_function",
     "call_llm",
     "extract_json_from_response",
     # Document Parser

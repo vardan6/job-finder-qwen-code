@@ -119,27 +119,3 @@ class DocumentParsePrompt(Base):
 
     def __repr__(self):
         return f"<DocumentParsePrompt(name='{self.name}', type='{self.document_type}')>"
-
-
-class LLMFunctionMapping(Base):
-    """Maps application functionalities to specific LLM models"""
-    __tablename__ = "llm_function_mappings"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # Function identifier (e.g., "job_title_parser", "job_scorer", "resume_matcher")
-    function_name = Column(String, nullable=False, unique=True)
-    display_name = Column(String, nullable=True)  # Human-readable name
-
-    # The model to use for this function
-    model_id = Column(Integer, ForeignKey("llm_models.id", ondelete="SET NULL"), nullable=True)
-
-    # Relationships
-    model = relationship("LLMModel", backref="function_mappings")
-
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    def __repr__(self):
-        return f"<LLMFunctionMapping(function='{self.function_name}', model_id={self.model_id})>"

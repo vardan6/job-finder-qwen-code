@@ -9,26 +9,13 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <!-- Model Selector -->
+                <!-- AI Routing -->
                 <div class="mb-3">
                     <label class="form-label fw-semibold">
-                        <i class="bi bi-cpu"></i> AI Model
+                        <i class="bi bi-cpu"></i> AI configuration
                     </label>
-                    <div class="model-selector-widget" data-function="job_title_parser">
-                        <select class="form-select form-select-sm"
-                                style="min-width: 180px;"
-                                onchange="onModelSelectorChange('job_title_parser', this.value)"
-                                id="model-selector-job_title_parser">
-                            <option value="">-- Select Model --</option>
-                        </select>
-                        <span class="model-selector-status ms-2" id="status-job_title_parser">
-                            <span class="badge bg-secondary">
-                                <i class="bi bi-hourglass-split"></i> Loading...
-                            </span>
-                        </span>
-                    </div>
                     <div class="form-text mt-1">
-                        <i class="bi bi-info-circle"></i> This model will be used for parsing job titles from your documents
+                        <i class="bi bi-info-circle"></i> Job-title parsing uses the provider and model configured for <strong>Document Analysis</strong> in <a href="/settings/llm">AI Settings</a>.
                     </div>
                 </div>
 
@@ -383,11 +370,6 @@ function showParsingStatus() {
 
 // Initialize file list when modal opens
 document.addEventListener('DOMContentLoaded', function() {
-    const modelWidget = document.querySelector('#fileSelectorModal .model-selector-widget');
-    if (modelWidget && window.JobFinder) {
-        window.JobFinder.loadModelsForWidget(modelWidget);
-    }
-    
     const modalEl = document.getElementById('fileSelectorModal');
     if (modalEl) {
         modalEl.addEventListener('show.bs.modal', function() {

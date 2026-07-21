@@ -16,7 +16,7 @@ from backend.database import get_db
 from backend.models.candidate import Candidate
 from backend.models.supporting import CandidateSkill, CandidatePreferences
 from backend.services.provenance import record_skill_extraction
-from backend.models.document import CandidateDocument, LLMFunctionMapping
+from backend.models.document import CandidateDocument
 from backend.services.llm_service import extract_skills_from_text
 
 logger = logging.getLogger(__name__)
@@ -41,17 +41,10 @@ async def skills_modal(request: Request, candidate_id: int, db: Session = Depend
         CandidateSkill.is_active == True
     ).order_by(CandidateSkill.category, CandidateSkill.skill_name).all()
 
-    # Get current model configuration for skill extractor
-    skill_extractor_mapping = db.query(LLMFunctionMapping).filter(
-        LLMFunctionMapping.function_name == "skill_extractor",
-        LLMFunctionMapping.is_active == True
-    ).first()
-
     return templates.TemplateResponse("skills/modal.html", {
         "request": request,
         "candidate": candidate,
         "skills": skills,
-        "skill_extractor_model_id": skill_extractor_mapping.model_id if skill_extractor_mapping else None
     })
 
 
