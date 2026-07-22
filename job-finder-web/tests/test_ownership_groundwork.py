@@ -1,4 +1,4 @@
-"""Regression coverage for Phase-10 ownership groundwork."""
+"""Regression coverage for future Phase-12 ownership groundwork."""
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine, inspect, text

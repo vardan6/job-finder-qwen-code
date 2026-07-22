@@ -34,7 +34,7 @@ not scattered.
 | **Ollama `keep_alive`** | ❌ **missing** | default model is `ollama/llama3`; model unloads+reloads each call → biggest local latency cause |
 | **`max_tokens` cap** | ❌ missing | unbounded output = slower + more tokens than needed |
 | **HTTP connection reuse** | ❌ unverified | no persistent httpx/AsyncClient configured; risk of fresh TLS per call |
-| **Lazy context loading** | ❌ missing | full candidate profile injected every turn (`_build_session_system_context`); Phase 6 lazy tools fix this |
+| **Lazy context loading** | ❌ missing | full candidate profile injected every turn (`_build_session_system_context`); Phase 10 lazy tools fix this |
 | **General/semantic response cache** | ❌ missing | `REDIS_URL` in config but unused for LLM |
 | **`response_format` / JSON mode** | ❌ missing | parsers regex-scrape JSON from prose (`extract_json_from_response`); retries on malformed output waste a full call |
 | **Structured token/cost telemetry** | ⚠️ partial | usage captured per message meta, but not aggregated; no cache-hit visibility |
@@ -62,7 +62,7 @@ not scattered.
    the cached prefix stable across turns.
 5. **JSON mode / `response_format`** for the parser call sites to kill
    scrape-and-retry waste.
-6. **Lazy context** — the Phase 6 `AIContextService` change; stop pre-injecting
+6. **Lazy context** — the Phase 10 `AIContextService` change; stop pre-injecting
    full candidate data.
 
 **Tier 3 — infra:**
@@ -71,8 +71,6 @@ not scattered.
 
 ## Suggested roadmap placement
 
-Tier 1 is independent of the deferred agent-loop work and can be its own small
-slice. Tiers 2–3 should be captured as ordered slices alongside the Phase 6
-planning (prompt caching + lazy context naturally co-design with
-`AIContextService`). None of this is in `roadmap.md` yet — it needs a
-planning-capture pass to become "complete the roadmap ⇒ efficiency done."
+The shared-runtime slices are independent of the deferred agent loop. Prompt
+caching and lazy context are ordered together in Phase 10 because they share
+the `AIContextService` dependency.

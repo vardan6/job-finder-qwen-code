@@ -10,8 +10,8 @@ User asked for a fresh comparison against `remote-rover` because current pages a
   - `/mnt/c/Users/vardana/Documents/Proj/remote-rover/gcs_server/static/ai.html`
   - `/mnt/c/Users/vardana/Documents/Proj/remote-rover/gcs_server/static/ai.js`
 - Current project:
-  - `/mnt/c/Users/vardana/Documents/Proj/job-finder-qwen-code/job-finder-web/frontend/templates/settings/llm.html`
-  - `/mnt/c/Users/vardana/Documents/Proj/job-finder-qwen-code/job-finder-web/frontend/templates/chat.html`
+  - `/mnt/c/Users/vardana/Documents/Proj/job-finder-app/job-finder-web/frontend/templates/settings/llm.html`
+  - `/mnt/c/Users/vardana/Documents/Proj/job-finder-app/job-finder-web/frontend/templates/chat.html`
 
 ## Findings summary
 No code changes were made. This was a review-only pass.

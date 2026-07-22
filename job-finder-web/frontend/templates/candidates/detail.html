@@ -919,6 +919,7 @@ function deleteDocument(event) {
 
 // Job Title Parser functions
 let parsedJobTitlesData = [];
+let parsedJobTitleSourceDocumentIds = [];
 
 function showParsingStatus() {
     const statusDiv = document.getElementById('parseStatus');
@@ -978,6 +979,9 @@ function handleParseResponse(event) {
         
         if (response.success) {
             parsedJobTitlesData = response.job_titles || [];
+            parsedJobTitleSourceDocumentIds = [...new Set(
+                parsedJobTitlesData.map(item => item.source_document_id).filter(Boolean)
+            )];
             
             if (parsedJobTitlesData.length === 0) {
                 statusDiv.innerHTML = `
@@ -1085,18 +1089,8 @@ function addNewJobTitleRow() {
 }
 
 function saveParsedJobTitles() {
-    if (parsedJobTitlesData.length === 0) {
-        alert('No job titles to save');
-        return;
-    }
-
     // Filter out empty titles
     const validTitles = parsedJobTitlesData.filter(item => item.title.trim() !== '');
-
-    if (validTitles.length === 0) {
-        alert('Please enter at least one job title');
-        return;
-    }
 
     const candidateId = window.location.pathname.split('/').pop();
 
@@ -1107,7 +1101,7 @@ function saveParsedJobTitles() {
         },
         body: JSON.stringify({
             job_titles: validTitles,
-            clear_existing: false  // Append to existing, don't replace
+            source_document_ids: parsedJobTitleSourceDocumentIds
         })
     })
     .then(response => response.json())

@@ -128,6 +128,12 @@ async def list_llm_providers(request: Request):
     return templates.TemplateResponse("settings/llm.html", {"request": request})
 
 
+@router.get("/tools", response_class=HTMLResponse)
+async def list_ai_tools_page(request: Request):
+    """Render the read-only tool discovery surface for the AI tool registry."""
+    return templates.TemplateResponse("settings/tools.html", {"request": request})
+
+
 @router.post("/")
 async def create_or_update_llm_provider(
     request: Request,

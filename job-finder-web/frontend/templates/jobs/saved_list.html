@@ -5,8 +5,9 @@
 {% block content %}
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <div><h1><i class="bi bi-bookmark-fill"></i> {{ search_run.name }}</h1><p class="text-muted mb-0">Historical snapshot · {{ search_run.query }} · {{ search_run.location or 'Any location' }}</p></div>
+        <div><h1><i class="bi bi-bookmark-fill"></i> {{ search_run.name }}</h1><p class="text-muted mb-0">Historical snapshot · {{ search_run.query }} · {{ search_run.location or 'Any location' }}{% if new_count %} · <span class="text-success">{{ new_count }} new since last run</span>{% endif %}</p></div>
         <div>
+            <form method="post" action="/jobs/lists/{{ search_run.id }}/rerun" class="d-inline"><button class="btn btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Re-run Search</button></form>
             <a href="/jobs/lists/{{ search_run.id }}/export{% if min_score is not none or verified_remote_only or include_dismissed %}?{% if min_score is not none %}min_score={{ min_score }}{% endif %}{% if verified_remote_only %}{% if min_score is not none %}&amp;{% endif %}verified_remote_only=true{% endif %}{% if include_dismissed %}{% if min_score is not none or verified_remote_only %}&amp;{% endif %}include_dismissed=true{% endif %}{% endif %}" class="btn btn-outline-primary"><i class="bi bi-download"></i> Export CSV</a>
             <a href="/jobs/lists" class="btn btn-outline-secondary">All Saved Lists</a>
         </div>
@@ -24,7 +25,11 @@
             <td>{{ membership.job.company }}</td><td>{{ membership.platform_names or '—' }}</td><td>{{ membership.salary or '—' }}</td>
             <td>{{ (membership.verified_remote_status or 'unknown')|replace('_', ' ') }}</td><td>{{ membership.deterministic_score if membership.deterministic_score is not none else '—' }}</td>
             <td>{% if membership.first_sighting %}<span class="badge bg-success">New</span>{% else %}<span class="text-muted">Known</span>{% endif %}</td>
-            <td>{% if membership.job.is_dismissed %}<span class="badge bg-secondary">Dismissed</span>{% else %}<form method="post" action="/jobs/{{ membership.job.id }}/dismiss" class="d-inline"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye-slash"></i> Dismiss</button></form>{% endif %}</td>
+            <td>
+                <a href="/jobs/{{ membership.job.id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+                {% if membership.job.external_url %}<a href="{{ membership.job.external_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary" title="Open original posting"><i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+                {% if membership.job.is_dismissed %}<span class="badge bg-secondary">Dismissed</span>{% else %}<form method="post" action="/jobs/{{ membership.job.id }}/dismiss" class="d-inline"><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye-slash"></i> Dismiss</button></form>{% endif %}
+            </td>
         </tr>{% else %}<tr><td colspan="8" class="text-muted">No saved results match these filters.</td></tr>{% endfor %}</tbody>
     </table></div></div>
 </div>

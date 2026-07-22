@@ -91,6 +91,41 @@ def test_search_run_migration_is_idempotent(db):
     migrate_search_runs(db.get_bind())
 
 
+def test_rerun_search_run_creates_new_run_with_new_count(db, monkeypatch):
+    candidate = Candidate(name="Sam", folder_path="/tmp/search-runs")
+    db.add(candidate)
+    db.commit()
+
+    posting_a = {
+        "title": "Backend Engineer", "company": "Acme", "platform": "linkedin",
+        "platform_job_id": "a1", "description_hash": "posting-a",
+    }
+    first = _run_search(db, [posting_a], run_name="Initial backend search")
+
+    posting_b = {
+        "title": "Platform Engineer", "company": "Acme", "platform": "linkedin",
+        "platform_job_id": "b1", "description_hash": "posting-b",
+    }
+
+    async def fake_linkedin(self, config, candidate, progress_callback=None):
+        return [posting_a, posting_b]
+
+    monkeypatch.setattr(JobSearchService, "_search_linkedin", fake_linkedin)
+
+    response = _client(db).post(f"/lists/{first.search_run_id}/rerun", follow_redirects=False)
+
+    assert response.status_code == 303
+    new_run_id = int(response.headers["location"].rsplit("/", 1)[-1])
+    assert new_run_id != first.search_run_id
+
+    memberships = db.query(SearchRunJob).filter_by(search_run_id=new_run_id).all()
+    assert len(memberships) == 2
+    assert sum(1 for m in memberships if m.first_sighting) == 1  # only posting_b is new
+
+    view = _client(db).get(f"/lists/{new_run_id}")
+    assert "1 new since last run" in view.text
+
+
 def test_saved_list_routes_render_snapshot_fields(db):
     candidate = Candidate(name="Sam", folder_path="/tmp/search-runs")
     db.add(candidate)

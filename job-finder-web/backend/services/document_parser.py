@@ -62,6 +62,7 @@ async def parse_document_content(db: Session, document: CandidateDocument) -> bo
             full_prompt,
             db=db,
             routing_purpose="document_analysis",
+            json_mode=True,
         )
 
         if not result:

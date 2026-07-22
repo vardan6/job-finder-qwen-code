@@ -29,6 +29,31 @@
     --chat-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
 }
 
+[data-bs-theme="dark"] {
+    --app-bg: #0f172a;
+    --app-bg-soft: #111c33;
+    --app-surface: #1a2540;
+    --app-surface-muted: #16213a;
+    --app-border: #2b3a5c;
+    --app-text: #e2e8f0;
+    --app-muted: #94a3b8;
+    --app-shadow: 0 14px 36px rgba(0, 0, 0, 0.35);
+    --app-shadow-soft: 0 6px 18px rgba(0, 0, 0, 0.25);
+    --app-primary: #3b82f6;
+    --app-primary-soft: #1e293b;
+    --chat-bg: #0f172a;
+    --chat-surface: #1a2540;
+    --chat-surface-strong: #16213a;
+    --chat-border: #2b3a5c;
+    --chat-text: #e2e8f0;
+    --chat-muted: #94a3b8;
+    --chat-assistant: #16213a;
+}
+
+[data-bs-theme="dark"] .app-navbar {
+    background: rgba(15, 23, 42, 0.87) !important;
+}
+
 html,
 body {
     min-height: 100%;

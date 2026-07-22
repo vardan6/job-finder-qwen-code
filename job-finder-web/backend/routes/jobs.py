@@ -11,7 +11,7 @@ from io import StringIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from backend.models.candidate import Candidate
 from backend.models.document import GeneratedDocument
 from backend.models.job import Job, JobApplication, SearchRun, SearchRunJob
 from backend.models.llm_provider import LLMProvider
+from backend.models.supporting import CandidatePreferences
 from backend.models.user import User
 from backend.ownership import get_current_user, get_owned_candidate
 from backend.security import safe_resolve_path
@@ -37,6 +38,21 @@ APPLICATION_PIPELINE_STATUSES = ("interested", "applied", "interview", "offer", 
 # Setup templates
 templates_path = Path(__file__).parent.parent.parent / "frontend" / "templates"
 templates = Jinja2Templates(directory=templates_path)
+
+
+def _persist_search_location(db: Session, candidate: Candidate, location: str) -> None:
+    """Remember the user's edited search location so it survives the next page load.
+
+    Written to a dedicated preferences field rather than `candidate.location`
+    (the profile's home/current location) so tuning a search never silently
+    rewrites profile data.
+    """
+    preferences = candidate.preferences
+    if preferences is None:
+        preferences = CandidatePreferences(candidate_id=candidate.id)
+        db.add(preferences)
+    preferences.last_search_location = location
+    db.commit()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -139,6 +155,7 @@ async def list_search_runs(request: Request, db: Session = Depends(get_db), cand
             search_run.platform_names = ", ".join(json.loads(search_run.platforms))
         except (TypeError, json.JSONDecodeError):
             search_run.platform_names = "Unknown"
+        search_run.new_count = sum(1 for membership in search_run.jobs if membership.first_sighting)
     candidates = db.query(Candidate).filter(Candidate.is_active == True, Candidate.user_id == current_user.id).all()
     return templates.TemplateResponse("jobs/saved_lists.html", {
         "request": request, "runs": runs, "candidates": candidates,
@@ -189,11 +206,43 @@ async def view_search_run(
             membership.platform_names = ", ".join(json.loads(membership.sighted_platforms))
         except (TypeError, json.JSONDecodeError):
             membership.platform_names = "Unknown"
+    # "N new since last run" = count of first_sighting rows in this run (per
+    # docs/design/search-runs-and-lists.md), computed over the full run, not
+    # just the currently visible/curated rows.
+    new_count = sum(1 for membership in search_run.jobs if membership.first_sighting)
     return templates.TemplateResponse("jobs/saved_list.html", {
         "request": request, "search_run": search_run, "memberships": memberships,
         "min_score": min_score, "verified_remote_only": verified_remote_only,
-        "include_dismissed": include_dismissed,
+        "include_dismissed": include_dismissed, "new_count": new_count,
     })
+
+
+@router.post("/lists/{search_run_id}/rerun")
+async def rerun_search_run(
+    search_run_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user),
+):
+    """Re-run a saved search with its original query/location/platforms.
+
+    Produces a new SearchRun; "N new since last run" is simply that run's
+    first_sighting count, since dedup already compares against every job the
+    candidate has ever been shown (see docs/design/search-runs-and-lists.md).
+    """
+    prior_run = _owned_search_run(db, search_run_id, current_user)
+    try:
+        platforms = json.loads(prior_run.platforms)
+    except (TypeError, json.JSONDecodeError):
+        platforms = ["linkedin", "glassdoor"]
+
+    result = await run_job_search(
+        db=db,
+        candidate_id=prior_run.candidate_id,
+        query=prior_run.query,
+        location=prior_run.location or "",
+        platforms=platforms,
+    )
+    if not result.search_run_id:
+        raise HTTPException(status_code=502, detail="Re-run failed to produce a saved list")
+    return RedirectResponse(url=f"/jobs/lists/{result.search_run_id}", status_code=303)
 
 
 @router.get("/lists/{search_run_id}/export")
@@ -284,8 +333,14 @@ async def get_candidate_search_config(
     # Construct query - use comma-separated for broad search
     query = ", ".join(job_titles[:5])  # Limit to 5 titles to avoid URL length issues
     
-    # Get location from candidate preferences or default
-    location = candidate.location or "United States"
+    # Get location from the last search the user edited, then candidate
+    # profile, then a hard default; the profile value is only used the first
+    # time nothing has been saved yet, so a corrected location persists.
+    location = (
+        (candidate.preferences.last_search_location if candidate.preferences else None)
+        or candidate.location
+        or "United States"
+    )
     
     # Get remote-only preference
     remote_only = False
@@ -296,12 +351,14 @@ async def get_candidate_search_config(
     connected_platforms = []
     platform_status = []
     
+    from backend.routes.platform_accounts import _account_guidance
+
     for platform in ["linkedin", "glassdoor"]:
         account = next(
-            (acc for acc in candidate.platform_accounts if acc.platform == platform and acc.status == "active"),
+            (acc for acc in candidate.platform_accounts if acc.platform == platform),
             None
         )
-        if account:
+        if account and account.status == "active":
             connected_platforms.append(platform)
             platform_status.append({
                 "platform": platform,
@@ -309,14 +366,18 @@ async def get_candidate_search_config(
                 "connected": True,
                 "selectable": True,
                 "status": "active",
+                "account_id": account.id,
             })
         else:
+            guidance = _account_guidance(account)
             platform_status.append({
                 "platform": platform,
                 "label": platform.capitalize(),
                 "connected": False,
                 "selectable": False,
-                "status": "disconnected",
+                "status": account.status if account else "not_connected",
+                "detail": guidance["label"],
+                "account_id": account.id if account else None,
             })
 
     # WWR is wired through the common adapter path, but live navigation is
@@ -428,6 +489,8 @@ async def perform_job_search(
             status_code=200,
         )
 
+    _persist_search_location(db, candidate, location)
+
     # Check if search is already running
     from backend.services.search_lock import is_search_running
     if is_search_running():
@@ -532,6 +595,8 @@ async def start_job_search_stream(
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         return JSONResponse({"error": f"Candidate {candidate_id} not found"}, status_code=404)
+
+    _persist_search_location(db, candidate, location)
 
     if is_search_running():
         return JSONResponse({"error": "Another search is already in progress. Please wait."}, status_code=409)
@@ -692,7 +757,9 @@ async def start_async_job_search(
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         return {"error": f"Candidate {candidate_id} not found"}
-    
+
+    _persist_search_location(db, candidate, location)
+
     # Generate search ID
     import uuid
     search_id = str(uuid.uuid4())

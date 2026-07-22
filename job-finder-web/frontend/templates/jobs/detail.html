@@ -14,7 +14,7 @@
             <a href="/jobs/{{ job.id }}/apply" class="btn btn-primary">
                 <i class="bi bi-send"></i> Apply
             </a>
-            <a href="{{ job.original_url }}" target="_blank" class="btn btn-outline-primary">
+            <a href="{{ job.external_url }}" target="_blank" rel="noopener" class="btn btn-outline-primary">
                 <i class="bi bi-box-arrow-up-right"></i> Original Posting
             </a>
             <a href="/jobs/" class="btn btn-secondary">
@@ -77,8 +77,13 @@
 
             <!-- Job Description -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-file-text"></i> Job Description
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-file-text"></i> Job Description</span>
+                    {% if description %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-description-btn" onclick="copyJobDescription(this)">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     {% if description %}
@@ -88,8 +93,8 @@
                     {% else %}
                     <p class="text-muted">
                         <i class="bi bi-info-circle"></i>
-                        Full description not available. 
-                        <a href="{{ job.original_url }}" target="_blank">View on {{ job.platform }}</a>
+                        Full description not available.
+                        <a href="{{ job.external_url }}" target="_blank" rel="noopener">View on {{ job.platform }}</a>
                     </p>
                     {% endif %}
                 </div>
@@ -291,4 +296,27 @@
     margin-bottom: 0;
 }
 </style>
+
+{% if description %}
+<script>
+async function copyJobDescription(button) {
+    const text = [
+        {{ (job.title ~ ' — ' ~ job.company) | tojson }},
+        {{ (job.location or '') | tojson }},
+        {{ job.external_url | tojson }},
+        '',
+        {{ description | tojson }}
+    ].filter((line) => line !== '').join('\n');
+
+    const originalHtml = button.innerHTML;
+    try {
+        await navigator.clipboard.writeText(text);
+        button.innerHTML = '<i class="bi bi-check2"></i> Copied';
+    } catch (_error) {
+        button.innerHTML = '<i class="bi bi-x-circle"></i> Copy failed';
+    }
+    setTimeout(() => { button.innerHTML = originalHtml; }, 1500);
+}
+</script>
+{% endif %}
 {% endblock %}

@@ -395,6 +395,7 @@ async def save_parsed_skills(
     request: Request,
     candidate_id: int,
     skills_data: str = Form(...),  # JSON string
+    parse_mode: str = Form("merge"),
     db: Session = Depends(get_db)
 ):
     """Save AI-parsed skills to database"""
@@ -405,6 +406,15 @@ async def save_parsed_skills(
     try:
         skills = json.loads(skills_data)
         saved_count = 0
+
+        # Overwrite mode deactivates existing skills only now, at confirmed
+        # save time, in the same transaction as adding the replacements —
+        # a discarded/abandoned preview must never lose data.
+        if parse_mode == "overwrite":
+            db.query(CandidateSkill).filter(
+                CandidateSkill.candidate_id == candidate_id,
+                CandidateSkill.is_active == True
+            ).update({"is_active": False})
 
         for skill_data in skills:
             # Check if already exists
@@ -563,16 +573,12 @@ async def parse_skills_with_file_selection(
 
         logger.info(f"Found {len(new_skills)} new skills to add ({skipped_count} existing skipped)")
 
-        # If overwrite mode, delete existing skills first
+        # In overwrite mode, treat every extracted skill as "new" for preview
+        # purposes; the existing skills are only deactivated once the user
+        # confirms via save-parsed, so a discarded/abandoned preview never
+        # loses data.
         if parse_mode == "overwrite":
-            logger.info(f"Overwrite mode: Deleting {len(existing_skills)} existing skills")
-            db.query(CandidateSkill).filter(
-                CandidateSkill.candidate_id == candidate_id,
-                CandidateSkill.is_active == True
-            ).update({"is_active": False})
-            db.commit()
-
-            # All extracted skills are now "new"
+            new_skills = []
             for skill_data in extracted_skills:
                 skill_name = skill_data.get("skill", "").strip()
                 if not skill_name:

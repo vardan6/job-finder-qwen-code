@@ -17,7 +17,7 @@ The primary user context is remote work from Armenia targeting US, EU, and Canad
 ## Repository Shape
 
 ```text
-job-finder-qwen-code/
+job-finder-app/
 ├── README.md
 ├── AGENTS.md
 ├── docs/

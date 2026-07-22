@@ -1,4 +1,4 @@
-# job-finder-qwen-code
+# job-finder-app
 
 Local-first job search application and working repository for the `job-finder-web` app.
 
@@ -13,7 +13,7 @@ Local-first job search application and working repository for the `job-finder-we
 ## Repository Layout
 
 ```text
-job-finder-qwen-code/
+job-finder-app/
 ├── README.md
 ├── AGENTS.md
 ├── docs/

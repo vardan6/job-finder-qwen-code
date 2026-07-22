@@ -110,3 +110,9 @@ def test_load_ai_config_normalizes_provider_capabilities(tmp_path) -> None:
     config = load_ai_config(settings_path)
 
     assert config.llm_providers[0]["capabilities"] == ["chat", "tools"]
+
+
+def test_default_provider_has_no_max_output_tokens_cap(tmp_path) -> None:
+    config = load_ai_config(tmp_path / "ai-settings.json")
+
+    assert config.llm_providers[0]["max_output_tokens"] is None

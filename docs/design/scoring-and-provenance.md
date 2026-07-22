@@ -73,3 +73,27 @@ extracted from two files, so curated values and extraction facts are separate:
 UI: subtle badge/dot on `extracted` items; badge changes when edited;
 "reset to extracted" restores the original value. Provenance never blocks
 editing — it is informational only.
+
+### Preferred-title extraction and review
+
+Preferred titles are target-role curation, not a transcription of employment
+history. Every extraction path—including reuse of structured `experience`
+data—uses the same policy: return one to five concise canonical market titles,
+favor explicit targets and only strong, repeated career-direction inferences.
+It excludes generic labels, bare seniority words, employer-specific labels,
+compound title variants, and unsupported guesses. The empty list is valid when
+the input does not support a target role.
+
+The parse-review response carries each source document and its original raw
+extracted title. On save, the reviewed rows synchronise occurrences for those
+source documents in one transaction:
+
+- an edit updates the matching curated value and retains its original raw
+  occurrence for provenance;
+- an omitted row removes only that source document's occurrence;
+- a curated value is removed only when it has no remaining occurrences;
+- unrelated source documents and manually curated values are untouched.
+
+The result reports created, updated, removed, and unchanged values separately;
+an idempotent save is successful even if it creates no new curated value.
+All title read/write routes use the owned-profile guard, including in dev mode.

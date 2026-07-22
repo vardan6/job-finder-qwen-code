@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.services.ai_routing import RuntimeModel, RuntimeProvider
 from backend.services.llm_service import extract_json_from_response
 
 
@@ -170,6 +171,117 @@ class TestCompletionKwargs:
         assert kwargs["model"] == "openai/example-model"
         assert kwargs["api_base"] == "https://example.test/v1"
 
+    def test_ollama_calls_get_keep_alive_forever(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(provider_name="ollama", model_name="llama3:latest")
+
+        kwargs = _build_completion_kwargs(
+            model.provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+
+        assert kwargs["keep_alive"] == -1
+
+    def test_non_ollama_calls_do_not_get_keep_alive(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(provider_name="anthropic", model_name="claude-3-opus", api_url=None)
+
+        kwargs = _build_completion_kwargs(
+            model.provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+
+        assert "keep_alive" not in kwargs
+
+    def test_max_output_tokens_cap_applied_from_runtime_provider_config(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        provider = RuntimeProvider(
+            id="provider-1",
+            name="ollama",
+            display_name="Ollama Local",
+            api_url="http://localhost:11434",
+            auth_mode="none",
+            secret_ref="",
+            max_output_tokens=512,
+        )
+        model = RuntimeModel(id="provider-1", model_name="llama3:latest", display_name="Llama 3", provider=provider)
+
+        kwargs = _build_completion_kwargs(
+            provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+
+        assert kwargs["max_tokens"] == 512
+
+    def test_max_output_tokens_uncapped_when_not_configured(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        provider = RuntimeProvider(
+            id="provider-1",
+            name="ollama",
+            display_name="Ollama Local",
+            api_url="http://localhost:11434",
+            auth_mode="none",
+            secret_ref="",
+        )
+        model = RuntimeModel(id="provider-1", model_name="llama3:latest", display_name="Llama 3", provider=provider)
+
+        kwargs = _build_completion_kwargs(
+            provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+
+        assert "max_tokens" not in kwargs
+
+    def test_json_mode_adds_response_format_when_model_supports_it(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(provider_name="ollama", model_name="llama3:latest")
+
+        kwargs = _build_completion_kwargs(
+            model.provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+            json_mode=True,
+        )
+
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+    def test_json_mode_falls_back_silently_when_capability_probe_errors(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(provider_name="ollama", model_name="llama3:latest")
+
+        with patch("litellm.get_supported_openai_params", side_effect=Exception("boom")):
+            kwargs = _build_completion_kwargs(
+                model.provider,
+                model,
+                messages=[{"role": "user", "content": "ping"}],
+                json_mode=True,
+            )
+
+        assert "response_format" not in kwargs
+
+    def test_json_mode_off_by_default(self):
+        from backend.services.llm_service import _build_completion_kwargs
+
+        model = make_llm_model(provider_name="ollama", model_name="llama3:latest")
+
+        kwargs = _build_completion_kwargs(
+            model.provider,
+            model,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+
+        assert "response_format" not in kwargs
+
 
 # ---------------------------------------------------------------------------
 # extract_json_from_response
@@ -195,6 +307,11 @@ class TestExtractJsonFromResponse:
         response = '[{"a": 1}, {"b": 2}]'
         result = extract_json_from_response(response)
         assert result == [{"a": 1}, {"b": 2}]
+
+    def test_extracts_nested_json_object(self):
+        response = '{"job_titles": [{"title": "AI Engineer", "priority": 1}]}'
+        result = extract_json_from_response(response)
+        assert result == {"job_titles": [{"title": "AI Engineer", "priority": 1}]}
 
     def test_returns_none_on_invalid_json(self):
         response = "This is not JSON at all."

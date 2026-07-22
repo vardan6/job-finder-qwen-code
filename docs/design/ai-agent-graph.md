@@ -2,7 +2,7 @@
 
 > Snapshot of how the AI/agent subsystem is wired **today** and where the real
 > agent loop is still a placeholder. Solid nodes/edges are implemented; dashed
-> nodes/edges are the deferred Phase 6 "Real Agent Runtime" (see `roadmap.md`).
+> nodes/edges are the deferred Phase 10 agentic runtime (see `roadmap.md`).
 > Source of truth: code under `job-finder-web/backend/`.
 
 ## System graph
@@ -45,7 +45,7 @@ flowchart TB
         approval["write approval handshake\n+ workspace sandbox\n+ mutation_policy gate"]
     end
 
-    subgraph Agent["Real agent loop — DEFERRED (Phase 6)"]
+    subgraph Agent["Real agent loop — DEFERRED (Phase 10)"]
         loop["agent_loop.py\nmodel → tool → result → model"]
         ctx["AIContextService\ncompact context + manifest"]
         policy["policy_engine.py"]
@@ -147,9 +147,9 @@ Two registries coexist:
   registry). `to_model_tool()` can already emit OpenAI function-tool JSON, but
   nothing calls it yet.
 
-## Deferred — the real agent runtime (Phase 6)
+## Deferred — the real agent runtime (Phase 10)
 
-Planned but **not yet built** (`roadmap.md` Phase 6; dashed in the graph):
+Planned but **not yet built** (`roadmap.md` Phase 10; dashed in the graph):
 
 - `agent_loop.py` — iterate: build compact context + data-access manifest →
   select tools allowed by source controls + policy → resolve a
@@ -174,7 +174,7 @@ Planned but **not yet built** (`roadmap.md` Phase 6; dashed in the graph):
 This view drops all HTTP/UI/persistence plumbing and shows only the agent's
 own decision loop. **Almost none of this is live yet** — the only implemented
 path is the "placeholder" branch (a single plain completion dressed with fake
-trace events). Everything inside the dashed box is the Phase 6 target.
+trace events). Everything inside the dashed box is the Phase 10 target.
 
 ```mermaid
 flowchart TD
@@ -192,9 +192,9 @@ flowchart TD
         preload --> planstub
     end
 
-    start -.Phase 6.-> loop
+    start -.Phase 10.-> loop
 
-    subgraph loop["PLANNED — real reason/act loop (Phase 6)"]
+    subgraph loop["PLANNED — real reason/act loop (Phase 10)"]
         direction TB
         ctx["build COMPACT context\n(IDs, enabled controls,\nprovider summary — not full data)"]
         manifest["build data-access manifest\n(list_data_surfaces)"]

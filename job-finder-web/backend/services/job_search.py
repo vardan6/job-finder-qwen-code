@@ -97,6 +97,8 @@ class JobSearchService:
         self.db = db
         self.deduplicator = get_deduplicator()
         self.analysis_service = get_job_analysis_service()
+        self._platform_skip_reasons: Dict[str, str] = {}
+        self._platform_error_reasons: Dict[str, str] = {}
     
     async def search(
         self,
@@ -176,26 +178,17 @@ class JobSearchService:
                 record_search_result(platform, len(jobs))
 
                 if len(jobs) == 0:
-                    if platform == "linkedin":
-                        account = self.db.query(PlatformAccount).filter(
-                            PlatformAccount.candidate_id == candidate.id,
-                            PlatformAccount.platform == "linkedin",
-                        ).first()
-                        try:
-                            settings = json.loads(account.rate_limit_settings) if account and account.rate_limit_settings else {}
-                        except (TypeError, ValueError):
-                            settings = {}
-                        allowed, reason = get_rate_limiter().check_rate_limit(
-                            f"linkedin:{candidate.id}", settings,
-                        )
-                    else:
+                    skip_reason = self._platform_skip_reasons.get(platform)
+                    if skip_reason is None and platform != "linkedin":
                         rate_status = get_rate_limiter().get_status(platform)
-                        allowed, reason = rate_status.get("allowed", True), rate_status.get("reason", "blocked")
-                    if not allowed:
-                        warnings_msg = (
-                            f"{platform.capitalize()}: skipped by rate limiter - {reason}."
-                        )
-                        errors.append(warnings_msg)
+                        if not rate_status.get("allowed", True):
+                            skip_reason = rate_status.get("reason", "blocked")
+                    error_reason = self._platform_error_reasons.get(platform)
+                    if skip_reason:
+                        errors.append(f"{platform.capitalize()}: skipped by rate limiter - {skip_reason}.")
+                        continue
+                    if error_reason:
+                        errors.append(f"{platform.capitalize()}: search failed - {error_reason}.")
                         continue
                     warnings_msg = (
                         f"{platform.capitalize()}: 0 jobs returned. "
@@ -351,6 +344,15 @@ class JobSearchService:
         except (TypeError, ValueError):
             settings = normalize_linkedin_settings({})
 
+        if account and account.status in ("expired", "captcha_required"):
+            from backend.routes.platform_accounts import _account_guidance
+            reason = _account_guidance(account)["label"]
+            if progress_callback:
+                progress_callback(
+                    f"LinkedIn: Skipped — {reason}. Re-login on the account page before searching."
+                )
+            return []
+
         async with LinkedInScraper(headless=config.headless) as scraper:
             jobs = await scraper.search_jobs(
                 query=config.query,
@@ -363,10 +365,17 @@ class JobSearchService:
                 manual_profile_path=str(cookies_path.parent.parent / "browser-login-profiles" / f"{candidate.uuid}_linkedin"),
                 progress_callback=progress_callback,
             )
+            if scraper.rate_limited_reason:
+                self._platform_skip_reasons["linkedin"] = scraper.rate_limited_reason
+            elif scraper.last_error:
+                self._platform_error_reasons["linkedin"] = scraper.last_error
             if scraper.manual_challenge_handoff and account:
                 account.status = "captcha_required"
                 self.db.commit()
-            return [job.to_dict() for job in jobs]
+            elif scraper.login_wall_detected and account:
+                account.status = "expired"
+                self.db.commit()
+            return [{**job.to_dict(), "platform": "linkedin"} for job in jobs]
 
     async def _search_glassdoor(
         self,
@@ -386,7 +395,7 @@ class JobSearchService:
                 cookies_path=str(cookies_path),
                 progress_callback=progress_callback,
             )
-            return [job.to_dict() for job in jobs]
+            return [{**job.to_dict(), "platform": "glassdoor"} for job in jobs]
 
     async def _search_we_work_remotely(
         self,
@@ -405,8 +414,8 @@ class JobSearchService:
             max_jobs=config.max_jobs_per_platform,
             progress_callback=progress_callback,
         )
-        return [job.to_dict() for job in jobs]
-    
+        return [{**job.to_dict(), "platform": WeWorkRemotelyScraper.platform} for job in jobs]
+
     def _deduplicate_jobs(self, jobs: List[dict], candidate_id: int) -> List[dict]:
         """Remove duplicate jobs"""
         # Get existing jobs for this candidate

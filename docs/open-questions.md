@@ -16,7 +16,7 @@ None — all questions resolved as of 2026-07-19.
 
 - **Q8 multi-user timing (2026-07-19)**: groundwork-now approved — 9B slice:
   `User` model + `user_id` on `Candidate` + seeded auto-login dev user; full
-  auth/accounts remain at the end (Phase 10).
+  auth/accounts remain at the end (Phase 12).
 - **P1–P5 extensions (2026-07-19)**: all approved → requirements R3 (P5),
   R7 (P4), R11 (P1–P3); roadmap slices 9E (P5), 9D (P4), 9F (P1–P3).
 - **Q7 legacy scripts (2026-07-19)**: archived to `history/legacy-scripts/`
@@ -31,5 +31,6 @@ None — all questions resolved as of 2026-07-19.
 - **Q3 scrapers live? (2026-07-19)**: yes — R3 makes reliability a
   requirement; stabilize, don't drop.
 - **Q4 inline-JS extraction (2026-07-19)**: approved — folded into 9A/9C.
-- **Q5 remote-rover parity (2026-07-19)**: no longer a driving goal —
-  Phase 7 deferred; overlapping items fold into R2 work.
+- **Q5 remote-rover parity (2026-07-19; updated 2026-07-21)**: no longer a
+  driving goal. Its independently useful chat/settings UX items are now
+  Phase-9.5 polish slices; this does not revive parity as a separate goal.

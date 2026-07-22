@@ -53,11 +53,29 @@ def _normalize_api_base(provider_name: str, api_base: str | None) -> str | None:
     return api_base.strip() or None
 
 
+def _apply_json_mode(kwargs: dict, model_name: str) -> None:
+    """Request JSON-mode output when the resolved model supports it.
+
+    Not every provider/model accepts `response_format` (LiteLLM raises for
+    unsupported ones), so this probes LiteLLM's own capability table first
+    and silently leaves prompt-only JSON extraction as the fallback when the
+    check is unsupported or fails for any reason.
+    """
+    try:
+        import litellm
+        supported_params = litellm.get_supported_openai_params(model=model_name) or []
+        if "response_format" in supported_params:
+            kwargs["response_format"] = {"type": "json_object"}
+    except Exception:
+        pass
+
+
 def _build_completion_kwargs(
     provider: LLMProvider,
     model: LLMModel,
     messages: list,
     temperature: float = 0.7,
+    json_mode: bool = False,
 ) -> dict:
     """Build kwargs dict for litellm.completion from provider + model."""
     provider_name = str(getattr(provider, "name", "") or "").strip().lower()
@@ -84,6 +102,18 @@ def _build_completion_kwargs(
         "messages": messages,
         "temperature": temperature,
     }
+
+    if provider_name == "ollama":
+        # Ollama unloads an idle model after its default 5-minute keep_alive,
+        # causing a 20-40s reload on the next call. Keep it resident.
+        kwargs["keep_alive"] = -1
+
+    max_output_tokens = getattr(model, "max_output_tokens", None) or getattr(provider, "max_output_tokens", None)
+    if max_output_tokens:
+        kwargs["max_tokens"] = int(max_output_tokens)
+
+    if json_mode:
+        _apply_json_mode(kwargs, model_name)
 
     normalized_api_base = _normalize_api_base(provider.name, api_base)
     if normalized_api_base:
@@ -170,6 +200,7 @@ async def send_message(
     temperature: float = 0.7,
     db: Optional[Session] = None,
     routing_purpose: Optional[str] = None,
+    json_mode: bool = False,
 ) -> Optional[str]:
     """
     Send a message using an explicitly requested model or a configured routing purpose.
@@ -185,6 +216,8 @@ async def send_message(
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": temperature,
             }
+            if json_mode:
+                _apply_json_mode(kwargs, model_override)
         else:
             if not db:
                 return None
@@ -198,6 +231,7 @@ async def send_message(
                 provider, model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
+                json_mode=json_mode,
             )
 
         return await _async_completion(LLM_TIMEOUT_SECONDS, **kwargs)
@@ -274,6 +308,7 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
                 provider,
                 model,
                 messages=[{"role": "user", "content": prompt}],
+                json_mode=True,
             )
             result_text = await _async_completion(LLM_TIMEOUT_SECONDS, **kwargs)
 
@@ -304,18 +339,31 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
 # ---------------------------------------------------------------------------
 
 def extract_json_from_response(response: str) -> Any:
-    """Extract JSON from LLM response (handles markdown code blocks)"""
-    json_match = re.search(r'```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```', response, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(1)
-    else:
-        json_match = re.search(r'(\{.*?\}|\[.*?\])', response, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            json_str = response
+    """Extract one complete JSON value from an LLM response.
 
+    JSON-mode providers commonly return nested objects.  Regex extraction is
+    unsafe for those responses because it stops at the first closing brace.
+    Decode complete JSON values instead, while still accepting explanatory
+    text and fenced JSON from providers without native JSON mode.
+    """
+    text = response.strip()
     try:
-        return json.loads(json_str)
+        return json.loads(text)
     except json.JSONDecodeError:
-        return None
+        pass
+
+    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"[\[{]", text):
+        try:
+            value, _ = decoder.raw_decode(text[match.start():])
+            return value
+        except json.JSONDecodeError:
+            continue
+    return None

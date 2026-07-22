@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 from backend.database import get_db
-from backend.models.candidate import Candidate
 from backend.models.document import CandidateDocument
+from backend.models.user import User
+from backend.ownership import get_current_user, get_owned_candidate
 from backend.services.job_title_parser import (
     parse_all_candidate_documents,
     parse_selected_documents,
     save_job_titles_to_candidate,
+    sync_reviewed_job_titles,
     get_candidate_job_titles_with_sources
 )
 
@@ -28,11 +30,13 @@ templates = Jinja2Templates(directory=str(templates_path))
 
 
 @router.get("/{candidate_id}/documents")
-async def get_candidate_documents(candidate_id: int, db: Session = Depends(get_db)):
+async def get_candidate_documents(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get list of parseable documents with metadata"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    get_owned_candidate(db, current_user, candidate_id)
 
     documents = db.query(CandidateDocument).filter(
         CandidateDocument.candidate_id == candidate_id,
@@ -58,12 +62,11 @@ async def get_candidate_documents(candidate_id: int, db: Session = Depends(get_d
 async def parse_job_titles(
     candidate_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Parse selected or all documents (native async)"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    get_owned_candidate(db, current_user, candidate_id)
 
     # Parse request body
     try:
@@ -98,16 +101,15 @@ async def parse_job_titles(
 async def save_job_titles(
     candidate_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Save job titles to candidate profile.
     Expects JSON body with job_titles array and optional clear_existing flag.
     """
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+    get_owned_candidate(db, current_user, candidate_id)
+
     # Parse JSON body
     try:
         body = await request.json()
@@ -115,17 +117,16 @@ async def save_job_titles(
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     
     job_titles_data = body.get("job_titles", [])
-    clear_existing = body.get("clear_existing", False)
     
-    if not job_titles_data:
+    source_document_ids = body.get("source_document_ids", [])
+    if not job_titles_data and not source_document_ids:
         return JSONResponse(
             status_code=400,
             content={"success": False, "message": "No job titles provided"}
         )
     
-    # Save to database
-    success, count, error = save_job_titles_to_candidate(
-        db, candidate_id, job_titles_data, clear_existing
+    success, outcome, error = sync_reviewed_job_titles(
+        db, candidate_id, job_titles_data, source_document_ids,
     )
     
     if not success:
@@ -136,21 +137,24 @@ async def save_job_titles(
     
     return {
         "success": True,
-        "message": f"Saved {count} job titles to candidate profile",
-        "count": count
+        "message": (
+            f"Applied title review: {outcome['created']} added, "
+            f"{outcome['updated']} updated, {outcome['removed']} removed"
+        ),
+        "count": outcome["created"] + outcome["updated"] + outcome["removed"],
+        "outcome": outcome,
     }
 
 
 @router.get("/{candidate_id}/job-titles")
 async def get_job_titles(
     candidate_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get candidate's current job titles with source information"""
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+    get_owned_candidate(db, current_user, candidate_id)
+
     job_titles = get_candidate_job_titles_with_sources(db, candidate_id)
     
     return {
@@ -163,16 +167,14 @@ async def get_job_titles(
 async def add_job_title(
     candidate_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Add a single job title manually"""
     from backend.models.supporting import CandidateJobTitle
-    from sqlalchemy import func
-    
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
+    get_owned_candidate(db, current_user, candidate_id)
+
     try:
         body = await request.json()
     except (ValueError, KeyError):
@@ -203,7 +205,6 @@ async def add_job_title(
         title=title,
         priority=priority,
         description=description,
-        created_at=func.now()
     )
     db.add(job_title)
     db.commit()
@@ -220,7 +221,8 @@ async def add_job_title(
 async def bulk_save_job_titles(
     candidate_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Bulk save all job titles for a candidate.
@@ -229,11 +231,9 @@ async def bulk_save_job_titles(
     from backend.models.supporting import CandidateJobTitle
     from backend.services.provenance import record_title_extraction
     from sqlalchemy import func
-    
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
+    get_owned_candidate(db, current_user, candidate_id)
+
     try:
         body = await request.json()
     except (ValueError, KeyError):
@@ -289,15 +289,14 @@ async def bulk_save_job_titles(
 async def delete_job_title(
     candidate_id: int,
     jt_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a job title"""
     from backend.models.supporting import CandidateJobTitle
-    
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
+    get_owned_candidate(db, current_user, candidate_id)
+
     job_title = db.query(CandidateJobTitle).filter(
         CandidateJobTitle.id == jt_id,
         CandidateJobTitle.candidate_id == candidate_id
@@ -317,15 +316,14 @@ async def update_job_title(
     candidate_id: int,
     jt_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Update a job title"""
     from backend.models.supporting import CandidateJobTitle
-    
-    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    
+
+    get_owned_candidate(db, current_user, candidate_id)
+
     job_title = db.query(CandidateJobTitle).filter(
         CandidateJobTitle.id == jt_id,
         CandidateJobTitle.candidate_id == candidate_id
@@ -359,9 +357,17 @@ async def update_job_title(
 
 
 @router.post("/{candidate_id}/job-titles/{jt_id}/reset-to-extracted")
-async def reset_job_title_to_extracted(candidate_id: int, jt_id: int, db: Session = Depends(get_db)):
+async def reset_job_title_to_extracted(
+    candidate_id: int,
+    jt_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Restore a curated title without removing its per-file extraction facts."""
     from backend.models.supporting import CandidateJobTitle
+
+    get_owned_candidate(db, current_user, candidate_id)
+
     item = db.query(CandidateJobTitle).filter(
         CandidateJobTitle.id == jt_id, CandidateJobTitle.candidate_id == candidate_id,
     ).first()

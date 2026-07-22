@@ -219,6 +219,10 @@
                             <input id="provider-context-window" type="number" min="0" step="1" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-6">
+                            <label for="provider-max-output-tokens" class="form-label small">Max Output Tokens</label>
+                            <input id="provider-max-output-tokens" type="number" min="0" step="1" class="form-control form-control-sm" placeholder="Leave blank for provider default">
+                        </div>
+                        <div class="col-md-6">
                             <label for="provider-capabilities" class="form-label small">Capabilities</label>
                             <input id="provider-capabilities" type="text" class="form-control form-control-sm" placeholder="chat, tools">
                         </div>
@@ -231,6 +235,7 @@
                         <div class="col-12 d-flex gap-2 pt-2">
                             <button type="submit" class="btn btn-primary btn-sm">Save Provider</button>
                             <button id="new-provider" type="button" class="btn btn-outline-secondary btn-sm">New</button>
+                            <button id="cancel-edit-provider" type="button" class="btn btn-outline-secondary btn-sm">Cancel</button>
                             <button id="delete-provider" type="button" class="btn btn-outline-danger btn-sm">Delete</button>
                         </div>
                     </form>
@@ -250,6 +255,9 @@
                 <div class="d-flex gap-2">
                     <button id="add-example-providers" type="button" class="btn btn-light btn-sm">Add Missing Example Providers</button>
                     <button id="save-all-settings" type="button" class="btn btn-warning btn-sm">Save Providers & Routing</button>
+                    <button id="export-settings" type="button" class="btn btn-outline-secondary btn-sm">Download Settings</button>
+                    <button id="import-settings" type="button" class="btn btn-outline-secondary btn-sm">Import Settings</button>
+                    <input id="import-settings-file" type="file" accept="application/json" class="d-none">
                 </div>
             </div>
             <div class="card-body p-0 pt-2">
@@ -475,6 +483,7 @@ const els = {
     baseUrl: document.getElementById('provider-base-url'),
     modelId: document.getElementById('provider-model-id'),
     contextWindow: document.getElementById('provider-context-window'),
+    maxOutputTokens: document.getElementById('provider-max-output-tokens'),
     capabilities: document.getElementById('provider-capabilities'),
     enabled: document.getElementById('provider-enabled'),
     deleteProvider: document.getElementById('delete-provider'),
@@ -573,6 +582,7 @@ function normalizeProviderDraft(provider) {
         enabled: provider.enabled !== false,
         capabilities,
         context_window: provider.context_window ? Number(provider.context_window) : null,
+        max_output_tokens: provider.max_output_tokens ? Number(provider.max_output_tokens) : null,
         has_stored_secret: Boolean(provider.has_stored_secret),
     };
 }
@@ -873,6 +883,7 @@ function fillForm(provider) {
         enabled: true,
         capabilities: ['chat'],
         context_window: null,
+        max_output_tokens: null,
         has_stored_secret: false,
     };
 
@@ -886,6 +897,7 @@ function fillForm(provider) {
     els.baseUrl.value = item.base_url || '';
     els.modelId.value = item.model_id || '';
     els.contextWindow.value = item.context_window || '';
+    els.maxOutputTokens.value = item.max_output_tokens || '';
     els.capabilities.value = Array.isArray(item.capabilities) ? item.capabilities.join(', ') : '';
     els.enabled.checked = item.enabled !== false;
     els.editorPill.textContent = item.id ? `Editing ${item.id}` : 'New provider';
@@ -902,6 +914,7 @@ function applyTemplateToForm(templateKey) {
     els.baseUrl.value = template.base_url;
     els.modelId.value = template.model_id;
     els.contextWindow.value = template.context_window || '';
+    els.maxOutputTokens.value = template.max_output_tokens || '';
     els.capabilities.value = template.capabilities.join(', ');
     els.enabled.checked = template.enabled !== false;
     updateSecretInputs();
@@ -921,6 +934,7 @@ function upsertProviderDraft() {
         enabled: els.enabled.checked,
         capabilities: els.capabilities.value,
         context_window: els.contextWindow.value,
+        max_output_tokens: els.maxOutputTokens.value,
         has_stored_secret: existing ? existing.has_stored_secret : false,
     });
 
@@ -1003,6 +1017,7 @@ async function saveAllSettings(options = {}) {
             enabled: provider.enabled,
             capabilities: provider.capabilities,
             context_window: provider.context_window,
+            max_output_tokens: provider.max_output_tokens,
         })),
         routing: state.routing,
     };
@@ -1066,6 +1081,18 @@ document.getElementById('new-provider').addEventListener('click', () => {
     applyTemplateToForm(els.template.value);
 });
 
+document.getElementById('cancel-edit-provider').addEventListener('click', () => {
+    hideAlert();
+    const provider = currentProvider();
+    if (provider) {
+        fillForm(provider);
+        showAlert('info', `Discarded unsaved changes to ${provider.display_name || provider.id}.`);
+    } else {
+        fillForm();
+        showAlert('info', 'Discarded the new provider draft.');
+    }
+});
+
 els.deleteProvider.addEventListener('click', async () => {
     const provider = currentProvider();
     if (!provider) return;
@@ -1090,6 +1117,54 @@ document.getElementById('add-example-providers').addEventListener('click', () =>
     showAlert('info', 'Added any missing example provider templates to the local draft.');
 });
 
+document.getElementById('export-settings').addEventListener('click', async () => {
+    try {
+        hideAlert();
+        const response = await fetch('/api/ai-settings/export');
+        if (!response.ok) {
+            throw new Error('Failed to export settings.');
+        }
+        const document_ = await response.json();
+        const blob = new Blob([JSON.stringify(document_, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'job-finder-ai-settings.json';
+        link.click();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        showAlert('danger', error.message || 'Failed to export settings.');
+    }
+});
+
+document.getElementById('import-settings').addEventListener('click', () => {
+    document.getElementById('import-settings-file').click();
+});
+
+document.getElementById('import-settings-file').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    hideAlert();
+    try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const response = await fetch('/api/ai-settings/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(body.detail || 'Import rejected: settings were not changed.');
+        }
+        await loadSettings();
+        showAlert('success', 'Settings imported and persisted.');
+    } catch (error) {
+        showAlert('danger', error.message || 'Could not import settings file (current settings were not changed).');
+    }
+});
+
 document.getElementById('save-all-settings').addEventListener('click', async () => {
     try {
         hideAlert();
@@ -1098,7 +1173,7 @@ document.getElementById('save-all-settings').addEventListener('click', async () 
             const provider = upsertProviderDraft();
             await saveStoredSecretIfNeeded(provider, pendingSecretValue);
         }
-        await saveAllSettings();
+        await saveAllSettings({ successMessage: 'Providers and routing saved and persisted. Reload to verify.' });
     } catch (error) {
         showAlert('danger', error.message || 'Failed to save settings.');
     }

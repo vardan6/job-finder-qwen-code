@@ -31,6 +31,23 @@ var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
     return new bootstrap.Popover(popoverTriggerEl);
 });
 
+// Theme toggle (dark/light workspace preference, persisted in localStorage)
+var themeToggleBtn = document.getElementById('themeToggleBtn');
+if (themeToggleBtn) {
+    var applyThemeIcon = function (theme) {
+        var icon = themeToggleBtn.querySelector('i');
+        icon.className = theme === 'dark' ? 'bi bi-sun' : 'bi bi-moon-stars';
+    };
+    applyThemeIcon(document.documentElement.getAttribute('data-bs-theme') || 'light');
+    themeToggleBtn.addEventListener('click', function () {
+        var current = document.documentElement.getAttribute('data-bs-theme') || 'light';
+        var next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-bs-theme', next);
+        window.localStorage.setItem('jobfinder-theme', next);
+        applyThemeIcon(next);
+    });
+}
+
 // Confirm delete actions
 document.querySelectorAll('[data-confirm]').forEach(function(element) {
     element.addEventListener('click', function(e) {

@@ -26,7 +26,7 @@ def ensure_development_user(db: Session) -> User:
 
 
 def get_current_user(db: Session = Depends(get_db)) -> User:
-    """Auto-login dependency until Phase 10 session authentication lands."""
+    """Auto-login dependency until Phase 12 session authentication lands."""
     return ensure_development_user(db)
 
 

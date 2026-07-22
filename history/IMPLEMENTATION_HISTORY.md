@@ -2,7 +2,7 @@
 
 **Project:** Job Finder Web App  
 **Developer:** Vardan Arakelyan  
-**Repository:** https://github.com/vardan6/job-finder-qwen-code  
+**Repository:** https://github.com/vardan6/job-finder-app  
 **Status:** Phase 2 Complete ✅ | Phase 3 Next ⏳
 
 ---

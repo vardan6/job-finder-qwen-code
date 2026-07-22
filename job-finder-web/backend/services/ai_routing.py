@@ -20,6 +20,7 @@ class RuntimeProvider:
     auth_mode: str
     secret_ref: str
     api_key: str | None = None
+    max_output_tokens: int | None = None
 
 
 @dataclass(slots=True)
@@ -106,6 +107,11 @@ def _selection_from_provider_cfg(
     if require_credentials and _credential_error(provider_cfg):
         return None
 
+    try:
+        max_output_tokens = int(provider_cfg.get("max_output_tokens") or 0) or None
+    except (TypeError, ValueError):
+        max_output_tokens = None
+
     provider = RuntimeProvider(
         id=provider_id,
         name=provider_type,
@@ -114,6 +120,7 @@ def _selection_from_provider_cfg(
         auth_mode=str(provider_cfg.get("auth_mode", "")).strip().lower() or "none",
         secret_ref=str(provider_cfg.get("secret_ref", "")).strip(),
         api_key=api_key,
+        max_output_tokens=max_output_tokens,
     )
     model = RuntimeModel(
         id=provider_id,

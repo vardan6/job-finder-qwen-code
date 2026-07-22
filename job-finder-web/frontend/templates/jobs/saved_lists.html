@@ -18,10 +18,15 @@
     {% if runs %}
     <div class="list-group">
         {% for run in runs %}
-        <a class="list-group-item list-group-item-action" href="/jobs/lists/{{ run.id }}">
-            <div class="d-flex justify-content-between"><strong>{{ run.name }}</strong><span class="text-muted small">{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else 'Unknown date' }}</span></div>
-            <span class="small text-muted">{{ run.candidate.name }} · {{ run.query }} · {{ run.platform_names }} · {{ run.jobs|length }} result(s)</span>
-        </a>
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <a class="text-decoration-none flex-grow-1" href="/jobs/lists/{{ run.id }}">
+                    <div class="d-flex justify-content-between"><strong>{{ run.name }}</strong><span class="text-muted small">{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else 'Unknown date' }}</span></div>
+                    <span class="small text-muted">{{ run.candidate.name }} · {{ run.query }} · {{ run.platform_names }} · {{ run.jobs|length }} result(s){% if run.new_count %} · <span class="text-success">{{ run.new_count }} new</span>{% endif %}</span>
+                </a>
+                <form method="post" action="/jobs/lists/{{ run.id }}/rerun" class="ms-3"><button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Re-run</button></form>
+            </div>
+        </div>
         {% endfor %}
     </div>
     {% else %}

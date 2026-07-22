@@ -26,6 +26,7 @@ DEFAULT_LLM_PROVIDERS: list[dict[str, Any]] = [
         "enabled": True,
         "capabilities": ["chat"],
         "context_window": None,
+        "max_output_tokens": None,
     }
 ]
 

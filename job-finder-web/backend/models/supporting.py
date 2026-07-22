@@ -74,5 +74,6 @@ class CandidatePreferences(Base):
     min_ai_remote_score = Column(Integer, default=70)
     remote_only = Column(Boolean, default=False)
     experience_levels = Column(Text, default='["Senior", "Staff", "Principal", "Lead"]')  # JSON
+    last_search_location = Column(String, nullable=True)
     
     candidate = relationship("Candidate", back_populates="preferences")

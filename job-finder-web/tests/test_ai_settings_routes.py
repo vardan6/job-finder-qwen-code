@@ -279,3 +279,72 @@ def test_put_llm_settings_returns_stored_secret_status(tmp_path, monkeypatch) ->
     assert response.status_code == 200
     body = response.json()
     assert body["providers"][0]["has_stored_secret"] is True
+
+
+def test_export_ai_settings_returns_portable_document(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("AI_SETTINGS_PATH", str(settings_path))
+
+    client = create_client(tmp_path)
+    response = client.get("/api/ai-settings/export")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ai_settings"] == {"mutation_policy": "approve_writes"}
+    assert body["llm_providers"][0]["id"] == "provider-default-ollama"
+    assert "general_chat" in body["model_routing"]
+
+
+def test_import_ai_settings_persists_valid_document(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("AI_SETTINGS_PATH", str(settings_path))
+
+    client = create_client(tmp_path)
+    document = {
+        "ai_settings": {"mutation_policy": "read_only"},
+        "llm_providers": [
+            {
+                "id": "provider-a",
+                "display_name": "Provider A",
+                "provider_type": "ollama",
+                "auth_mode": "none",
+                "secret_ref": "",
+                "base_url": "http://localhost:11434",
+                "model_id": "llama3:latest",
+                "enabled": True,
+                "capabilities": ["chat"],
+                "context_window": None,
+            }
+        ],
+        "model_routing": {},
+    }
+
+    response = client.post("/api/ai-settings/import", json=document)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["ai_settings"] == {"mutation_policy": "read_only"}
+    assert body["providers"][0]["id"] == "provider-a"
+
+    reload_response = client.get("/api/llm-settings")
+    assert reload_response.json()["providers"][0]["id"] == "provider-a"
+
+
+def test_import_ai_settings_rejects_invalid_document_without_changing_state(tmp_path, monkeypatch) -> None:
+    settings_path = tmp_path / "ai-settings.json"
+    monkeypatch.setenv("AI_SETTINGS_PATH", str(settings_path))
+
+    client = create_client(tmp_path)
+    before = client.get("/api/llm-settings").json()
+
+    response = client.post(
+        "/api/ai-settings/import",
+        json={"llm_providers": [{"id": "provider-a"}], "model_routing": {}},
+    )
+
+    assert response.status_code == 400
+    assert "missing required field" in response.json()["detail"]
+
+    after = client.get("/api/llm-settings").json()
+    assert after == before

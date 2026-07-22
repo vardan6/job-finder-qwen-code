@@ -430,7 +430,7 @@ Frontend reloads page
 
 ### Start Server
 ```bash
-cd /mnt/c/Users/vardana/Documents/Proj/job-finder-qwen-code/job-finder-web
+cd /mnt/c/Users/vardana/Documents/Proj/job-finder-app/job-finder-web
 ./run.sh
 ```
 

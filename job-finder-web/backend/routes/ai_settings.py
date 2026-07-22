@@ -105,3 +105,63 @@ async def save_llm_settings(payload: dict[str, Any]) -> JSONResponse:
             "routing": refreshed.model_routing,
         }
     )
+
+
+@router.get("/api/ai-settings/export")
+async def export_ai_settings() -> dict[str, Any]:
+    """Export the full portable settings document (providers reference secrets
+    by name only; actual secret values live in SecretStore and are never
+    exported)."""
+    config = load_ai_config()
+    return {
+        "ai_settings": config.ai_settings,
+        "llm_providers": config.llm_providers,
+        "model_routing": config.model_routing,
+    }
+
+
+@router.post("/api/ai-settings/import")
+async def import_ai_settings(payload: dict[str, Any]) -> JSONResponse:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Settings document must be a JSON object")
+
+    ai_settings = payload.get("ai_settings", {})
+    providers_payload = payload.get("llm_providers", [])
+    routing_payload = payload.get("model_routing", {})
+
+    if not isinstance(ai_settings, dict):
+        raise HTTPException(status_code=400, detail="ai_settings must be an object")
+    if not isinstance(providers_payload, list):
+        raise HTTPException(status_code=400, detail="llm_providers must be a list")
+    if not isinstance(routing_payload, dict):
+        raise HTTPException(status_code=400, detail="model_routing must be an object")
+
+    for index, provider in enumerate(providers_payload):
+        if not isinstance(provider, dict):
+            raise HTTPException(status_code=400, detail=f"llm_providers[{index}] must be an object")
+        missing = [
+            field for field in ("id", "display_name", "provider_type", "model_id")
+            if not str(provider.get(field, "")).strip()
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"llm_providers[{index}] is missing required field(s): {', '.join(missing)}",
+            )
+
+    # Only mutate state after every check above has passed, so an invalid
+    # document never partially overwrites the current settings.
+    config = load_ai_config()
+    config.raw["ai_settings"] = ai_settings
+    config.raw["llm_providers"] = providers_payload
+    config.raw["model_routing"] = routing_payload
+    save_ai_config(config)
+    refreshed = load_ai_config(config.settings_path)
+    return JSONResponse(
+        {
+            "ok": True,
+            "ai_settings": refreshed.ai_settings,
+            "providers": refreshed.llm_providers,
+            "routing": refreshed.model_routing,
+        }
+    )

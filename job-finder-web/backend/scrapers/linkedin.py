@@ -19,6 +19,7 @@ from typing import Callable, List, Optional
 
 from playwright.async_api import Page
 
+from backend.config import DATA_DIR
 from backend.services.browser_manager import get_browser_pool
 from backend.services.rate_limiter import get_rate_limiter
 from backend.services.search_lock import get_search_lock
@@ -59,6 +60,14 @@ class LinkedInJob:
 # LinkedIn search URL templates
 LINKEDIN_SEARCH_URL = "https://www.linkedin.com/jobs/search"
 
+# Job card selector for the authenticated jobs-search DOM (LinkedIn's own
+# structural classes; the visual/utility classes on these elements are
+# randomized per-build and unusable as selectors).
+JOB_CARD_SELECTOR = "div.job-card-container[data-job-id]"
+POSTED_DATE_RE = re.compile(
+    r"\d+\s+(?:minute|hour|day|week|month)s?\s+ago", re.IGNORECASE
+)
+
 
 class LinkedInScraper:
     """Scraper for LinkedIn Jobs"""
@@ -69,6 +78,9 @@ class LinkedInScraper:
         self.deduplicator = get_deduplicator()
         self.browser_pool = None
         self.manual_challenge_handoff = False
+        self.login_wall_detected = False
+        self.rate_limited_reason: Optional[str] = None
+        self.last_error: Optional[str] = None
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -122,6 +134,7 @@ class LinkedInScraper:
                 allowed, reason = self.rate_limiter.check_rate_limit(rate_limit_scope, rate_limit_settings)
                 if not allowed:
                     logger.warning(f"LinkedIn rate limited: {reason}")
+                    self.rate_limited_reason = reason
                     if progress_callback:
                         progress_callback(f"LinkedIn: Rate limited — {reason}")
                     return []
@@ -151,7 +164,12 @@ class LinkedInScraper:
                 if progress_callback:
                     progress_callback("LinkedIn: Navigating to job search page...")
                 await self._human_delay(2, 4)
-                await page.goto(url, wait_until="networkidle", timeout=60000)
+                # LinkedIn keeps background requests (analytics/beacons) running
+                # indefinitely, so "networkidle" routinely never fires and the
+                # goto call would otherwise hang for the full timeout on every
+                # search. "domcontentloaded" is enough here since _collect_jobs
+                # separately waits for the job-card selector to appear.
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 await self._human_delay(1, 2)
 
                 # Check for login wall
@@ -159,6 +177,7 @@ class LinkedInScraper:
                     logger.warning("LinkedIn login wall detected")
                     if progress_callback:
                         progress_callback("LinkedIn: Login wall detected — session may be expired")
+                    self.login_wall_detected = True
                     await manager.save_cookies("linkedin", cookies_path)
                     return []
 
@@ -196,7 +215,10 @@ class LinkedInScraper:
         
         except Exception as e:
             logger.error(f"LinkedIn search error: {e}")
+            self.last_error = str(e)
             self.rate_limiter.record_failure(rate_limit_scope, str(e))
+            if progress_callback:
+                progress_callback(f"LinkedIn: search failed — {e}")
             # Return empty list instead of re-raising so the orchestrator can continue
         
         finally:
@@ -217,18 +239,19 @@ class LinkedInScraper:
 
         # Wait for job listings to load
         try:
-            await page.wait_for_selector(".job-search-card", timeout=10000)
+            await page.wait_for_selector(JOB_CARD_SELECTOR, timeout=10000)
         except Exception:
             logger.warning("No job listings found on page")
             if progress_callback:
                 progress_callback("LinkedIn: No job listings found on page")
+            await self._dump_debug_snapshot(page, "no_job_cards")
             return jobs
 
         # Scroll through results to load more
         await self._scroll_to_load_more(page)
 
         # Extract job cards
-        job_cards = await page.query_selector_all(".job-search-card")
+        job_cards = await page.query_selector_all(JOB_CARD_SELECTOR)
         logger.info(f"Found {len(job_cards)} job cards")
         if progress_callback:
             progress_callback(f"LinkedIn: Found {len(job_cards)} job cards, extracting details...")
@@ -262,29 +285,41 @@ class LinkedInScraper:
     async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[LinkedInJob]:
         """Extract job information from a job card"""
         try:
-            # Extract title
-            title_el = await card.query_selector(".job-search-card__title")
-            title = (await title_el.inner_text()).strip() if title_el else ""
-            
-            # Extract company
-            company_el = await card.query_selector(".job-search-card__company-name")
-            company = (await company_el.inner_text()).strip() if company_el else ""
-            
-            # Extract location
-            location_el = await card.query_selector(".job-search-card__location")
-            location = (await location_el.inner_text()).strip() if location_el else ""
-            
-            # Extract posted date
-            posted_el = await card.query_selector(".job-search-card__listdate")
-            posted_date = (await posted_el.inner_text()).strip() if posted_el else ""
-            
-            # Extract job URL
-            link_el = await card.query_selector("a")
+            # Extract title + job URL from the card's title link. The link text
+            # is wrapped in nested spans, but its aria-label holds the plain title.
+            link_el = await card.query_selector(
+                "a.job-card-list__title--link, a.job-card-container__link"
+            )
             if not link_el:
                 return None
-            
+
+            title = ((await link_el.get_attribute("aria-label")) or "").strip()
+            if not title:
+                title = (await link_el.inner_text()).strip()
+
             href = await link_el.get_attribute("href")
             job_url = href.split("?")[0] if href else ""
+            # LinkedIn's job-card links are host-relative ("/jobs/view/...");
+            # store an absolute URL so it's directly usable outside the app.
+            if job_url.startswith("/"):
+                job_url = f"https://www.linkedin.com{job_url}"
+
+            # Extract company
+            company_el = await card.query_selector(".artdeco-entity-lockup__subtitle")
+            company = (await company_el.inner_text()).strip() if company_el else ""
+
+            # Extract location (first metadata line under the title)
+            location_el = await card.query_selector(
+                ".job-card-container__metadata-wrapper li"
+            )
+            location = (await location_el.inner_text()).strip() if location_el else ""
+
+            # Posted date isn't a dedicated element in the current DOM; it only
+            # appears as free text (e.g. "3 days ago") mixed in with other
+            # footer badges like "Viewed"/"Easy Apply", so scan the card text.
+            card_text = await card.inner_text()
+            posted_match = POSTED_DATE_RE.search(card_text)
+            posted_date = posted_match.group(0) if posted_match else ""
             
             # Extract platform job ID from URL
             platform_job_id = None
@@ -305,8 +340,8 @@ class LinkedInScraper:
                 
                 # Wait for description
                 try:
-                    await page.wait_for_selector(".show-more-less-html__markup", timeout=5000)
-                    desc_el = await page.query_selector(".show-more-less-html__markup")
+                    await page.wait_for_selector(".jobs-box__html-content", timeout=5000)
+                    desc_el = await page.query_selector(".jobs-box__html-content")
                     if desc_el:
                         description = await desc_el.inner_text()
                         snippet = description[:500] if description else None
@@ -369,7 +404,9 @@ class LinkedInScraper:
                 return True
 
             # If job cards are present, we are definitely not behind a login wall.
-            has_job_cards = await page.query_selector(".job-search-card, .jobs-search__results-list li") is not None
+            has_job_cards = await page.query_selector(
+                f"{JOB_CARD_SELECTOR}, .jobs-search__results-list li"
+            ) is not None
             if has_job_cards:
                 return False
 
@@ -395,14 +432,38 @@ class LinkedInScraper:
             if has_job_cards:
                 return False
 
+            # LinkedIn ships hidden/defensive CAPTCHA scaffolding on ordinary
+            # pages (e.g. a dormant challenge widget preloaded for later use),
+            # so presence in the DOM alone false-positives. Require it to
+            # actually be visible, matching this method's own "visible CAPTCHA
+            # widget" contract.
             has_captcha_widget = await page.query_selector(
-                "iframe[src*='captcha' i], iframe[title*='captcha' i], "
-                ".g-recaptcha, .h-captcha, #captcha-internal, [id*='captcha' i]"
+                "iframe[src*='captcha' i]:visible, iframe[title*='captcha' i]:visible, "
+                ".g-recaptcha:visible, .h-captcha:visible, #captcha-internal:visible, "
+                "[id*='captcha' i]:visible"
             ) is not None
             return has_captcha_widget
         except Exception:
             return False
-    
+
+    async def _dump_debug_snapshot(self, page: Page, label: str):
+        """Save the live page HTML when scraping hits an unexpected state.
+
+        LinkedIn's authenticated job-search DOM has drifted from the
+        `.job-search-card` selectors this scraper targets before, so blind
+        selector guesses risk silently extracting nothing (or the wrong
+        thing) again. A real snapshot gives the next fix concrete markup
+        instead of another guess.
+        """
+        try:
+            debug_dir = DATA_DIR / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            path = debug_dir / f"linkedin_{label}_{datetime.now():%Y%m%d_%H%M%S}.html"
+            path.write_text(await page.content(), encoding="utf-8")
+            logger.info(f"Saved LinkedIn debug snapshot to {path}")
+        except Exception as e:
+            logger.warning(f"Could not save LinkedIn debug snapshot: {e}")
+
     def _human_delay(self, min_sec: float = 1.0, max_sec: float = 3.0):
         """Random delay to mimic human behavior"""
         delay = random.uniform(min_sec, max_sec)

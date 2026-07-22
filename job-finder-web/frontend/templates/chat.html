@@ -349,6 +349,27 @@ const copyTranscriptBtn = document.getElementById('copyTranscriptBtn');
 const STREAM_RECOVERY_KEY = 'aiChatStreamRecoveryState';
 const CHAT_SIDEBAR_WIDTH_KEY = 'jobfinder-chat-sidebar-width';
 const CHAT_SHELL_HEIGHT_KEY = 'jobfinder-chat-shell-height';
+const CHAT_TRACE_BLOCK_OPEN_KEY = 'jobfinder-chat-trace-block-open';
+
+// Traces/diagnostics are ephemeral per-stream (not persisted server-side), so
+// state is keyed by block kind rather than message id — it's the open/closed
+// preference the user wants applied to future blocks of that kind.
+function getTraceBlockOpenState(blockKind) {
+    try {
+        const stored = window.localStorage.getItem(`${CHAT_TRACE_BLOCK_OPEN_KEY}:${blockKind}`);
+        return stored === 'true';
+    } catch (_error) {
+        return false;
+    }
+}
+
+function setTraceBlockOpenState(blockKind, isOpen) {
+    try {
+        window.localStorage.setItem(`${CHAT_TRACE_BLOCK_OPEN_KEY}:${blockKind}`, String(isOpen));
+    } catch (_error) {
+        // localStorage unavailable; expand/collapse simply won't persist.
+    }
+}
 const CHAT_SIDEBAR_MIN = 240;
 const CHAT_SIDEBAR_MAX = 520;
 const CHAT_SHELL_HEIGHT_MIN = 420;
@@ -764,6 +785,10 @@ function updateAuxiliaryBlocks(auxDiv, options = {}) {
     if (traces.length > 0) {
         const traceDetails = document.createElement('details');
         traceDetails.className = 'chat-debug-block';
+        traceDetails.open = getTraceBlockOpenState('trace');
+        traceDetails.addEventListener('toggle', () => {
+            setTraceBlockOpenState('trace', traceDetails.open);
+        });
         const traceSummary = document.createElement('summary');
         traceSummary.textContent = `Tool activity (${traces.length})`;
         traceDetails.appendChild(traceSummary);
@@ -782,6 +807,10 @@ function updateAuxiliaryBlocks(auxDiv, options = {}) {
         const diagnostics = options.diagnostics;
         const diagDetails = document.createElement('details');
         diagDetails.className = 'chat-debug-block';
+        diagDetails.open = getTraceBlockOpenState('diagnostics');
+        diagDetails.addEventListener('toggle', () => {
+            setTraceBlockOpenState('diagnostics', diagDetails.open);
+        });
         const diagSummary = document.createElement('summary');
         diagSummary.textContent = 'Context diagnostics';
         diagDetails.appendChild(diagSummary);
@@ -1586,11 +1615,14 @@ async function copyFullTranscript() {
         return;
     }
 
-    const lines = conversationHistory.map((message) => {
-        const label = message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'You' : 'System';
-        return `${label}:\n${message.content || ''}`;
+    const heading = `# ${activeSessionTitle || 'New chat'}`;
+    const timestamp = `_Exported ${new Date().toLocaleString()}_`;
+    const sections = conversationHistory.map((message) => {
+        const label = message.role === 'assistant' ? 'Assistant' : message.role === 'user' ? 'User' : 'System';
+        const content = (message.content || '').trim();
+        return `## ${label}\n\n${content}`;
     });
-    const transcriptText = lines.join('\n\n');
+    const transcriptText = [heading, timestamp, ...sections].join('\n\n');
     try {
         await navigator.clipboard.writeText(transcriptText);
     } catch (_error) {
@@ -1657,6 +1689,24 @@ function renderSessionList(sessions) {
 
         const actions = document.createElement('div');
         actions.className = 'chat-session-item-actions';
+
+        const rename = document.createElement('button');
+        rename.type = 'button';
+        rename.className = 'chat-session-action-btn';
+        rename.title = 'Rename chat';
+        rename.setAttribute('aria-label', 'Rename chat');
+        rename.innerHTML = '<i class="bi bi-pencil"></i>';
+        rename.addEventListener('click', (event) => {
+            event.stopPropagation();
+            startInlineRename(title, session.title || 'Untitled chat', async (nextValue) => {
+                const savedTitle = await persistSessionTitle(session.id, nextValue);
+                session.title = savedTitle;
+                if (session.id === activeSessionId) {
+                    setActiveSessionTitle(savedTitle);
+                }
+            });
+        });
+        actions.appendChild(rename);
 
         if (session.archived_at) {
             const restore = document.createElement('button');
@@ -1729,32 +1779,72 @@ function setSessionFilter(nextFilter) {
     loadSessionList();
 }
 
-async function renameActiveSession() {
+async function persistSessionTitle(sessionId, nextTitle) {
+    const response = await fetch(`/api/ai/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: nextTitle }),
+    });
+    if (!response.ok) {
+        throw new Error('Could not rename the AI session.');
+    }
+    const data = await response.json();
+    return (data.session && data.session.title) || nextTitle;
+}
+
+function startInlineRename(displayEl, currentValue, onCommit) {
+    if (displayEl.querySelector('input')) {
+        return;
+    }
+    const previousText = displayEl.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'chat-inline-rename-input form-control form-control-sm';
+    input.value = currentValue || '';
+    displayEl.textContent = '';
+    displayEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    let settled = false;
+    const finish = async (commit) => {
+        if (settled) return;
+        settled = true;
+        const nextValue = input.value.trim();
+        if (commit && nextValue && nextValue !== currentValue) {
+            try {
+                await onCommit(nextValue);
+            } catch (error) {
+                showValidation(error.message || 'Could not rename the chat session.');
+                displayEl.textContent = previousText;
+                return;
+            }
+        } else {
+            displayEl.textContent = previousText;
+        }
+    };
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            finish(true);
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            finish(false);
+        }
+    });
+    input.addEventListener('blur', () => finish(true));
+}
+
+function renameActiveSession() {
     if (!activeSessionId) {
         return;
     }
-
-    const nextTitle = prompt('Rename this chat session:', activeSessionTitle || 'New chat');
-    if (!nextTitle || !nextTitle.trim()) {
-        return;
-    }
-
-    try {
-        const response = await fetch(`/api/ai/sessions/${encodeURIComponent(activeSessionId)}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: nextTitle.trim() }),
-        });
-        if (!response.ok) {
-            showValidation('Could not rename the active AI session.');
-            return;
-        }
-        const data = await response.json();
-        setActiveSessionTitle((data.session && data.session.title) || nextTitle.trim());
+    startInlineRename(chatSessionHeading, activeSessionTitle || 'New chat', async (nextValue) => {
+        const savedTitle = await persistSessionTitle(activeSessionId, nextValue);
+        setActiveSessionTitle(savedTitle);
         await loadSessionList();
-    } catch (error) {
-        showValidation('Could not rename the active AI session.');
-    }
+    });
 }
 
 async function archiveActiveSession() {

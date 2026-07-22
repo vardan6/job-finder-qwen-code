@@ -119,6 +119,7 @@ function saveParsedSkills() {
 
     const formData = new FormData();
     formData.append('skills_data', JSON.stringify(skillsToSave));
+    formData.append('parse_mode', parseMode);
 
     // Show loading
     const saveBtn = document.querySelector('#saveParsedSkillsForm .btn-success');

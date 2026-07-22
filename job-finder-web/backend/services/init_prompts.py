@@ -8,46 +8,27 @@ from backend.database import SessionLocal
 from backend.models.document import DocumentParsePrompt
 
 
-JOB_TITLES_PARSER_PROMPT = """You are an expert job title extractor. Your task is to analyze a candidate's document (resume, profile, or job preferences) and extract all preferred job titles.
+JOB_TITLES_PARSER_PROMPT = """You curate a candidate's preferred target job titles from their resume, profile, and job-preferences documents. This is not a work-history extraction task.
 
 ## Input
-The candidate has provided the following markdown document:
-
 {{content}}
 
-## Instructions
-1. Read the document carefully and identify all job titles the candidate is targeting or has experience with
-2. For each job title, determine:
-   - **title**: The exact job title (e.g., "Staff SDET", "Principal EDA Engineer")
-   - **priority**: Assign priority based on emphasis in document:
-     - 1 = High priority (explicitly mentioned as target, emphasized, or current role they want to grow from)
-     - 2 = Medium priority (mentioned as related experience or secondary interest)
-     - 3 = Low priority (tangentially related or historical role)
-   - **description**: Optional brief note about why this title is relevant (1 sentence max)
-
-## Output Format
-Return ONLY a valid JSON array (no markdown, no explanations):
-
-[
-  {
-    "title": "Staff SDET",
-    "priority": 1,
-    "description": "Candidate's current focus with 18 years QA automation experience"
-  },
-  {
-    "title": "Principal EDA Design Automation Engineer",
-    "priority": 1,
-    "description": "Strong EDA background at Silvaco and Synopsys"
-  }
-]
+## Output
+Return ONLY a valid JSON object (no markdown or explanation):
+{
+  "job_titles": [
+    {"title": "Staff SDET", "priority": 1, "description": "Explicit primary target role"}
+  ]
+}
 
 ## Rules
-- Extract 5-15 job titles maximum
-- Prioritize titles that match the candidate's actual experience level (Staff/Principal/Senior)
-- Include variations (SDET, Test Infrastructure, QA Automation)
-- Focus on remote-friendly roles in US/EU/Canada
-- If the document mentions specific preferences (e.g., "fully remote only"), prioritize those titles
-- Return ONLY the JSON array, nothing else
+- Return 1-5 concise, canonical market titles. Prefer fewer; never pad the list.
+- Include an explicit target role, or at most 1-3 strong target inferences from the candidate's most recent and repeated career direction.
+- Do not list every historical role, title variants, generic labels (such as "Engineer" or "Team Lead"), bare seniority words, employer-specific labels, or slash/parenthetical compound titles.
+- Merge near-duplicates into one clearest title. Do not emit variants of the same role unless the document clearly treats them as separate target tracks.
+- Do not invent a target role. Return {"job_titles": []} if no suitable target is supported by the document.
+- Priority 1 is a primary explicit target; priority 2 is a closely related alternative; use priority 3 only for a clearly stated secondary track.
+- Each description is a brief factual rationale, at most one sentence.
 """
 
 PROFILE_PARSER_PROMPT = """You are an expert profile analyzer. Extract structured data from a candidate's profile/resume document.

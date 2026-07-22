@@ -1,7 +1,7 @@
 """User model for ownership boundaries.
 
 Phase 9 uses a single seeded development user.  Real authentication replaces
-that principal source in Phase 10 without changing ownership call sites.
+that principal source in Phase 12 without changing ownership call sites.
 """
 from sqlalchemy import Column, DateTime, Integer, String, func
 from sqlalchemy.orm import relationship

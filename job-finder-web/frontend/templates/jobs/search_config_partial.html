@@ -74,7 +74,7 @@
                                     {% endif %}
                                     <span class="ms-2 fw-bold">{{ platform.label }}</span>
                                     <br>
-                                    <small class="{{ 'text-success' if platform.connected else 'text-warning' if platform.status == 'policy_gated' else 'text-danger' }}">
+                                    <small class="platform-status-text {{ 'text-success' if platform.connected else 'text-warning' if platform.status == 'policy_gated' else 'text-danger' }}">
                                         {% if platform.connected %}
                                             <i class="bi bi-check-circle"></i> Connected
                                         {% elif platform.status == 'policy_gated' %}
@@ -83,14 +83,27 @@
                                             <i class="bi bi-x-circle"></i> Not Connected
                                         {% endif %}
                                     </small>
-                                    {% if platform.detail %}
-                                    <br><small class="text-muted">{{ platform.detail }}</small>
+                                    <br><small class="platform-status-detail text-muted"{% if not platform.detail %} style="display:none;"{% endif %}>{{ platform.detail }}</small>
+                                    {% if platform.platform == 'linkedin' and platform.account_id %}
+                                    <br>
+                                    <button type="button"
+                                            class="btn btn-outline-secondary btn-sm mt-1 platform-check-btn"
+                                            onclick="checkLinkedInConnection({{ platform.account_id }}, this)">
+                                        <i class="bi bi-arrow-repeat"></i> Check LinkedIn connection
+                                    </button>
+                                    {% endif %}
+                                    {% if platform.platform in ('linkedin', 'glassdoor', 'indeed') %}
+                                    <br>
+                                    <a href="/candidates/{{ candidate_id }}/accounts#platform-account-{{ platform.platform }}"
+                                       class="btn btn-outline-primary btn-sm mt-1">
+                                        <i class="bi bi-gear"></i> Platform Settings
+                                    </a>
                                     {% endif %}
                                 </div>
                                 <div class="form-check form-switch">
-                                    <input class="form-check-input" 
-                                           type="checkbox" 
-                                           name="platforms" 
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           name="platforms"
                                            value="{{ platform.platform }}"
                                            id="platform-{{ platform.platform }}"
                                            {% if platform.connected %}checked{% endif %}
@@ -371,6 +384,47 @@
 </div>
 
 <script>
+function checkLinkedInConnection(accountId, btn) {
+    const candidateId = document.getElementById('searchForm').querySelector('[name=candidate_id]').value;
+    const card = btn.closest('.platform-card');
+    const statusEl = card.querySelector('.platform-status-text');
+    const detailEl = card.querySelector('.platform-status-detail');
+    const checkbox = card.querySelector('input[name="platforms"]');
+    const originalLabel = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Checking...';
+
+    fetch(`/candidates/${candidateId}/accounts/${accountId}/test`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                statusEl.className = 'platform-status-text text-success';
+                statusEl.innerHTML = '<i class="bi bi-check-circle"></i> Connected';
+                detailEl.style.display = 'none';
+                detailEl.textContent = '';
+                checkbox.disabled = false;
+                checkbox.checked = true;
+            } else {
+                statusEl.className = 'platform-status-text text-danger';
+                statusEl.innerHTML = '<i class="bi bi-x-circle"></i> Not Connected';
+                detailEl.style.display = '';
+                detailEl.textContent = data.message || 'Connection check failed.';
+                checkbox.checked = false;
+                checkbox.disabled = true;
+            }
+        })
+        .catch(err => {
+            statusEl.className = 'platform-status-text text-danger';
+            detailEl.style.display = '';
+            detailEl.textContent = 'Check failed: ' + err.message;
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalLabel;
+        });
+}
+
 function startSearch() {
     const locationInput = document.getElementById('locationInput');
     if (!locationInput.value.trim()) {

@@ -1,6 +1,6 @@
 # Design — Agent-Mode Provider Capabilities (Q6 resolution)
 
-Decided 2026-07-19 with maintainer. Governs the deferred Phase 6 agent
+Decided 2026-07-19 with maintainer. Governs the deferred Phase 10 agent
 runtime ("Enforce provider tool-calling capability/fallback" slice).
 
 ## Decisions

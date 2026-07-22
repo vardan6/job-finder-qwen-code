@@ -15,12 +15,16 @@ present results in a best-match-first table.
 
 - User registers a candidate profile and uploads **multiple files** into it.
 - Each uploaded file gets its **file type classified** (resume / CV / other).
-- Per file, **preferred titles and skills are extracted** (LLM-driven).
+- Per file, **preferred titles and skills are extracted** (LLM-driven). Preferred
+  titles are a concise, canonical set of target roles—not every historical
+  title—and must not contain generic labels, bare seniority levels, or padded
+  near-duplicates.
 - Extracted titles/skills are **manually editable** after extraction.
 - **Provenance is visible**: UI distinguishes extracted vs user-edited values
   (UX decided in `docs/design/scoring-and-provenance.md`).
 - Acceptance: a user can see, per file, what was extracted, correct it, and
-  the corrected set is what drives job search.
+  the corrected set is what drives job search. Saving a correction or removal
+  must survive reload and must not alter an extraction from an unrelated file.
 
 ## R2. UI/UX consistency (app-wide)
 

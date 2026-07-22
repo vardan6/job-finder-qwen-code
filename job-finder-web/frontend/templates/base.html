@@ -4,7 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Job Finder{% endblock %}</title>
-    
+    <script>
+        (function () {
+            var stored = window.localStorage.getItem('jobfinder-theme');
+            if (stored === 'dark' || stored === 'light') {
+                document.documentElement.setAttribute('data-bs-theme', stored);
+            }
+        })();
+    </script>
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     
@@ -58,9 +66,15 @@
                             <li><a class="dropdown-item {% if current_path.startswith('/settings/llm') %}active{% endif %}" href="/settings/llm">
                                 <i class="bi bi-cpu"></i> LLM Providers
                             </a></li>
+                            <li><a class="dropdown-item {% if current_path.startswith('/settings/tools') %}active{% endif %}" href="/settings/tools">
+                                <i class="bi bi-tools"></i> Tool Registry
+                            </a></li>
                         </ul>
                     </li>
                 </ul>
+                <button id="themeToggleBtn" type="button" class="btn btn-outline-secondary btn-sm ms-lg-auto" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
             </div>
         </div>
     </nav>

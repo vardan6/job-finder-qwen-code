@@ -62,6 +62,7 @@ def migrate_database():
     migrate_profile_visibility()
     migrate_search_runs()
     migrate_platform_account_rate_limits()
+    migrate_search_location()
 
     # Check if llm_models table exists by querying it
     conn = engine.connect()
@@ -332,6 +333,17 @@ def migrate_job_salary(bind=None):
             conn.execute(text("ALTER TABLE jobs ADD COLUMN salary VARCHAR"))
 
 
+def migrate_search_location(bind=None):
+    """Add the last-used search location field to existing candidate preferences."""
+    bind = bind or engine
+    if "candidate_preferences" not in inspect(bind).get_table_names():
+        return
+    columns = {column["name"] for column in inspect(bind).get_columns("candidate_preferences")}
+    if "last_search_location" not in columns:
+        with bind.begin() as conn:
+            conn.execute(text("ALTER TABLE candidate_preferences ADD COLUMN last_search_location VARCHAR"))
+
+
 def migrate_job_curation(bind=None):
     """Add the non-destructive R7 dismissal flag to legacy job tables."""
     bind = bind or engine
@@ -420,21 +432,21 @@ def populate_default_parse_prompts():
         default_prompts = [
             {
                 "name": "job_titles_parser",
-                "description": "Extract job titles from markdown documents",
+                "description": "Curate concise preferred target job titles from markdown documents",
                 "document_type": "job_titles",
-                "prompt_template": """You are a data extraction assistant. Extract all job titles from the following markdown content.
+                "prompt_template": """You curate a candidate's preferred target job titles from their resume, profile, and job-preferences documents. This is not a work-history extraction task.
 
-Return a JSON array of job titles with their priority (1=highest, 3=lowest):
-
+Return ONLY a valid JSON array:
 [
-  {"title": "Job Title Here", "priority": 1, "description": "Optional description if available"},
-  ...
+  {"title": "Staff SDET", "priority": 1, "description": "Explicit primary target role"}
 ]
 
-If priority is not explicitly stated, infer it from context:
-- "Staff", "Principal", "Lead", "Architect" → priority 1
-- "Senior" → priority 2
-- Other → priority 3
+Rules:
+- Return 1-5 concise, canonical market titles. Prefer fewer; never pad the list.
+- Include an explicit target role, or at most 1-3 strong target inferences from the candidate's most recent and repeated career direction.
+- Do not list every historical role, title variants, generic labels (such as "Engineer" or "Team Lead"), bare seniority words, employer-specific labels, or slash/parenthetical compound titles.
+- Merge near-duplicates into one clearest title. Do not invent targets; return [] if none are supported.
+- Priority 1 is a primary explicit target; priority 2 is a closely related alternative; use priority 3 only for a clearly stated secondary track.
 
 Markdown content:
 {{content}}""",
@@ -483,6 +495,14 @@ Markdown content:
                     is_system=prompt_data["is_system"]
                 )
                 db.add(prompt)
+            elif (
+                prompt_data["name"] == "job_titles_parser"
+                and existing.description == "Extract job titles from markdown documents"
+            ):
+                # Upgrade only the shipped legacy default. A user-authored
+                # system prompt remains a deliberate configuration.
+                existing.description = prompt_data["description"]
+                existing.prompt_template = prompt_data["prompt_template"]
 
         db.commit()
     except Exception as e:
@@ -490,4 +510,3 @@ Markdown content:
         print(f"Warning: Could not populate default parse prompts: {e}")
     finally:
         db.close()
-

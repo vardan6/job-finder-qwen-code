@@ -62,6 +62,18 @@ class Job(Base):
     def __repr__(self):
         return f"<Job(id={self.id}, title='{self.title}', company='{self.company}')>"
 
+    @property
+    def external_url(self):
+        """Absolute link to the original posting.
+
+        Older LinkedIn rows stored a host-relative URL (e.g. "/jobs/view/123");
+        the scraper now stores an absolute one, but this normalizes both.
+        """
+        url = self.original_url or ""
+        if url.startswith("/") and self.platform == "linkedin":
+            return f"https://www.linkedin.com{url}"
+        return url
+
 
 class JobApplication(Base):
     """Application tracking for a job"""
