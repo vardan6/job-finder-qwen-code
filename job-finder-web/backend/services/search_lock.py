@@ -209,9 +209,3 @@ def get_search_lock() -> GlobalSearchLock:
     if _search_lock is None:
         _search_lock = GlobalSearchLock()
     return _search_lock
-
-
-def is_search_running() -> bool:
-    """Convenience function to check if a search is currently running"""
-    lock = get_search_lock()
-    return lock.is_locked() or lock.is_locked_by_other()

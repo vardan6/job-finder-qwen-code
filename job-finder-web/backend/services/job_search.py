@@ -28,6 +28,7 @@ from backend.services.job_deduplication import get_deduplicator, check_duplicate
 from backend.services.job_scoring import score_job
 from backend.services.job_llm_refinement import get_job_llm_refinement_service
 from backend.services.rate_limiter import get_rate_limiter
+from backend.services.search_lock import get_search_lock
 from backend.services.scraper_health import record_search_result
 from backend.scrapers.linkedin import LinkedInScraper
 from backend.scrapers.glassdoor import GlassdoorScraper
@@ -108,6 +109,10 @@ class JobSearchService:
         """
         Execute a job search across configured platforms.
 
+        Owns the global search-lock precondition: only one search may run at a
+        time, regardless of caller (route, background task, or test). Callers
+        no longer need to check the lock themselves.
+
         Args:
             config: Search configuration
             progress_callback: Optional callable(message) for real-time progress reporting
@@ -115,8 +120,35 @@ class JobSearchService:
         Returns:
             SearchResult with statistics
         """
+        lock = get_search_lock()
+        if not lock.acquire(blocking=False):
+            msg = "Another job search is already in progress. Please wait."
+            logger.info("Rejected job search for candidate %s: %s", config.candidate_id, msg)
+            if progress_callback:
+                progress_callback(msg)
+            return SearchResult(
+                success=False,
+                total_found=0,
+                total_unique=0,
+                total_duplicates=0,
+                total_analyzed=0,
+                jobs_saved=0,
+                errors=[msg],
+                platform_results={},
+            )
+        try:
+            return await self._execute_search(config, progress_callback)
+        finally:
+            lock.release()
+
+    async def _execute_search(
+        self,
+        config: SearchConfig,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> SearchResult:
+        """Run the search now that the caller holds the global search lock."""
         logger.info(f"Starting job search for candidate {config.candidate_id}: '{config.query}'")
-        
+
         def emit(msg: str) -> None:
             if progress_callback:
                 progress_callback(msg)

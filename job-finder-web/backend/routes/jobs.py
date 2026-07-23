@@ -491,18 +491,6 @@ async def perform_job_search(
 
     _persist_search_location(db, candidate, location)
 
-    # Check if search is already running
-    from backend.services.search_lock import is_search_running
-    if is_search_running():
-        return templates.TemplateResponse(
-            "components/error.html",
-            {
-                "request": request,
-                "error": "Another job search is already in progress. Please wait.",
-            },
-            status_code=200,
-        )
-    
     try:
         # Normalize platforms from form payload (can arrive as string, list, or empty)
         if isinstance(platforms, str):
@@ -587,7 +575,6 @@ async def start_job_search_stream(
     The client should then connect to /search/stream/{search_id}.
     """
     from backend.services.search_progress import create_progress_queue
-    from backend.services.search_lock import is_search_running
 
     if not location.strip():
         return JSONResponse({"error": "Location is required for job search."}, status_code=400)
@@ -597,9 +584,6 @@ async def start_job_search_stream(
         return JSONResponse({"error": f"Candidate {candidate_id} not found"}, status_code=404)
 
     _persist_search_location(db, candidate, location)
-
-    if is_search_running():
-        return JSONResponse({"error": "Another search is already in progress. Please wait."}, status_code=409)
 
     # Normalize platforms
     if isinstance(platforms, str):
