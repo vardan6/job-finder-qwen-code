@@ -24,7 +24,7 @@ from backend.models.job import Job, SearchRun, SearchRunJob
 from backend.models.platform_account import PlatformAccount
 from backend.security import decrypt_json, encrypt_data
 from backend.services.job_analysis import get_job_analysis_service, CandidateProfile, JobAnalysis
-from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db, from_scraped_dict
+from backend.services.job_deduplication import get_deduplicator, from_scraped_dict
 from backend.services.job_scoring import score_job
 from backend.services.job_llm_refinement import get_job_llm_refinement_service
 from backend.services.rate_limiter import get_rate_limiter
@@ -172,27 +172,7 @@ class JobSearchService:
                 platform_results={},
             )
         
-        # Get candidate skills for AI analysis (current field: skill_name; legacy-safe fallback: skill)
-        candidate_skills = []
-        for s in candidate.skills:
-            if not getattr(s, "is_enabled", True):
-                continue
-            skill_value = getattr(s, "skill_name", None) or getattr(s, "skill", None)
-            if skill_value:
-                candidate_skills.append(skill_value)
-
-        candidate_target_roles = [
-            t.title for t in sorted(candidate.job_titles, key=lambda t: t.priority)
-            if t.is_active
-        ]
-        candidate_profile = CandidateProfile(
-            skills=candidate_skills,
-            location=candidate.location,
-            timezone=candidate.timezone,
-            experience_years=candidate.experience_years,
-            current_role=candidate.current_role,
-            target_roles=candidate_target_roles,
-        )
+        candidate_profile = CandidateProfile.from_candidate(candidate)
 
         search_run = self._create_search_run(config)
         
@@ -378,12 +358,8 @@ class JobSearchService:
         """Search LinkedIn for jobs"""
         cookies_path = self._get_cookies_path(candidate, "linkedin")
         self._ensure_cookies_file(candidate, "linkedin", cookies_path)
-        from backend.models.platform_account import PlatformAccount
         from backend.services.rate_limiter import normalize_linkedin_settings
-        account = self.db.query(PlatformAccount).filter(
-            PlatformAccount.candidate_id == candidate.id,
-            PlatformAccount.platform == "linkedin",
-        ).first()
+        account = self._get_platform_account(candidate, "linkedin")
         try:
             settings = normalize_linkedin_settings(json.loads(account.rate_limit_settings) if account and account.rate_limit_settings else {})
         except (TypeError, ValueError):
@@ -410,16 +386,7 @@ class JobSearchService:
                 manual_profile_path=str(cookies_path.parent.parent / "browser-login-profiles" / f"{candidate.uuid}_linkedin"),
                 progress_callback=progress_callback,
             )
-            if scraper.rate_limited_reason:
-                self._platform_skip_reasons["linkedin"] = scraper.rate_limited_reason
-            elif scraper.last_error:
-                self._platform_error_reasons["linkedin"] = scraper.last_error
-            if scraper.manual_challenge_handoff and account:
-                account.status = "captcha_required"
-                self.db.commit()
-            elif scraper.login_wall_detected and account:
-                account.status = "expired"
-                self.db.commit()
+            self._apply_scraper_outcome(scraper, account, "linkedin")
             return [{**job.to_dict(), "platform": "linkedin"} for job in jobs]
 
     async def _search_glassdoor(
@@ -431,6 +398,7 @@ class JobSearchService:
         """Search Glassdoor for jobs"""
         cookies_path = self._get_cookies_path(candidate, "glassdoor")
         self._ensure_cookies_file(candidate, "glassdoor", cookies_path)
+        account = self._get_platform_account(candidate, "glassdoor")
 
         async with GlassdoorScraper(headless=config.headless) as scraper:
             jobs = await scraper.search_jobs(
@@ -440,6 +408,7 @@ class JobSearchService:
                 cookies_path=str(cookies_path),
                 progress_callback=progress_callback,
             )
+            self._apply_scraper_outcome(scraper, account, "glassdoor")
             return [{**job.to_dict(), "platform": "glassdoor"} for job in jobs]
 
     async def _search_we_work_remotely(
@@ -460,6 +429,32 @@ class JobSearchService:
             progress_callback=progress_callback,
         )
         return [{**job.to_dict(), "platform": WeWorkRemotelyScraper.platform} for job in jobs]
+
+    def _get_platform_account(self, candidate: Candidate, platform: str) -> Optional[PlatformAccount]:
+        return self.db.query(PlatformAccount).filter(
+            PlatformAccount.candidate_id == candidate.id,
+            PlatformAccount.platform == platform,
+        ).first()
+
+    def _apply_scraper_outcome(self, scraper, account: Optional[PlatformAccount], platform: str) -> None:
+        """Record a scraper's session outcome uniformly across platforms.
+
+        Every JobPlatformAdapter reports outcome via ScraperSessionState
+        attributes instead of raising, so this is the one place that turns
+        those attributes into skip/error reasons and account status.
+        """
+        if scraper.rate_limited_reason:
+            self._platform_skip_reasons[platform] = scraper.rate_limited_reason
+        elif scraper.last_error:
+            self._platform_error_reasons[platform] = scraper.last_error
+        if not account:
+            return
+        if scraper.manual_challenge_handoff:
+            account.status = "captcha_required"
+            self.db.commit()
+        elif scraper.login_wall_detected:
+            account.status = "expired"
+            self.db.commit()
 
     def _create_search_run(self, config: SearchConfig) -> SearchRun:
         """Persist a list header before collecting results for it."""
@@ -524,16 +519,8 @@ class JobSearchService:
         
         # Get description storage path
         candidate = self.db.query(Candidate).filter(Candidate.id == candidate_id).first()
-        preferred_titles = [
-            job_title.title
-            for job_title in candidate.job_titles
-            if job_title.is_active and job_title.title.strip()
-        ] if candidate else []
-        candidate_skills = [
-            skill.skill_name
-            for skill in candidate.skills
-            if skill.is_active and skill.is_enabled and skill.skill_name.strip()
-        ] if candidate else []
+        preferred_titles = candidate.active_titles() if candidate else []
+        candidate_skills = candidate.active_skill_names() if candidate else []
         score = score_job(
             job_data.get("title"),
             job_data.get("description") or job_data.get("snippet"),

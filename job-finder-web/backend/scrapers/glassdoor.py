@@ -7,22 +7,18 @@ Ultra-conservative scraping with anti-detection:
 - Human-like behavior (random delays, mouse movements)
 - Stealth browser configuration
 - Automatic cooldown on CAPTCHA/blocks
+
+Only the Glassdoor-specific surface lives here; the shared browser session
+lifecycle is owned by ``PlaywrightJobScraper``.
 """
-import asyncio
 import logging
-import random
 import re
-from datetime import datetime
-from pathlib import Path
 from typing import Callable, List, Optional
 
 from playwright.async_api import Page
 
 from backend.scrapers.base import PlatformJob
-from backend.services.browser_manager import get_browser_pool
-from backend.services.rate_limiter import get_rate_limiter
-from backend.services.search_lock import get_search_lock
-from backend.services.job_deduplication import get_deduplicator
+from backend.scrapers.playwright_base import PlaywrightJobScraper
 
 logger = logging.getLogger(__name__)
 
@@ -31,25 +27,43 @@ logger = logging.getLogger(__name__)
 GLASSDOOR_SEARCH_URL = "https://www.glassdoor.com/Job/jobs.htm"
 
 
-class GlassdoorScraper:
+class GlassdoorScraper(PlaywrightJobScraper):
     """Scraper for Glassdoor Jobs"""
-    
-    def __init__(self, headless: bool = False):
-        self.headless = headless
-        self.rate_limiter = get_rate_limiter()
-        self.deduplicator = get_deduplicator()
-        self.browser_pool = None
-    
-    async def __aenter__(self):
-        """Async context manager entry"""
-        self.browser_pool = get_browser_pool(headless=self.headless)
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
-        if self.browser_pool:
-            await self.browser_pool.close_all()
-    
+
+    platform = "glassdoor"
+    label = "Glassdoor"
+    card_selector = '[data-test="jobListing"]'
+
+    # Glassdoor is more sensitive; navigate slowly and scroll conservatively.
+    navigation_wait_until = "networkidle"
+    navigation_timeout_ms = 60000
+    pre_navigation_delay = (3, 5)
+    post_navigation_delay = (2, 3)
+    max_scrolls = 3
+    scroll_delay = (3, 4)
+    extraction_delay = (1, 2)
+
+    description_selector = '[data-test="job-description"]'
+    description_click_delay = (2, 3)
+
+    # Block-detection signatures (evaluated by PlaywrightJobScraper).
+    login_wall_url_tokens = (
+        "/profile/login",
+        "login_input",
+        "signin",
+        "member/home/login",
+    )
+    login_wall_credential_selectors = (
+        'input[type="email"], input[name*="email"]',
+        'input[type="password"]',
+    )
+    captcha_url_tokens = ("/verify", "unusual traffic", "px-captcha", "access denied")
+    results_present_selector = '[data-test="jobListing"]'
+    captcha_widget_selector = (
+        "iframe[src*='captcha' i], iframe[title*='captcha' i], "
+        ".g-recaptcha, .h-captcha, #px-captcha, [id*='captcha' i]"
+    )
+
     async def search_jobs(
         self,
         query: str,
@@ -58,249 +72,81 @@ class GlassdoorScraper:
         cookies_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> List[PlatformJob]:
-        """
-        Search for jobs on Glassdoor.
-        
-        Args:
-            query: Job search query (e.g., "Python Engineer")
-            location: Location filter (e.g., "United States", "Remote")
-            max_jobs: Maximum number of jobs to collect
-            cookies_path: Path to load/save session cookies
-        
-        Returns:
-            List of PlatformJob objects
-        """
-        logger.info(f"Starting Glassdoor search: '{query}' in '{location}' (max: {max_jobs} jobs)")
+        """Search for jobs on Glassdoor."""
+        return await self._run_search_session(
+            query=query,
+            location=location,
+            max_jobs=max_jobs,
+            cookies_path=cookies_path,
+            rate_limit_scope="glassdoor",
+            progress_callback=progress_callback,
+        )
 
-        jobs = []
-        page = None
-        
-        try:
-            # Acquire global search lock (with timeout to avoid hanging forever)
-            lock = get_search_lock()
-            if not lock.acquire(blocking=False):
-                logger.warning("Another search is in progress, waiting (up to 5 minutes)...")
-                if not lock.acquire_with_timeout(timeout_seconds=300):
-                    return []
-            
-            try:
-                # Check rate limits
-                allowed, reason = self.rate_limiter.check_rate_limit("glassdoor")
-                if not allowed:
-                    logger.warning(f"Glassdoor rate limited: {reason}")
-                    if progress_callback:
-                        progress_callback(f"Glassdoor: Rate limited — {reason}")
-                    return []
+    def _build_search_url(self, query: str, location: str) -> str:
+        params = {
+            "sc.keyword": query,
+            "locT": "C",
+            "locId": "1",  # United States
+            "jobType": "all",
+            "sortBy": "relevance",
+        }
+        if location:
+            params["location"] = location
 
-                # Get browser and page
-                if progress_callback:
-                    progress_callback("Glassdoor: Launching browser...")
-                manager = await self.browser_pool.get_manager()
-                page = await manager.new_page("glassdoor", cookies_path)
+        url = GLASSDOOR_SEARCH_URL
+        url_params = "&".join(f"{k}={v}" for k, v in params.items() if v)
+        if url_params:
+            url += f"?{url_params}"
+        return url
 
-                # Build search URL
-                params = {
-                    "sc.keyword": query,
-                    "locT": "C",
-                    "locId": "1",  # United States
-                    "jobType": "all",
-                    "sortBy": "relevance",
-                }
-
-                if location:
-                    params["location"] = location
-
-                url = GLASSDOOR_SEARCH_URL
-                url_params = "&".join(f"{k}={v}" for k, v in params.items() if v)
-                if url_params:
-                    url += f"?{url_params}"
-
-                logger.info(f"Navigating to: {url}")
-
-                # Navigate with human-like delay
-                if progress_callback:
-                    progress_callback("Glassdoor: Navigating to job search page...")
-                await self._human_delay(3, 5)  # Glassdoor is more sensitive
-                await page.goto(url, wait_until="networkidle", timeout=60000)
-                await self._human_delay(2, 3)
-
-                # Check for login wall
-                if await self._is_login_wall(page):
-                    logger.warning("Glassdoor login wall detected")
-                    if progress_callback:
-                        progress_callback("Glassdoor: Login wall detected — session may be expired")
-                    await manager.save_cookies("glassdoor", cookies_path)
-                    return []
-
-                # Check for CAPTCHA
-                if await self._is_captcha(page):
-                    logger.error("Glassdoor CAPTCHA detected, setting cooldown")
-                    if progress_callback:
-                        progress_callback("Glassdoor: CAPTCHA detected — setting cooldown")
-                    self.rate_limiter.record_failure("glassdoor", "CAPTCHA detected")
-                    await manager.save_cookies("glassdoor", cookies_path)
-                    return []
-
-                if progress_callback:
-                    progress_callback("Glassdoor: Page loaded, scanning job listings...")
-                # Collect jobs from search results
-                jobs = await self._collect_jobs(page, max_jobs, progress_callback=progress_callback)
-                logger.info(f"Collected {len(jobs)} jobs from Glassdoor")
-                
-                # Save cookies
-                if cookies_path:
-                    await manager.save_cookies("glassdoor", cookies_path)
-                
-                # Log successful request
-                self.rate_limiter.log_request("glassdoor", success=True)
-                self.rate_limiter.increment_daily_count("glassdoor")
-                
-            finally:
-                # Release lock
-                lock.release()
-        
-        except Exception as e:
-            logger.error(f"Glassdoor search error: {e}")
-            self.rate_limiter.record_failure("glassdoor", str(e))
-            # Return empty list instead of re-raising so the orchestrator can continue
-        
-        finally:
-            if page:
-                await page.close()
-        
-        return jobs
-    
-    async def _collect_jobs(
+    async def _on_captcha(
         self,
         page: Page,
-        max_jobs: int,
-        progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[PlatformJob]:
-        """Collect jobs from search results page"""
-        jobs = []
-        seen_urls = set()
-
-        # Wait for job listings to load
-        try:
-            await page.wait_for_selector('[data-test="jobListing"]', timeout=10000)
-        except Exception:
-            logger.warning("No job listings found on page")
-            if progress_callback:
-                progress_callback("Glassdoor: No job listings found on page")
-            return jobs
-
-        # Scroll through results to load more
-        await self._scroll_to_load_more(page)
-
-        # Extract job cards
-        job_cards = await page.query_selector_all('[data-test="jobListing"]')
-        logger.info(f"Found {len(job_cards)} job cards")
+        manager,
+        cookies_path: Optional[str],
+        rate_limit_scope: str,
+        progress_callback: Optional[Callable[[str], None]],
+    ) -> None:
+        logger.error("Glassdoor CAPTCHA detected, setting cooldown")
         if progress_callback:
-            progress_callback(f"Glassdoor: Found {len(job_cards)} job cards, extracting details...")
+            progress_callback("Glassdoor: CAPTCHA detected — setting cooldown")
+        self.rate_limited_reason = "CAPTCHA detected"
+        self.rate_limiter.record_failure(rate_limit_scope, "CAPTCHA detected")
+        await manager.save_cookies(self.platform, cookies_path)
 
-        for i, card in enumerate(job_cards):
-            if len(jobs) >= max_jobs:
-                break
-
-            try:
-                # Extract job data
-                job = await self._extract_job_from_card(card, page, i)
-                if job and job.job_url not in seen_urls:
-                    seen_urls.add(job.job_url)
-                    jobs.append(job)
-                    logger.debug(f"Extracted job: {job.title} at {job.company}")
-                    if progress_callback:
-                        progress_callback(
-                            f"Glassdoor [{len(jobs)}/{min(len(job_cards), max_jobs)}]: "
-                            f"{job.title} @ {job.company}"
-                        )
-
-                # Random delay between extractions
-                await self._human_delay(1, 2)
-
-            except Exception as e:
-                logger.warning(f"Failed to extract job card {i}: {e}")
-                continue
-
-        return jobs
-    
     async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[PlatformJob]:
         """Extract job information from a job card"""
         try:
-            # Extract title
-            title_el = await card.query_selector('[data-test="job-title"]')
-            title = (await title_el.inner_text()).strip() if title_el else ""
-            
-            # Extract company
-            company_el = await card.query_selector('[data-test="employer-name"]')
-            company = (await company_el.inner_text()).strip() if company_el else ""
-            
-            # Extract location
-            location_el = await card.query_selector('[data-test="job-location"]')
-            location = (await location_el.inner_text()).strip() if location_el else ""
-            
-            # Extract posted date
-            posted_el = await card.query_selector('[data-test="job-age"]')
-            posted_date = (await posted_el.inner_text()).strip() if posted_el else ""
-            
-            # Extract salary if available
-            salary = None
-            salary_el = await card.query_selector('[data-test="job-salary"]')
-            if salary_el:
-                salary = (await salary_el.inner_text()).strip()
-            
-            # Extract job type if available
-            job_type = None
-            job_type_el = await card.query_selector('[data-test="job-type"]')
-            if job_type_el:
-                job_type = (await job_type_el.inner_text()).strip()
-            
+            title = await self._text(card, '[data-test="job-title"]')
+            company = await self._text(card, '[data-test="employer-name"]')
+            location = await self._text(card, '[data-test="job-location"]')
+            posted_date = await self._text(card, '[data-test="job-age"]')
+            salary = await self._text(card, '[data-test="job-salary"]') or None
+            job_type = await self._text(card, '[data-test="job-type"]') or None
+
             # Extract job URL
             link_el = await card.query_selector("a.jobLink")
             if not link_el:
                 link_el = await card.query_selector("a")
-            
+
             if not link_el:
                 return None
-            
+
             href = await link_el.get_attribute("href")
             job_url = href.split("?")[0] if href else ""
-            
+
             # Extract platform job ID from URL
             platform_job_id = None
             if job_url:
                 match = re.search(r"JobListing-(\d+)", job_url)
                 if match:
                     platform_job_id = match.group(1)
-            
-            # Get description by clicking on job
-            description = None
-            description_hash = None
-            snippet = None
-            
-            try:
-                # Click to open job details
-                await card.click()
-                await self._human_delay(2, 3)
-                
-                # Wait for description panel
-                try:
-                    await page.wait_for_selector('[data-test="job-description"]', timeout=5000)
-                    desc_el = await page.query_selector('[data-test="job-description"]')
-                    if desc_el:
-                        description = await desc_el.inner_text()
-                        snippet = description[:500] if description else None
-                        
-                        # Compute hash
-                        if description:
-                            description_hash = self.deduplicator.compute_description_hash(description)
-                
-                except Exception:
-                    logger.warning(f"Could not load description for job {index}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to click job card: {e}")
-            
+
+            # Open the job to read its full description.
+            description, snippet, description_hash = await self._load_job_description(
+                card, page
+            )
+
             return PlatformJob(
                 title=title,
                 company=company,
@@ -314,81 +160,10 @@ class GlassdoorScraper:
                 salary=salary,
                 job_type=job_type,
             )
-            
+
         except Exception as e:
             logger.warning(f"Error extracting job card: {e}")
             return None
-    
-    async def _scroll_to_load_more(self, page: Page, max_scrolls: int = 3):
-        """Scroll to load more job results"""
-        last_height = await page.evaluate("document.documentElement.scrollHeight")
-        
-        for i in range(max_scrolls):
-            # Scroll down
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await self._human_delay(3, 4)  # Glassdoor loads slower
-            
-            # Check if more content loaded
-            new_height = await page.evaluate("document.documentElement.scrollHeight")
-            
-            if new_height == last_height:
-                logger.debug(f"No more content after {i + 1} scrolls")
-                break
-            
-            last_height = new_height
-    
-    async def _is_login_wall(self, page: Page) -> bool:
-        """Check if login wall is present"""
-        try:
-            url = (page.url or "").lower()
-            if any(token in url for token in ["/profile/login", "login_input", "signin", "member/home/login"]):
-                return True
-
-            # Real login form indicators
-            has_email = await page.query_selector('input[type="email"], input[name*="email"]') is not None
-            has_password = await page.query_selector('input[type="password"]') is not None
-            if has_email and has_password:
-                return True
-
-            # If job listings exist, we're past login wall.
-            has_listings = await page.query_selector('[data-test="jobListing"], .JobsList_jobListItem__wjTHv') is not None
-            if has_listings:
-                return False
-
-            return False
-        except Exception:
-            return False
-    
-    async def _is_captcha(self, page: Page) -> bool:
-        """Check if a CAPTCHA/challenge is actually blocking the page.
-
-        A blind substring search over the full page HTML false-positives on
-        normal pages that merely reference "captcha" in scripts, meta tags,
-        or anti-bot bundles (e.g. PerimeterX) loaded defensively. Require
-        either a challenge URL or a visible CAPTCHA widget, and never flag it
-        if real job listings are already rendered.
-        """
-        try:
-            url = (page.url or "").lower()
-            if any(token in url for token in ["/verify", "unusual traffic", "px-captcha", "access denied"]):
-                return True
-
-            has_listings = await page.query_selector('[data-test="jobListing"]') is not None
-            if has_listings:
-                return False
-
-            has_captcha_widget = await page.query_selector(
-                "iframe[src*='captcha' i], iframe[title*='captcha' i], "
-                ".g-recaptcha, .h-captcha, #px-captcha, [id*='captcha' i]"
-            ) is not None
-            return has_captcha_widget
-        except Exception:
-            return False
-    
-    def _human_delay(self, min_sec: float = 1.0, max_sec: float = 3.0):
-        """Random delay to mimic human behavior"""
-        delay = random.uniform(min_sec, max_sec)
-        return asyncio.sleep(delay)
 
 
 async def scrape_glassdoor_jobs(
@@ -400,14 +175,14 @@ async def scrape_glassdoor_jobs(
 ) -> List[dict]:
     """
     Convenience function to scrape Glassdoor jobs.
-    
+
     Args:
         query: Search query
         location: Location filter
         max_jobs: Maximum jobs to collect
         cookies_path: Path to cookies file
         headless: Run browser in headless mode
-    
+
     Returns:
         List of job dictionaries
     """

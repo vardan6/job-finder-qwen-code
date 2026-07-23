@@ -16,7 +16,6 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 
 from fuzzywuzzy import fuzz
-from sqlalchemy.orm import Session
 
 from backend.models.job import Job
 
@@ -159,32 +158,6 @@ class JobDeduplicator:
         
         return is_dup, signal
     
-    def find_duplicates(
-        self,
-        new_job: Job,
-        existing_jobs: List[Job],
-        threshold: int = THRESHOLD_LIKELY_MATCH
-    ) -> List[Tuple[Job, DeduplicationSignal]]:
-        """
-        Find all existing jobs that are duplicates of the new job.
-        
-        Args:
-            new_job: The new job to check
-            existing_jobs: List of existing jobs to compare against
-            threshold: Minimum score to consider duplicate
-        
-        Returns:
-            List of (existing_job, signal) tuples for duplicates
-        """
-        duplicates = []
-        
-        for existing_job in existing_jobs:
-            is_dup, signal = self.is_duplicate(new_job, existing_job, threshold)
-            if is_dup:
-                duplicates.append((existing_job, signal))
-        
-        return duplicates
-    
     def filter_duplicates(
         self,
         new_jobs: List[Job],
@@ -237,116 +210,6 @@ class JobDeduplicator:
         logger.info(f"Filtered {len(new_jobs) - len(unique_jobs)} duplicates from {len(new_jobs)} jobs")
         return unique_jobs
     
-    def get_duplicate_report(self, new_job: Job, existing_jobs: List[Job]) -> dict:
-        """
-        Generate a detailed duplicate analysis report.
-        
-        Returns:
-            Dictionary with match details for debugging
-        """
-        duplicates = self.find_duplicates(new_job, existing_jobs, threshold=THRESHOLD_POSSIBLE_MATCH)
-        
-        report = {
-            "new_job": {
-                "title": new_job.title,
-                "company": new_job.company,
-                "location": new_job.location,
-                "platform": new_job.platform,
-                "description_hash": new_job.description_hash,
-            },
-            "total_existing": len(existing_jobs),
-            "duplicates_found": len(duplicates),
-            "matches": []
-        }
-        
-        for existing_job, signal in duplicates:
-            report["matches"].append({
-                "job": {
-                    "id": existing_job.id,
-                    "title": existing_job.title,
-                    "company": existing_job.company,
-                    "location": existing_job.location,
-                    "platform": existing_job.platform,
-                },
-                "signal": {
-                    "description_hash_match": signal.description_hash_match,
-                    "platform_job_id_match": signal.platform_job_id_match,
-                    "title_similarity": signal.title_similarity,
-                    "company_similarity": signal.company_similarity,
-                    "location_similarity": signal.location_similarity,
-                    "combined_score": signal.combined_score,
-                }
-            })
-        
-        return report
-
-
-def check_duplicate_in_db(
-    db: Session,
-    title: str,
-    company: str,
-    description_hash: str,
-    platform: Optional[str] = None,
-    platform_job_id: Optional[str] = None,
-    exclude_job_id: Optional[int] = None,
-) -> Optional[Job]:
-    """
-    Quick check if a job already exists in the database.
-    
-    Args:
-        db: Database session
-        title: Job title
-        company: Company name
-        description_hash: Hash of job description
-        platform: Platform name (optional)
-        platform_job_id: Platform's job ID (optional)
-        exclude_job_id: Job ID to exclude (for updates)
-    
-    Returns:
-        Existing Job if found, None otherwise
-    """
-    query = db.query(Job)
-    
-    # Fast path: check description hash
-    if description_hash:
-        existing = query.filter(
-            Job.description_hash == description_hash,
-            Job.id != exclude_job_id if exclude_job_id else True
-        ).first()
-        if existing:
-            logger.debug(f"Found duplicate by description hash: {existing.id}")
-            return existing
-    
-    # Fast path: check platform job ID
-    if platform and platform_job_id:
-        existing = query.filter(
-            Job.platform == platform,
-            Job.platform_job_id == platform_job_id,
-            Job.id != exclude_job_id if exclude_job_id else True
-        ).first()
-        if existing:
-            logger.debug(f"Found duplicate by platform ID: {existing.id}")
-            return existing
-    
-    # Slower path: check title + company
-    existing = query.filter(
-        Job.title.ilike(f"%{title}%"),
-        Job.company.ilike(f"%{company}%"),
-        Job.id != exclude_job_id if exclude_job_id else True
-    ).first()
-    
-    if existing:
-        # Verify with fuzzy matching
-        deduplicator = JobDeduplicator()
-        temp_job = Job(title=title, company=company, location=existing.location)
-        is_dup, _ = deduplicator.is_duplicate(temp_job, existing, threshold=THRESHOLD_LIKELY_MATCH)
-        if is_dup:
-            logger.debug(f"Found duplicate by title+company: {existing.id}")
-            return existing
-    
-    return None
-
-
 def from_scraped_dict(job_data: dict) -> Job:
     """Build a transient, unpersisted Job for dedup comparison from a scraper result.
 

@@ -54,3 +54,20 @@ class JobPlatformAdapter(Protocol):
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Sequence[PlatformJob]:
         ...
+
+
+class ScraperSessionState:
+    """Session-outcome attributes every adapter reports back after search_jobs.
+
+    Consumed by JobSearchService to update PlatformAccount status and surface
+    skip/error reasons uniformly across platforms — see
+    JobSearchService._apply_scraper_outcome. Adapters set these in place of
+    raising, since a failed/blocked search still returns a (possibly empty)
+    result rather than an exception.
+    """
+
+    def __init__(self):
+        self.manual_challenge_handoff = False
+        self.login_wall_detected = False
+        self.rate_limited_reason: Optional[str] = None
+        self.last_error: Optional[str] = None

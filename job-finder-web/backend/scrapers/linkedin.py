@@ -7,23 +7,20 @@ Ultra-conservative scraping with anti-detection:
 - Human-like behavior (random delays, mouse movements)
 - Stealth browser configuration
 - Automatic cooldown on CAPTCHA/blocks
+
+Only the LinkedIn-specific surface lives here; the shared browser session
+lifecycle is owned by ``PlaywrightJobScraper``.
 """
-import asyncio
 import logging
-import random
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Callable, List, Optional
 
 from playwright.async_api import Page
 
 from backend.config import DATA_DIR
 from backend.scrapers.base import PlatformJob
-from backend.services.browser_manager import get_browser_pool
-from backend.services.rate_limiter import get_rate_limiter
-from backend.services.search_lock import get_search_lock
-from backend.services.job_deduplication import get_deduplicator
+from backend.scrapers.playwright_base import PlaywrightJobScraper
 
 logger = logging.getLogger(__name__)
 
@@ -40,29 +37,52 @@ POSTED_DATE_RE = re.compile(
 )
 
 
-class LinkedInScraper:
+class LinkedInScraper(PlaywrightJobScraper):
     """Scraper for LinkedIn Jobs"""
-    
-    def __init__(self, headless: bool = False):
-        self.headless = headless
-        self.rate_limiter = get_rate_limiter()
-        self.deduplicator = get_deduplicator()
-        self.browser_pool = None
-        self.manual_challenge_handoff = False
-        self.login_wall_detected = False
-        self.rate_limited_reason: Optional[str] = None
-        self.last_error: Optional[str] = None
-    
-    async def __aenter__(self):
-        """Async context manager entry"""
-        self.browser_pool = get_browser_pool(headless=self.headless)
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Close scraper browser unless a CAPTCHA was handed to the user."""
-        if self.browser_pool and not self.manual_challenge_handoff:
-            await self.browser_pool.close_all()
-    
+
+    platform = "linkedin"
+    label = "LinkedIn"
+    card_selector = JOB_CARD_SELECTOR
+
+    # LinkedIn keeps background requests (analytics/beacons) running
+    # indefinitely, so "networkidle" routinely never fires and goto would
+    # otherwise hang for the full timeout on every search. "domcontentloaded"
+    # is enough here since _collect_jobs separately waits for the job-card
+    # selector to appear.
+    navigation_wait_until = "domcontentloaded"
+    navigation_timeout_ms = 30000
+    pre_navigation_delay = (2, 4)
+    post_navigation_delay = (1, 2)
+    max_scrolls = 5
+    scroll_delay = (2, 3)
+    extraction_delay = (0.5, 1.5)
+
+    description_selector = ".jobs-box__html-content"
+
+    # Block-detection signatures (evaluated by PlaywrightJobScraper).
+    login_wall_url_tokens = ("/login", "/checkpoint", "/authwall", "challenge")
+    login_wall_credential_selectors = (
+        'input[name="session_key"], input#username',
+        'input[name="session_password"], input#password',
+    )
+    captcha_url_tokens = (
+        "/checkpoint/challenge",
+        "/checkpoint/challengesv2",
+        "unusual traffic",
+    )
+    results_present_selector = ".job-search-card, .jobs-search__results-list li"
+    # LinkedIn preloads dormant CAPTCHA scaffolding, so require a *visible*
+    # widget rather than mere DOM presence.
+    captcha_widget_selector = (
+        "iframe[src*='captcha' i]:visible, iframe[title*='captcha' i]:visible, "
+        ".g-recaptcha:visible, .h-captcha:visible, #captcha-internal:visible, "
+        "[id*='captcha' i]:visible"
+    )
+
+    # Manual-login handoff targets, populated per search by search_jobs.
+    _manual_session_key: Optional[str] = None
+    _manual_profile_path: Optional[str] = None
+
     async def search_jobs(
         self,
         query: str,
@@ -75,184 +95,56 @@ class LinkedInScraper:
         manual_profile_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> List[PlatformJob]:
-        """
-        Search for jobs on LinkedIn.
-        
-        Args:
-            query: Job search query (e.g., "Python Engineer")
-            location: Location filter (e.g., "United States", "Remote")
-            max_jobs: Maximum number of jobs to collect
-            cookies_path: Path to load/save session cookies
-        
-        Returns:
-            List of PlatformJob objects
-        """
-        logger.info(f"Starting LinkedIn search: '{query}' in '{location}' (max: {max_jobs} jobs)")
-        
-        jobs = []
-        page = None
-        
-        try:
-            # Acquire global search lock (with timeout to avoid hanging forever)
-            lock = get_search_lock()
-            if not lock.acquire(blocking=False):
-                logger.warning("Another search is in progress, waiting (up to 5 minutes)...")
-                if not lock.acquire_with_timeout(timeout_seconds=300):
-                    return []
-            
-            try:
-                # Check rate limits
-                allowed, reason = self.rate_limiter.check_rate_limit(rate_limit_scope, rate_limit_settings)
-                if not allowed:
-                    logger.warning(f"LinkedIn rate limited: {reason}")
-                    self.rate_limited_reason = reason
-                    if progress_callback:
-                        progress_callback(f"LinkedIn: Rate limited — {reason}")
-                    return []
+        """Search for jobs on LinkedIn."""
+        self._manual_session_key = manual_session_key
+        self._manual_profile_path = manual_profile_path
+        return await self._run_search_session(
+            query=query,
+            location=location,
+            max_jobs=max_jobs,
+            cookies_path=cookies_path,
+            rate_limit_scope=rate_limit_scope,
+            rate_limit_settings=rate_limit_settings,
+            progress_callback=progress_callback,
+        )
 
-                # Get browser and page
-                if progress_callback:
-                    progress_callback("LinkedIn: Launching browser...")
-                manager = await self.browser_pool.get_manager()
-                page = await manager.new_page("linkedin", cookies_path)
+    def _build_search_url(self, query: str, location: str) -> str:
+        params = {
+            "keywords": query,
+            "location": location,
+            "f_AL": "true",  # Remote filter
+            "sortBy": "R",  # Relevance
+        }
+        url = LINKEDIN_SEARCH_URL
+        url_params = "&".join(f"{k}={v}" for k, v in params.items() if v)
+        if url_params:
+            url += f"?{url_params}"
+        return url
 
-                # Build search URL
-                params = {
-                    "keywords": query,
-                    "location": location,
-                    "f_AL": "true",  # Remote filter
-                    "sortBy": "R",  # Relevance
-                }
-
-                url = LINKEDIN_SEARCH_URL
-                url_params = "&".join(f"{k}={v}" for k, v in params.items() if v)
-                if url_params:
-                    url += f"?{url_params}"
-
-                logger.info(f"Navigating to: {url}")
-
-                # Navigate with human-like delay
-                if progress_callback:
-                    progress_callback("LinkedIn: Navigating to job search page...")
-                await self._human_delay(2, 4)
-                # LinkedIn keeps background requests (analytics/beacons) running
-                # indefinitely, so "networkidle" routinely never fires and the
-                # goto call would otherwise hang for the full timeout on every
-                # search. "domcontentloaded" is enough here since _collect_jobs
-                # separately waits for the job-card selector to appear.
-                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                await self._human_delay(1, 2)
-
-                # Check for login wall
-                if await self._is_login_wall(page):
-                    logger.warning("LinkedIn login wall detected")
-                    if progress_callback:
-                        progress_callback("LinkedIn: Login wall detected — session may be expired")
-                    self.login_wall_detected = True
-                    await manager.save_cookies("linkedin", cookies_path)
-                    return []
-
-                # Check for CAPTCHA
-                if await self._is_captcha(page):
-                    logger.error("LinkedIn CAPTCHA detected; handing browser to the user")
-                    if progress_callback:
-                        progress_callback("LinkedIn: CAPTCHA detected — solve it in the open browser, then click Finish Browser Login")
-                    self.rate_limiter.record_failure(rate_limit_scope, "CAPTCHA detected")
-                    await manager.save_cookies("linkedin", cookies_path)
-                    if manual_session_key and manual_profile_path:
-                        await manager.handoff_page_to_manual_login(
-                            page, manual_session_key, manual_profile_path,
-                        )
-                        self.manual_challenge_handoff = True
-                    return []
-
-                if progress_callback:
-                    progress_callback("LinkedIn: Page loaded, scanning job listings...")
-                # Collect jobs from search results
-                jobs = await self._collect_jobs(page, max_jobs, progress_callback=progress_callback)
-                logger.info(f"Collected {len(jobs)} jobs from LinkedIn")
-                
-                # Save cookies
-                if cookies_path:
-                    await manager.save_cookies("linkedin", cookies_path)
-                
-                # Log successful request
-                self.rate_limiter.log_request(rate_limit_scope, success=True)
-                self.rate_limiter.increment_daily_count(rate_limit_scope)
-                
-            finally:
-                # Release lock
-                lock.release()
-        
-        except Exception as e:
-            logger.error(f"LinkedIn search error: {e}")
-            self.last_error = str(e)
-            self.rate_limiter.record_failure(rate_limit_scope, str(e))
-            if progress_callback:
-                progress_callback(f"LinkedIn: search failed — {e}")
-            # Return empty list instead of re-raising so the orchestrator can continue
-        
-        finally:
-            if page:
-                await page.close()
-        
-        return jobs
-    
-    async def _collect_jobs(
+    async def _on_captcha(
         self,
         page: Page,
-        max_jobs: int,
-        progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[PlatformJob]:
-        """Collect jobs from search results page"""
-        jobs = []
-        seen_urls = set()
-
-        # Wait for job listings to load
-        try:
-            await page.wait_for_selector(JOB_CARD_SELECTOR, timeout=10000)
-        except Exception:
-            logger.warning("No job listings found on page")
-            if progress_callback:
-                progress_callback("LinkedIn: No job listings found on page")
-            await self._dump_debug_snapshot(page, "no_job_cards")
-            return jobs
-
-        # Scroll through results to load more
-        await self._scroll_to_load_more(page)
-
-        # Extract job cards
-        job_cards = await page.query_selector_all(JOB_CARD_SELECTOR)
-        logger.info(f"Found {len(job_cards)} job cards")
+        manager,
+        cookies_path: Optional[str],
+        rate_limit_scope: str,
+        progress_callback: Optional[Callable[[str], None]],
+    ) -> None:
+        logger.error("LinkedIn CAPTCHA detected; handing browser to the user")
         if progress_callback:
-            progress_callback(f"LinkedIn: Found {len(job_cards)} job cards, extracting details...")
+            progress_callback(
+                "LinkedIn: CAPTCHA detected — solve it in the open browser, then click Finish Browser Login"
+            )
+        self.rate_limiter.record_failure(rate_limit_scope, "CAPTCHA detected")
+        await manager.save_cookies(self.platform, cookies_path)
+        if self._manual_session_key and self._manual_profile_path:
+            await manager.handoff_page_to_manual_login(
+                page, self._manual_session_key, self._manual_profile_path,
+            )
+            self.manual_challenge_handoff = True
 
-        for i, card in enumerate(job_cards):
-            if len(jobs) >= max_jobs:
-                break
+    async def _on_no_cards(self, page: Page) -> None:
+        await self._dump_debug_snapshot(page, "no_job_cards")
 
-            try:
-                # Extract job data
-                job = await self._extract_job_from_card(card, page, i)
-                if job and job.job_url not in seen_urls:
-                    seen_urls.add(job.job_url)
-                    jobs.append(job)
-                    logger.debug(f"Extracted job: {job.title} at {job.company}")
-                    if progress_callback:
-                        progress_callback(
-                            f"LinkedIn [{len(jobs)}/{min(len(job_cards), max_jobs)}]: "
-                            f"{job.title} @ {job.company}"
-                        )
-
-                # Random delay between extractions
-                await self._human_delay(0.5, 1.5)
-
-            except Exception as e:
-                logger.warning(f"Failed to extract job card {i}: {e}")
-                continue
-
-        return jobs
-    
     async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[PlatformJob]:
         """Extract job information from a job card"""
         try:
@@ -276,14 +168,12 @@ class LinkedInScraper:
                 job_url = f"https://www.linkedin.com{job_url}"
 
             # Extract company
-            company_el = await card.query_selector(".artdeco-entity-lockup__subtitle")
-            company = (await company_el.inner_text()).strip() if company_el else ""
+            company = await self._text(card, ".artdeco-entity-lockup__subtitle")
 
             # Extract location (first metadata line under the title)
-            location_el = await card.query_selector(
-                ".job-card-container__metadata-wrapper li"
+            location = await self._text(
+                card, ".job-card-container__metadata-wrapper li"
             )
-            location = (await location_el.inner_text()).strip() if location_el else ""
 
             # Posted date isn't a dedicated element in the current DOM; it only
             # appears as free text (e.g. "3 days ago") mixed in with other
@@ -291,42 +181,19 @@ class LinkedInScraper:
             card_text = await card.inner_text()
             posted_match = POSTED_DATE_RE.search(card_text)
             posted_date = posted_match.group(0) if posted_match else ""
-            
+
             # Extract platform job ID from URL
             platform_job_id = None
             if job_url:
                 match = re.search(r"/jobs/view/(\d+)", job_url)
                 if match:
                     platform_job_id = match.group(1)
-            
-            # Get description by clicking on job
-            description = None
-            description_hash = None
-            snippet = None
-            
-            try:
-                # Click to open job details
-                await card.click()
-                await self._human_delay(1, 2)
-                
-                # Wait for description
-                try:
-                    await page.wait_for_selector(".jobs-box__html-content", timeout=5000)
-                    desc_el = await page.query_selector(".jobs-box__html-content")
-                    if desc_el:
-                        description = await desc_el.inner_text()
-                        snippet = description[:500] if description else None
-                        
-                        # Compute hash
-                        if description:
-                            description_hash = self.deduplicator.compute_description_hash(description)
-                
-                except Exception:
-                    logger.warning(f"Could not load description for job {index}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to click job card: {e}")
-            
+
+            # Open the job to read its full description.
+            description, snippet, description_hash = await self._load_job_description(
+                card, page
+            )
+
             return PlatformJob(
                 title=title,
                 company=company,
@@ -338,84 +205,10 @@ class LinkedInScraper:
                 description_hash=description_hash,
                 snippet=snippet,
             )
-            
+
         except Exception as e:
             logger.warning(f"Error extracting job card: {e}")
             return None
-    
-    async def _scroll_to_load_more(self, page: Page, max_scrolls: int = 5):
-        """Scroll to load more job results"""
-        last_height = await page.evaluate("document.documentElement.scrollHeight")
-        
-        for i in range(max_scrolls):
-            # Scroll down
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await self._human_delay(2, 3)
-            
-            # Check if more content loaded
-            new_height = await page.evaluate("document.documentElement.scrollHeight")
-            
-            if new_height == last_height:
-                logger.debug(f"No more content after {i + 1} scrolls")
-                break
-            
-            last_height = new_height
-    
-    async def _is_login_wall(self, page: Page) -> bool:
-        """Check if login wall is present"""
-        try:
-            url = (page.url or "").lower()
-            if any(token in url for token in ["/login", "/checkpoint", "/authwall", "challenge"]):
-                return True
-
-            # Real login form indicators (not just a generic "login" link in page chrome)
-            has_username = await page.query_selector('input[name="session_key"], input#username') is not None
-            has_password = await page.query_selector('input[name="session_password"], input#password') is not None
-            if has_username and has_password:
-                return True
-
-            # If job cards are present, we are definitely not behind a login wall.
-            has_job_cards = await page.query_selector(
-                f"{JOB_CARD_SELECTOR}, .jobs-search__results-list li"
-            ) is not None
-            if has_job_cards:
-                return False
-
-            return False
-        except Exception:
-            return False
-    
-    async def _is_captcha(self, page: Page) -> bool:
-        """Check if a CAPTCHA/challenge is actually blocking the page.
-
-        A blind substring search over the full page HTML false-positives on
-        normal pages that merely reference "captcha" in scripts, meta tags,
-        or anti-bot bundles LinkedIn loads defensively. Require either a
-        challenge URL or a visible CAPTCHA widget, and never flag it if real
-        job listings are already rendered.
-        """
-        try:
-            url = (page.url or "").lower()
-            if any(token in url for token in ["/checkpoint/challenge", "/checkpoint/challengesv2", "unusual traffic"]):
-                return True
-
-            has_job_cards = await page.query_selector(".job-search-card, .jobs-search__results-list li") is not None
-            if has_job_cards:
-                return False
-
-            # LinkedIn ships hidden/defensive CAPTCHA scaffolding on ordinary
-            # pages (e.g. a dormant challenge widget preloaded for later use),
-            # so presence in the DOM alone false-positives. Require it to
-            # actually be visible, matching this method's own "visible CAPTCHA
-            # widget" contract.
-            has_captcha_widget = await page.query_selector(
-                "iframe[src*='captcha' i]:visible, iframe[title*='captcha' i]:visible, "
-                ".g-recaptcha:visible, .h-captcha:visible, #captcha-internal:visible, "
-                "[id*='captcha' i]:visible"
-            ) is not None
-            return has_captcha_widget
-        except Exception:
-            return False
 
     async def _dump_debug_snapshot(self, page: Page, label: str):
         """Save the live page HTML when scraping hits an unexpected state.
@@ -435,11 +228,6 @@ class LinkedInScraper:
         except Exception as e:
             logger.warning(f"Could not save LinkedIn debug snapshot: {e}")
 
-    def _human_delay(self, min_sec: float = 1.0, max_sec: float = 3.0):
-        """Random delay to mimic human behavior"""
-        delay = random.uniform(min_sec, max_sec)
-        return asyncio.sleep(delay)
-
 
 async def scrape_linkedin_jobs(
     query: str,
@@ -450,14 +238,14 @@ async def scrape_linkedin_jobs(
 ) -> List[dict]:
     """
     Convenience function to scrape LinkedIn jobs.
-    
+
     Args:
         query: Search query
         location: Location filter
         max_jobs: Maximum jobs to collect
         cookies_path: Path to cookies file
         headless: Run browser in headless mode
-    
+
     Returns:
         List of job dictionaries
     """

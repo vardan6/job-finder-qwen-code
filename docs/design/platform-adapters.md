@@ -15,6 +15,41 @@ search surface.
 the candidate-level deduplication/search-run logic. Adapters must not create
 or mutate `Job`, `SearchRun`, or `SearchRunJob` records directly.
 
+Adapters report session outcome (rate-limited, login wall, CAPTCHA handoff,
+last error) through `scrapers.base.ScraperSessionState` attributes instead of
+raising, since a blocked search still returns a result rather than an
+exception. `JobSearchService._apply_scraper_outcome` is the one place that
+turns those attributes into skip/error reasons and `PlatformAccount.status`
+updates, applied uniformly to every platform.
+
+## Shared browser session lifecycle
+
+Browser-driven adapters (LinkedIn, Glassdoor) subclass
+`scrapers.playwright_base.PlaywrightJobScraper`, which owns the whole session
+skeleton once: acquiring the global search lock, gating on rate limits,
+launching the browser, navigating, dispatching login-wall/CAPTCHA detection,
+the collect/scroll loop, cookie persistence, success logging, and uniform
+error capture into `ScraperSessionState`. `_run_search_session` is that
+skeleton.
+
+A concrete adapter keeps its own thin `search_jobs` (so platform-specific
+parameters stay explicit at the call site) and declares only what differs:
+search URL, per-card extraction, and CAPTCHA policy (`_on_captcha` — cooldown
+for Glassdoor, manual handoff for LinkedIn). Login-wall/CAPTCHA detection and
+the description-panel fetch are declared as data, not overridden methods: each
+adapter sets the URL tokens, credential-field selectors, results-present
+selector, and CAPTCHA-widget selector as class attributes, and the base
+evaluates them with fixed precedence (a challenge URL blocks outright;
+otherwise rendered results mean the page is fine and only a present widget
+counts). This keeps a platform's block signatures readable in one place and
+makes detection testable through a fake page exposing only `url` and
+`query_selector` (`tests/test_scraper_block_detection.py`).
+
+Because the skeleton is provider-neutral it is unit-tested through fake
+page/manager objects (`tests/test_playwright_scraper_base.py`) without a live
+browser. Fixture-only adapters like We Work Remotely do not use this base and
+stay import-light.
+
 ## Policy and live access
 
 An adapter may parse saved fixtures without provider access. Any live browser,
