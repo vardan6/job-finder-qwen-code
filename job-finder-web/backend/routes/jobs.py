@@ -409,8 +409,8 @@ async def get_candidate_search_config(
             LLMProvider.api_key_encrypted.isnot(None)
         ).first() is not None
     
-    # Get skills count for AI analysis info
-    enabled_skills = [s for s in candidate.skills if s.is_enabled]
+    # Skills count shown for AI analysis info — mirror the set analysis actually uses.
+    enabled_skills = candidate.active_skill_names()
     
     # Get max jobs from preferences or default
     max_jobs = 20

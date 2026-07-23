@@ -406,20 +406,12 @@ def _build_session_system_context(db: Session, session: dict[str, object]) -> st
         blocks.extend(["Candidate profile:", *_candidate_profile_lines(candidate)])
 
     if source_controls.get("candidate_job_titles"):
-        titles = [
-            title.title
-            for title in sorted(candidate.job_titles, key=lambda item: (item.priority or 999, item.id or 0))
-            if title.is_active and title.title
-        ]
+        titles = candidate.active_titles()
         if titles:
             blocks.extend(["Candidate job titles:", *[f"- {title}" for title in titles[:10]]])
 
     if source_controls.get("candidate_skills"):
-        skills = [
-            skill.skill_name
-            for skill in candidate.skills
-            if skill.is_active and skill.is_enabled and skill.skill_name
-        ]
+        skills = candidate.active_skill_names()
         if skills:
             blocks.extend(["Candidate skills:", *[f"- {skill}" for skill in skills[:20]]])
 

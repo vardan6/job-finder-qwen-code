@@ -61,5 +61,31 @@ class Candidate(Base):
     parse_prompts = relationship("DocumentParsePrompt", back_populates="candidate", cascade="all, delete-orphan", lazy="select")
     user = relationship("User", back_populates="candidates")
 
+    def active_skill_names(self) -> list[str]:
+        """Enabled, non-deleted skill names in stored order.
+
+        Canonical reader for "which skills count" — a skill matches only when it
+        is both active (not soft-deleted) and enabled for search matching. Every
+        consumer (analysis profile, deterministic scoring, LLM refinement) must
+        go through here so the predicate lives in one place.
+        """
+        return [
+            skill.skill_name.strip()
+            for skill in self.skills
+            if skill.is_active and skill.is_enabled and skill.skill_name and skill.skill_name.strip()
+        ]
+
+    def active_titles(self) -> list[str]:
+        """Active preferred titles ordered by priority (1=high) then id.
+
+        Canonical reader for the candidate's target roles. Callers needing a
+        stable-hash order can `sorted(...)` the result.
+        """
+        return [
+            title.title.strip()
+            for title in sorted(self.job_titles, key=lambda t: (t.priority or 99, t.id or 0))
+            if title.is_active and title.title and title.title.strip()
+        ]
+
     def __repr__(self):
         return f"<Candidate(id={self.id}, name='{self.name}')>"

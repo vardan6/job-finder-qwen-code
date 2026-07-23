@@ -35,14 +35,8 @@ class LLMRefinement:
 
 def profile_fingerprint(candidate: Candidate) -> str:
     """Stable profile version for refinement idempotency, without PII such as email."""
-    titles = sorted(
-        title.title.strip() for title in candidate.job_titles
-        if title.is_active and title.title and title.title.strip()
-    )
-    skills = sorted(
-        skill.skill_name.strip() for skill in candidate.skills
-        if skill.is_active and skill.is_enabled and skill.skill_name and skill.skill_name.strip()
-    )
+    titles = sorted(candidate.active_titles())
+    skills = sorted(candidate.active_skill_names())
     payload = json.dumps({
         "candidate_id": candidate.id,
         "current_role": candidate.current_role or "",
@@ -54,8 +48,8 @@ def profile_fingerprint(candidate: Candidate) -> str:
 
 
 def _profile_text(candidate: Candidate) -> str:
-    titles = [title.title.strip() for title in candidate.job_titles if title.is_active and title.title]
-    skills = [skill.skill_name.strip() for skill in candidate.skills if skill.is_active and skill.is_enabled and skill.skill_name]
+    titles = candidate.active_titles()
+    skills = candidate.active_skill_names()
     return "\n".join((
         f"Current role: {candidate.current_role or 'Not provided'}",
         f"Years of experience: {candidate.experience_years if candidate.experience_years is not None else 'Not provided'}",

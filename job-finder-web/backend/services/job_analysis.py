@@ -37,6 +37,24 @@ class CandidateProfile:
     current_role: Optional[str] = None
     target_roles: Optional[List[str]] = None
 
+    @classmethod
+    def from_candidate(cls, candidate) -> "CandidateProfile":
+        """Derive the analysis profile from a Candidate ORM row.
+
+        The single seam that turns a persisted candidate into the fields that
+        personalize the prompt and cache key. Reads active skills/titles through
+        the candidate's own canonical accessors so soft-deleted or disabled
+        entries never reach the analysis.
+        """
+        return cls(
+            skills=candidate.active_skill_names(),
+            location=candidate.location,
+            timezone=candidate.timezone,
+            experience_years=candidate.experience_years,
+            current_role=candidate.current_role,
+            target_roles=candidate.active_titles(),
+        )
+
     def cache_key(self) -> str:
         """Identity string for cache invalidation. Empty when no profile fields are set."""
         if not any([
