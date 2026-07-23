@@ -13,6 +13,7 @@ from backend.services.job_deduplication import (
     THRESHOLD_EXACT_MATCH,
     THRESHOLD_LIKELY_MATCH,
     THRESHOLD_POSSIBLE_MATCH,
+    from_scraped_dict,
 )
 
 
@@ -229,3 +230,39 @@ class TestFilterDuplicates:
         ]
         result = d.filter_duplicates(new_jobs, existing)
         assert len(result) == 7
+
+
+class TestFromScrapedDict:
+    """from_scraped_dict builds a transient, unpersisted Job for dedup comparison."""
+
+    def test_maps_expected_fields(self):
+        job = from_scraped_dict({
+            "title": "Backend Engineer",
+            "company": "Acme",
+            "location": "Remote",
+            "platform": "linkedin",
+            "platform_job_id": "123",
+            "description_hash": "abc",
+        })
+        assert job.title == "Backend Engineer"
+        assert job.company == "Acme"
+        assert job.location == "Remote"
+        assert job.platform == "linkedin"
+        assert job.platform_job_id == "123"
+        assert job.description_hash == "abc"
+
+    def test_missing_keys_default_to_empty_or_none(self):
+        job = from_scraped_dict({})
+        assert job.title == ""
+        assert job.company == ""
+        assert job.location == ""
+        assert job.platform == ""
+        assert job.platform_job_id is None
+        assert job.description_hash is None
+
+    def test_result_is_comparable_via_is_duplicate(self):
+        d = JobDeduplicator()
+        a = from_scraped_dict({"title": "Engineer", "company": "Acme", "description_hash": "same"})
+        b = from_scraped_dict({"title": "Engineer", "company": "Acme", "description_hash": "same"})
+        is_dup, _ = d.is_duplicate(a, b)
+        assert is_dup is True

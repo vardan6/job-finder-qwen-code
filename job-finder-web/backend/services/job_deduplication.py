@@ -339,6 +339,18 @@ def check_duplicate_in_db(
     return None
 
 
+def from_scraped_dict(job_data: dict) -> Job:
+    """Build a transient, unpersisted Job for dedup comparison from a scraper result."""
+    return Job(
+        title=job_data.get("title", ""),
+        company=job_data.get("company", ""),
+        location=job_data.get("location", ""),
+        platform=job_data.get("platform", ""),
+        platform_job_id=job_data.get("platform_job_id"),
+        description_hash=job_data.get("description_hash"),
+    )
+
+
 # Global instance
 _deduplicator: Optional[JobDeduplicator] = None
 

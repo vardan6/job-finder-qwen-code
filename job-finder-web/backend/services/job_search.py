@@ -24,7 +24,7 @@ from backend.models.job import Job, SearchRun, SearchRunJob
 from backend.models.platform_account import PlatformAccount
 from backend.security import decrypt_json, encrypt_data
 from backend.services.job_analysis import get_job_analysis_service, JobAnalysis
-from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db
+from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db, from_scraped_dict
 from backend.services.job_scoring import score_job
 from backend.services.job_llm_refinement import get_job_llm_refinement_service
 from backend.services.rate_limiter import get_rate_limiter
@@ -426,54 +426,6 @@ class JobSearchService:
         )
         return [{**job.to_dict(), "platform": WeWorkRemotelyScraper.platform} for job in jobs]
 
-    def _deduplicate_jobs(self, jobs: List[dict], candidate_id: int) -> List[dict]:
-        """Remove duplicate jobs"""
-        # Get existing jobs for this candidate
-        existing_jobs = self.db.query(Job).filter(Job.candidate_id == candidate_id).all()
-        
-        # Create temporary Job objects for comparison
-        temp_jobs = []
-        for job_data in jobs:
-            temp_job = Job(
-                title=job_data.get("title", ""),
-                company=job_data.get("company", ""),
-                location=job_data.get("location", ""),
-                platform=job_data.get("platform", ""),
-                platform_job_id=job_data.get("platform_job_id"),
-                description_hash=job_data.get("description_hash"),
-            )
-            temp_jobs.append((temp_job, job_data))
-        
-        # Filter duplicates
-        unique_jobs = []
-        for temp_job, job_data in temp_jobs:
-            # Check against existing jobs in database
-            is_duplicate = False
-            
-            for existing in existing_jobs:
-                is_dup, _ = self.deduplicator.is_duplicate(temp_job, existing)
-                if is_dup:
-                    is_duplicate = True
-                    break
-            
-            # Also check against jobs we've already added in this batch
-            if not is_duplicate:
-                for added_job_data in unique_jobs:
-                    added_temp = Job(
-                        title=added_job_data.get("title", ""),
-                        company=added_job_data.get("company", ""),
-                        location=added_job_data.get("location", ""),
-                    )
-                    is_dup, _ = self.deduplicator.is_duplicate(temp_job, added_temp)
-                    if is_dup:
-                        is_duplicate = True
-                        break
-            
-            if not is_duplicate:
-                unique_jobs.append(job_data)
-        
-        return unique_jobs
-
     def _create_search_run(self, config: SearchConfig) -> SearchRun:
         """Persist a list header before collecting results for it."""
         default_name = f"{datetime.utcnow():%Y-%m-%d} — {config.query.strip() or 'Job search'}"
@@ -494,20 +446,12 @@ class JobSearchService:
         existing_jobs = self.db.query(Job).filter(Job.candidate_id == candidate_id).all()
         planned = []
         for job_data in jobs:
-            temp_job = Job(
-                title=job_data.get("title", ""), company=job_data.get("company", ""),
-                location=job_data.get("location", ""), platform=job_data.get("platform", ""),
-                platform_job_id=job_data.get("platform_job_id"), description_hash=job_data.get("description_hash"),
-            )
+            temp_job = from_scraped_dict(job_data)
             matched_job = next((job for job in existing_jobs if self.deduplicator.is_duplicate(temp_job, job)[0]), None)
             matching_plan = None
             if matched_job is None:
                 for plan in planned:
-                    planned_temp = Job(
-                        title=plan[0].get("title", ""), company=plan[0].get("company", ""),
-                        location=plan[0].get("location", ""), platform=plan[0].get("platform", ""),
-                        platform_job_id=plan[0].get("platform_job_id"), description_hash=plan[0].get("description_hash"),
-                    )
+                    planned_temp = from_scraped_dict(plan[0])
                     if self.deduplicator.is_duplicate(temp_job, planned_temp)[0]:
                         matching_plan = plan
                         break
