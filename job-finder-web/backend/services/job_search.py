@@ -23,14 +23,14 @@ from backend.models.candidate import Candidate
 from backend.models.job import Job, SearchRun, SearchRunJob
 from backend.models.platform_account import PlatformAccount
 from backend.security import decrypt_json, encrypt_data
-from backend.services.job_analysis import get_job_analysis_service, JobAnalysis
+from backend.services.job_analysis import get_job_analysis_service, CandidateProfile, JobAnalysis
 from backend.services.job_deduplication import get_deduplicator, check_duplicate_in_db, from_scraped_dict
 from backend.services.job_scoring import score_job
 from backend.services.job_llm_refinement import get_job_llm_refinement_service
 from backend.services.rate_limiter import get_rate_limiter
 from backend.services.scraper_health import record_search_result
-from backend.scrapers.linkedin import LinkedInScraper, LinkedInJob
-from backend.scrapers.glassdoor import GlassdoorScraper, GlassdoorJob
+from backend.scrapers.linkedin import LinkedInScraper
+from backend.scrapers.glassdoor import GlassdoorScraper
 from backend.scrapers.we_work_remotely import WeWorkRemotelyScraper
 
 logger = logging.getLogger(__name__)
@@ -153,6 +153,14 @@ class JobSearchService:
             t.title for t in sorted(candidate.job_titles, key=lambda t: t.priority)
             if t.is_active
         ]
+        candidate_profile = CandidateProfile(
+            skills=candidate_skills,
+            location=candidate.location,
+            timezone=candidate.timezone,
+            experience_years=candidate.experience_years,
+            current_role=candidate.current_role,
+            target_roles=candidate_target_roles,
+        )
 
         search_run = self._create_search_run(config)
         
@@ -252,14 +260,9 @@ class JobSearchService:
                         emit(f"Analyzing with AI: {job_data.get('title', '?')} @ {job_data.get('company', '?')}")
                         analysis = await self.analysis_service.analyze_job(
                             job_data.get("description"),
-                            candidate_skills,
+                            candidate_profile,
                             db=self.db,
                             platform_remote_attribute=job_data.get("remote_attribute"),
-                            candidate_location=candidate.location,
-                            candidate_timezone=candidate.timezone,
-                            candidate_experience_years=candidate.experience_years,
-                            candidate_current_role=candidate.current_role,
-                            candidate_target_roles=candidate_target_roles,
                         )
 
                         # Update job with analysis results

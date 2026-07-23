@@ -45,6 +45,14 @@ THRESHOLD_EXACT_MATCH = 95  # Definitely the same job
 THRESHOLD_LIKELY_MATCH = 80  # Probably the same job
 THRESHOLD_POSSIBLE_MATCH = 60  # Might be the same job
 
+# The only fields JobDeduplicator.calculate_similarity reads. A transient
+# comparison Job (see from_scraped_dict) only needs to populate these —
+# adding a field here without a matching signal in calculate_similarity
+# (or vice versa) breaks that contract.
+DEDUP_IDENTITY_FIELDS = (
+    "title", "company", "location", "platform", "platform_job_id", "description_hash",
+)
+
 
 class JobDeduplicator:
     """Service for detecting and preventing duplicate jobs"""
@@ -340,15 +348,15 @@ def check_duplicate_in_db(
 
 
 def from_scraped_dict(job_data: dict) -> Job:
-    """Build a transient, unpersisted Job for dedup comparison from a scraper result."""
-    return Job(
-        title=job_data.get("title", ""),
-        company=job_data.get("company", ""),
-        location=job_data.get("location", ""),
-        platform=job_data.get("platform", ""),
-        platform_job_id=job_data.get("platform_job_id"),
-        description_hash=job_data.get("description_hash"),
-    )
+    """Build a transient, unpersisted Job for dedup comparison from a scraper result.
+
+    Populates exactly DEDUP_IDENTITY_FIELDS — see calculate_similarity.
+    """
+    defaults = {"title": "", "company": "", "location": "", "platform": ""}
+    return Job(**{
+        field: job_data.get(field, defaults.get(field))
+        for field in DEDUP_IDENTITY_FIELDS
+    })
 
 
 # Global instance

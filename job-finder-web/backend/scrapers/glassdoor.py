@@ -12,52 +12,19 @@ import asyncio
 import logging
 import random
 import re
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Optional
 
 from playwright.async_api import Page
 
+from backend.scrapers.base import PlatformJob
 from backend.services.browser_manager import get_browser_pool
 from backend.services.rate_limiter import get_rate_limiter
 from backend.services.search_lock import get_search_lock
 from backend.services.job_deduplication import get_deduplicator
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GlassdoorJob:
-    """Represents a job found on Glassdoor"""
-    
-    title: str
-    company: str
-    location: str
-    posted_date: Optional[str]
-    job_url: str
-    platform_job_id: Optional[str]
-    description: Optional[str] = None
-    description_hash: Optional[str] = None
-    snippet: Optional[str] = None
-    salary: Optional[str] = None
-    job_type: Optional[str] = None
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary"""
-        return {
-            "title": self.title,
-            "company": self.company,
-            "location": self.location,
-            "posted_date": self.posted_date,
-            "job_url": self.job_url,
-            "platform_job_id": self.platform_job_id,
-            "description": self.description,
-            "description_hash": self.description_hash,
-            "snippet": self.snippet,
-            "salary": self.salary,
-            "job_type": self.job_type,
-        }
 
 
 # Glassdoor search URL template
@@ -90,7 +57,7 @@ class GlassdoorScraper:
         max_jobs: int = 20,
         cookies_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[GlassdoorJob]:
+    ) -> List[PlatformJob]:
         """
         Search for jobs on Glassdoor.
         
@@ -101,7 +68,7 @@ class GlassdoorScraper:
             cookies_path: Path to load/save session cookies
         
         Returns:
-            List of GlassdoorJob objects
+            List of PlatformJob objects
         """
         logger.info(f"Starting Glassdoor search: '{query}' in '{location}' (max: {max_jobs} jobs)")
 
@@ -208,7 +175,7 @@ class GlassdoorScraper:
         page: Page,
         max_jobs: int,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[GlassdoorJob]:
+    ) -> List[PlatformJob]:
         """Collect jobs from search results page"""
         jobs = []
         seen_urls = set()
@@ -257,7 +224,7 @@ class GlassdoorScraper:
 
         return jobs
     
-    async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[GlassdoorJob]:
+    async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[PlatformJob]:
         """Extract job information from a job card"""
         try:
             # Extract title
@@ -334,7 +301,7 @@ class GlassdoorScraper:
             except Exception as e:
                 logger.warning(f"Failed to click job card: {e}")
             
-            return GlassdoorJob(
+            return PlatformJob(
                 title=title,
                 company=company,
                 location=location,

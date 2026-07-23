@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
+from backend.ai_capabilities import Purpose
 from backend.config import JOB_LLM_REFINEMENT_PROMPT_VERSION, JOB_LLM_REFINEMENT_TOP_N
 from backend.models.candidate import Candidate
 from backend.models.job import Job
@@ -124,7 +125,7 @@ class JobLLMRefinementService:
         try:
             response = await send_message(
                 prompt, temperature=0.1, db=self.db,
-                routing_purpose="candidate_analysis",
+                routing_purpose=Purpose.CANDIDATE_ANALYSIS,
             )
         except Exception:
             logger.exception("LLM refinement failed for job %s", job.id)

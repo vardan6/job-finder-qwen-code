@@ -11,6 +11,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.ai_capabilities import Purpose
 from backend.config import DATA_DIR
 from backend.models.candidate import Candidate
 from backend.models.document import CandidateDocument, GeneratedDocument
@@ -27,7 +28,7 @@ COVER_LETTER = "cover_letter"
 # Tailored generation reuses the Document Analysis routing purpose — the
 # closest existing bucket to "produce a document from source text" and
 # already configured in AI Settings, avoiding a new unconfigured purpose.
-GENERATION_ROUTING_PURPOSE = "document_analysis"
+GENERATION_ROUTING_PURPOSE = Purpose.DOCUMENT_ANALYSIS
 
 # Source documents are truncated so prompts stay within typical provider
 # context windows regardless of how large an uploaded resume or job posting is.

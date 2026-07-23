@@ -12,7 +12,6 @@ import asyncio
 import logging
 import random
 import re
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -20,41 +19,13 @@ from typing import Callable, List, Optional
 from playwright.async_api import Page
 
 from backend.config import DATA_DIR
+from backend.scrapers.base import PlatformJob
 from backend.services.browser_manager import get_browser_pool
 from backend.services.rate_limiter import get_rate_limiter
 from backend.services.search_lock import get_search_lock
 from backend.services.job_deduplication import get_deduplicator
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class LinkedInJob:
-    """Represents a job found on LinkedIn"""
-    
-    title: str
-    company: str
-    location: str
-    posted_date: Optional[str]
-    job_url: str
-    platform_job_id: Optional[str]
-    description: Optional[str] = None
-    description_hash: Optional[str] = None
-    snippet: Optional[str] = None
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary"""
-        return {
-            "title": self.title,
-            "company": self.company,
-            "location": self.location,
-            "posted_date": self.posted_date,
-            "job_url": self.job_url,
-            "platform_job_id": self.platform_job_id,
-            "description": self.description,
-            "description_hash": self.description_hash,
-            "snippet": self.snippet,
-        }
 
 
 # LinkedIn search URL templates
@@ -103,7 +74,7 @@ class LinkedInScraper:
         manual_session_key: Optional[str] = None,
         manual_profile_path: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[LinkedInJob]:
+    ) -> List[PlatformJob]:
         """
         Search for jobs on LinkedIn.
         
@@ -114,7 +85,7 @@ class LinkedInScraper:
             cookies_path: Path to load/save session cookies
         
         Returns:
-            List of LinkedInJob objects
+            List of PlatformJob objects
         """
         logger.info(f"Starting LinkedIn search: '{query}' in '{location}' (max: {max_jobs} jobs)")
         
@@ -232,7 +203,7 @@ class LinkedInScraper:
         page: Page,
         max_jobs: int,
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> List[LinkedInJob]:
+    ) -> List[PlatformJob]:
         """Collect jobs from search results page"""
         jobs = []
         seen_urls = set()
@@ -282,7 +253,7 @@ class LinkedInScraper:
 
         return jobs
     
-    async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[LinkedInJob]:
+    async def _extract_job_from_card(self, card, page: Page, index: int) -> Optional[PlatformJob]:
         """Extract job information from a job card"""
         try:
             # Extract title + job URL from the card's title link. The link text
@@ -356,7 +327,7 @@ class LinkedInScraper:
             except Exception as e:
                 logger.warning(f"Failed to click job card: {e}")
             
-            return LinkedInJob(
+            return PlatformJob(
                 title=title,
                 company=company,
                 location=location,

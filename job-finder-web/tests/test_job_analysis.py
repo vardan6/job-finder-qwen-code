@@ -8,7 +8,9 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from backend.services.job_analysis import JobAnalysis, JobAnalysisService, JOB_ANALYSIS_PROMPT
+from backend.services.job_analysis import (
+    CandidateProfile, JobAnalysis, JobAnalysisService, JOB_ANALYSIS_PROMPT,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +116,7 @@ class TestCaching:
         cache_path.write_text(json.dumps(analysis.to_dict()))
 
         with patch("backend.services.job_analysis.send_message", new_callable=AsyncMock) as mock_llm:
-            result = await svc.analyze_job("my job description", ["Python"], use_cache=True)
+            result = await svc.analyze_job("my job description", CandidateProfile(skills=["Python"]), use_cache=True)
             mock_llm.assert_not_called()
 
         assert result.remote_score == 90
@@ -130,7 +132,7 @@ class TestCaching:
             new_callable=AsyncMock,
             return_value=VALID_LLM_RESPONSE,
         ) as mock_llm:
-            result = await svc.analyze_job("fresh description", ["Go"], use_cache=True)
+            result = await svc.analyze_job("fresh description", CandidateProfile(skills=["Go"]), use_cache=True)
             mock_llm.assert_called_once()
 
         assert result.remote_score == 92
@@ -146,7 +148,7 @@ class TestCaching:
             new_callable=AsyncMock,
             return_value=VALID_LLM_RESPONSE,
         ):
-            await svc.analyze_job("job desc", ["Python"], use_cache=True)
+            await svc.analyze_job("job desc", CandidateProfile(skills=["Python"]), use_cache=True)
 
         key = svc._get_cache_key("job desc", ["Python"])
         cache_path = tmp_path / f"{key}.json"
@@ -169,7 +171,7 @@ class TestCaching:
             new_callable=AsyncMock,
             return_value=VALID_LLM_RESPONSE,
         ) as mock_llm:
-            await svc.analyze_job("desc", ["Python"], use_cache=False)
+            await svc.analyze_job("desc", CandidateProfile(skills=["Python"]), use_cache=False)
             mock_llm.assert_called_once()
 
     @pytest.mark.asyncio
@@ -183,7 +185,7 @@ class TestCaching:
             new_callable=AsyncMock,
             return_value=VALID_LLM_RESPONSE,
         ) as mock_llm:
-            await svc.analyze_job("desc", ["Python"], use_cache=False, db=fake_db)
+            await svc.analyze_job("desc", CandidateProfile(skills=["Python"]), use_cache=False, db=fake_db)
 
         _, kwargs = mock_llm.call_args
         assert kwargs["db"] is fake_db
@@ -211,12 +213,16 @@ class TestCandidateProfilePrompt:
             return_value=VALID_LLM_RESPONSE,
         ) as mock_llm:
             await svc.analyze_job(
-                "desc", ["Python"], use_cache=False,
-                candidate_location="Canada",
-                candidate_timezone="America/Toronto",
-                candidate_experience_years=5,
-                candidate_current_role="Backend Engineer",
-                candidate_target_roles=["Staff Engineer", "Tech Lead"],
+                "desc",
+                CandidateProfile(
+                    skills=["Python"],
+                    location="Canada",
+                    timezone="America/Toronto",
+                    experience_years=5,
+                    current_role="Backend Engineer",
+                    target_roles=["Staff Engineer", "Tech Lead"],
+                ),
+                use_cache=False,
             )
 
         prompt = mock_llm.call_args[0][0]
@@ -235,7 +241,7 @@ class TestCandidateProfilePrompt:
             new_callable=AsyncMock,
             return_value=VALID_LLM_RESPONSE,
         ) as mock_llm:
-            await svc.analyze_job("desc", ["Python"], use_cache=False)
+            await svc.analyze_job("desc", CandidateProfile(skills=["Python"]), use_cache=False)
 
         prompt = mock_llm.call_args[0][0]
         assert "Not specified" in prompt
@@ -309,7 +315,7 @@ class TestLLMFailureFallback:
             new_callable=AsyncMock,
             side_effect=Exception("LLM unavailable"),
         ):
-            result = await svc.analyze_job("desc", ["Python"], use_cache=False)
+            result = await svc.analyze_job("desc", CandidateProfile(skills=["Python"]), use_cache=False)
 
         assert isinstance(result, JobAnalysis)
         assert result.recommendation == "Consider"
@@ -326,6 +332,6 @@ class TestLLMFailureFallback:
             new_callable=AsyncMock,
             return_value="Sorry, I cannot analyze this.",
         ):
-            result = await svc.analyze_job("desc", ["Python"], use_cache=False)
+            result = await svc.analyze_job("desc", CandidateProfile(skills=["Python"]), use_cache=False)
 
         assert isinstance(result, JobAnalysis)

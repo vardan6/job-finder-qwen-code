@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.ai_capabilities import Purpose
 from backend.models.llm_provider import LLMProvider, LLMModel
 from backend.services.ai_routing import resolve_chat_model_selection
 
@@ -299,7 +300,7 @@ async def extract_skills_from_text(content: str, db: Optional[Session] = None) -
         # Resolve the configured Candidate Analysis provider and model.
         if db:
             try:
-                selection = resolve_chat_model_selection(db, purpose="candidate_analysis")
+                selection = resolve_chat_model_selection(db, purpose=Purpose.CANDIDATE_ANALYSIS)
                 model = selection.model
                 provider = selection.provider
             except Exception:

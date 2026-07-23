@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
+from backend.ai_capabilities import Purpose
 from backend.ai_session_store import get_ai_session_store
 from backend.ai_config_store import load_ai_config
 from backend.database import get_db
@@ -174,6 +175,37 @@ def _selection_meta(selection, requested_provider_config_id: str, resolved_provi
         "resolved_model_name": resolved_snapshot.get("model_name", ""),
         "fallback_used": fallback_used,
     }
+
+
+def _resolve_session_routing(
+    db: Session,
+    *,
+    mode: str,
+    model_id: int | None,
+    selected_provider_config_id: str,
+) -> tuple:
+    """Resolve a chat request's session mode, routing purpose, and model selection.
+
+    Shared by /api/chat and /api/chat/stream so mode-to-purpose mapping and
+    its error handling can't drift between the two endpoints.
+    """
+    session_mode = _normalize_session_mode(mode)
+    routing_purpose = Purpose.AGENT if session_mode == "agent" else Purpose.GENERAL_CHAT
+    try:
+        selection = resolve_chat_model_selection(
+            db,
+            purpose=routing_purpose,
+            model_id=model_id,
+            configured_provider_id=selected_provider_config_id.strip() or None,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message == "Model not found":
+            raise HTTPException(status_code=404, detail=message)
+        if message == "Model has no provider configured":
+            raise HTTPException(status_code=400, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+    return session_mode, selection
 
 
 def _usage_stat_number(usage: dict[str, object], *keys: str) -> int | None:
@@ -518,22 +550,12 @@ async def chat(
     try:
         start_time = time.time()
 
-        session_mode = _normalize_session_mode(mode)
-        routing_purpose = "agent" if session_mode == "agent" else "general_chat"
-        try:
-            selection = resolve_chat_model_selection(
-                db,
-                purpose=routing_purpose,
-                model_id=model_id,
-                configured_provider_id=selected_provider_config_id.strip() or None,
-            )
-        except ValueError as exc:
-            message = str(exc)
-            if message == "Model not found":
-                raise HTTPException(status_code=404, detail=message)
-            if message == "Model has no provider configured":
-                raise HTTPException(status_code=400, detail=message)
-            raise HTTPException(status_code=400, detail=message)
+        session_mode, selection = _resolve_session_routing(
+            db,
+            mode=mode,
+            model_id=model_id,
+            selected_provider_config_id=selected_provider_config_id,
+        )
         model = selection.model
         provider = selection.provider
         requested_provider_config_id = selected_provider_config_id.strip()
@@ -645,22 +667,12 @@ async def chat_stream(
     """Send a message to the AI and stream the response while persisting the final turn."""
     start_time = time.time()
 
-    session_mode = _normalize_session_mode(mode)
-    routing_purpose = "agent" if session_mode == "agent" else "general_chat"
-    try:
-        selection = resolve_chat_model_selection(
-            db,
-            purpose=routing_purpose,
-            model_id=model_id,
-            configured_provider_id=selected_provider_config_id.strip() or None,
-        )
-    except ValueError as exc:
-        message = str(exc)
-        if message == "Model not found":
-            raise HTTPException(status_code=404, detail=message)
-        if message == "Model has no provider configured":
-            raise HTTPException(status_code=400, detail=message)
-        raise HTTPException(status_code=400, detail=message)
+    session_mode, selection = _resolve_session_routing(
+        db,
+        mode=mode,
+        model_id=model_id,
+        selected_provider_config_id=selected_provider_config_id,
+    )
     model = selection.model
     provider = selection.provider
     requested_provider_config_id = selected_provider_config_id.strip()

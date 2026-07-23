@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.ai_capabilities import Purpose
 from backend.models.document import CandidateDocument, DocumentParsePrompt, DocumentSection
 from backend.services.provenance import record_title_extraction
 from backend.services.llm_service import send_message, extract_json_from_response
@@ -61,7 +62,7 @@ async def parse_document_content(db: Session, document: CandidateDocument) -> bo
         result = await send_message(
             full_prompt,
             db=db,
-            routing_purpose="document_analysis",
+            routing_purpose=Purpose.DOCUMENT_ANALYSIS,
             json_mode=True,
         )
 

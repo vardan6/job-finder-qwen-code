@@ -19,6 +19,8 @@ class PlatformJob:
     apply_url: Optional[str] = None
     remote_eligibility: Optional[str] = None
     source_timestamp: Optional[str] = None
+    salary: Optional[str] = None
+    job_type: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -34,6 +36,8 @@ class PlatformJob:
             "apply_url": self.apply_url,
             "remote_eligibility": self.remote_eligibility,
             "source_timestamp": self.source_timestamp,
+            "salary": self.salary,
+            "job_type": self.job_type,
         }
 
 

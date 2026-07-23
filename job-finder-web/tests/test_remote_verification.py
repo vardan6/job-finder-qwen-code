@@ -7,7 +7,9 @@ from sqlalchemy import create_engine, inspect, text
 
 from backend.database import Base, migrate_remote_verification
 from backend.models.job import Job
-from backend.services.job_analysis import JobAnalysisService, REMOTE_VERIFICATION_PROMPT_VERSION
+from backend.services.job_analysis import (
+    CandidateProfile, JobAnalysisService, REMOTE_VERIFICATION_PROMPT_VERSION,
+)
 
 
 def response(status, restrictions=None, evidence=None):
@@ -30,7 +32,7 @@ def response(status, restrictions=None, evidence=None):
 async def test_remote_contradiction_fixtures(description, payload, expected_status, restriction_key, expected_value):
     service = JobAnalysisService()
     with patch("backend.services.job_analysis.send_message", new_callable=AsyncMock, return_value=payload):
-        result = await service.analyze_job(description, [], use_cache=False, platform_remote_attribute="remote")
+        result = await service.analyze_job(description, CandidateProfile(skills=[]), use_cache=False, platform_remote_attribute="remote")
     assert result.verified_remote_status == expected_status
     assert result.remote_verified_version == REMOTE_VERIFICATION_PROMPT_VERSION
     if restriction_key:
@@ -42,7 +44,7 @@ async def test_remote_contradiction_fixtures(description, payload, expected_stat
 async def test_empty_description_is_unknown_without_provider_call():
     service = JobAnalysisService()
     with patch("backend.services.job_analysis.send_message", new_callable=AsyncMock) as provider:
-        result = await service.analyze_job("", [], use_cache=False)
+        result = await service.analyze_job("", CandidateProfile(skills=[]), use_cache=False)
     provider.assert_not_called()
     assert result.verified_remote_status == "unknown"
     assert result.remote_evidence is None
@@ -53,7 +55,7 @@ async def test_contradiction_without_verbatim_quote_falls_back_to_unknown():
     service = JobAnalysisService()
     with patch("backend.services.job_analysis.send_message", new_callable=AsyncMock,
                return_value=response("remote_restricted", {"regions": ["US"]}, ["paraphrased restriction"])):
-        result = await service.analyze_job("Remote work limited to US applicants.", [], use_cache=False, platform_remote_attribute="remote")
+        result = await service.analyze_job("Remote work limited to US applicants.", CandidateProfile(skills=[]), use_cache=False, platform_remote_attribute="remote")
     assert result.verified_remote_status == "unknown"
     assert result.remote_restrictions is None
 

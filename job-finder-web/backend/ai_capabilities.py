@@ -1,19 +1,32 @@
 from __future__ import annotations
 
-ROUTING_PURPOSES = (
-    "general_chat",
-    "agent",
-    "document_analysis",
-    "candidate_analysis",
-    "job_matching",
-)
+from enum import Enum
+
+
+class Purpose(str, Enum):
+    """Canonical routing purposes. Compares/hashes as its string value."""
+
+    GENERAL_CHAT = "general_chat"
+    AGENT = "agent"
+    DOCUMENT_ANALYSIS = "document_analysis"
+    CANDIDATE_ANALYSIS = "candidate_analysis"
+    JOB_MATCHING = "job_matching"
+
+    def __str__(self) -> str:
+        # Python 3.11+ changed str(Enum) to "Purpose.GENERAL_CHAT" even for
+        # str-mixin enums; keep f-string interpolation matching the plain
+        # string value everywhere purposes are logged or raised in errors.
+        return self.value
+
+
+ROUTING_PURPOSES = tuple(purpose.value for purpose in Purpose)
 
 ROUTING_PURPOSE_LABELS = {
-    "general_chat": "General Chat",
-    "agent": "Agent",
-    "document_analysis": "Document Analysis",
-    "candidate_analysis": "Candidate Analysis",
-    "job_matching": "Job Matching",
+    Purpose.GENERAL_CHAT: "General Chat",
+    Purpose.AGENT: "Agent",
+    Purpose.DOCUMENT_ANALYSIS: "Document Analysis",
+    Purpose.CANDIDATE_ANALYSIS: "Candidate Analysis",
+    Purpose.JOB_MATCHING: "Job Matching",
 }
 
 PROVIDER_CAPABILITIES = (

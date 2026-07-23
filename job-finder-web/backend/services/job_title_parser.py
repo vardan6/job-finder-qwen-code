@@ -12,6 +12,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from backend.ai_capabilities import Purpose
 from backend.models.document import CandidateDocument, DocumentParsePrompt
 from backend.models.supporting import CandidateJobTitle, ExtractionOccurrence
 from backend.services.provenance import record_title_extraction
@@ -99,7 +100,7 @@ async def _run_job_titles_prompt(
     result = await send_message(
         full_prompt,
         db=db,
-        routing_purpose="document_analysis",
+        routing_purpose=Purpose.DOCUMENT_ANALYSIS,
         json_mode=True,
     )
 
