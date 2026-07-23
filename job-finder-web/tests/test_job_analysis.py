@@ -8,7 +8,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from backend.services.job_analysis import JobAnalysis, JobAnalysisService
+from backend.services.job_analysis import JobAnalysis, JobAnalysisService, JOB_ANALYSIS_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,18 @@ class TestCacheKey:
         k1 = svc._get_cache_key("desc", ["Python", "Docker", "FastAPI"])
         k2 = svc._get_cache_key("desc", ["FastAPI", "Python", "Docker"])
         assert k1 == k2
+
+    def test_different_candidate_profile_different_key(self):
+        """Two candidates with identical description/skills must not share a cache entry."""
+        svc = JobAnalysisService()
+        k1 = svc._get_cache_key("desc", ["Python"], candidate_profile_key="Armenia|Asia/Yerevan")
+        k2 = svc._get_cache_key("desc", ["Python"], candidate_profile_key="Canada|America/Toronto")
+        assert k1 != k2
+
+    def test_no_candidate_profile_matches_legacy_key(self):
+        """Callers that omit candidate profile fields keep the pre-existing key shape."""
+        svc = JobAnalysisService()
+        assert svc._get_cache_key("desc", ["Python"]) == svc._get_cache_key("desc", ["Python"], "")
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +188,57 @@ class TestCaching:
         _, kwargs = mock_llm.call_args
         assert kwargs["db"] is fake_db
         assert kwargs["routing_purpose"] == "candidate_analysis"
+
+
+# ---------------------------------------------------------------------------
+# Candidate-specific prompt
+# ---------------------------------------------------------------------------
+
+class TestCandidateProfilePrompt:
+    def test_prompt_template_has_no_hardcoded_candidate(self):
+        """The template must not bake in any one candidate's profile."""
+        for needle in ("Armenia", "EDA", "VLSI", "18+ years"):
+            assert needle not in JOB_ANALYSIS_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_prompt_uses_given_candidate_profile(self, tmp_path):
+        svc = JobAnalysisService()
+        svc._cache_dir = tmp_path
+
+        with patch(
+            "backend.services.job_analysis.send_message",
+            new_callable=AsyncMock,
+            return_value=VALID_LLM_RESPONSE,
+        ) as mock_llm:
+            await svc.analyze_job(
+                "desc", ["Python"], use_cache=False,
+                candidate_location="Canada",
+                candidate_timezone="America/Toronto",
+                candidate_experience_years=5,
+                candidate_current_role="Backend Engineer",
+                candidate_target_roles=["Staff Engineer", "Tech Lead"],
+            )
+
+        prompt = mock_llm.call_args[0][0]
+        assert "Canada" in prompt
+        assert "America/Toronto" in prompt
+        assert "5+ years, currently Backend Engineer" in prompt
+        assert "Staff Engineer, Tech Lead" in prompt
+
+    @pytest.mark.asyncio
+    async def test_prompt_falls_back_when_profile_omitted(self, tmp_path):
+        svc = JobAnalysisService()
+        svc._cache_dir = tmp_path
+
+        with patch(
+            "backend.services.job_analysis.send_message",
+            new_callable=AsyncMock,
+            return_value=VALID_LLM_RESPONSE,
+        ) as mock_llm:
+            await svc.analyze_job("desc", ["Python"], use_cache=False)
+
+        prompt = mock_llm.call_args[0][0]
+        assert "Not specified" in prompt
 
 
 # ---------------------------------------------------------------------------

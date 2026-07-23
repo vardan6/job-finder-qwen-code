@@ -149,6 +149,11 @@ class JobSearchService:
             if skill_value:
                 candidate_skills.append(skill_value)
 
+        candidate_target_roles = [
+            t.title for t in sorted(candidate.job_titles, key=lambda t: t.priority)
+            if t.is_active
+        ]
+
         search_run = self._create_search_run(config)
         
         emit(f"Starting search on {len(config.platforms)} platform(s): {', '.join(config.platforms)}")
@@ -250,6 +255,11 @@ class JobSearchService:
                             candidate_skills,
                             db=self.db,
                             platform_remote_attribute=job_data.get("remote_attribute"),
+                            candidate_location=candidate.location,
+                            candidate_timezone=candidate.timezone,
+                            candidate_experience_years=candidate.experience_years,
+                            candidate_current_role=candidate.current_role,
+                            candidate_target_roles=candidate_target_roles,
                         )
 
                         # Update job with analysis results

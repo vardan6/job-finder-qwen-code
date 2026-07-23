@@ -100,9 +100,9 @@ You are an expert job analyst specializing in remote work compatibility assessme
 Analyze the following job posting and provide a structured assessment.
 
 **Candidate Profile:**
-- Location: Armenia (Asia/Yerevan timezone, UTC+4)
-- Experience: 18+ years in EDA, VLSI, Python, Test Automation
-- Target Roles: Staff/Principal SDET, EDA Design Automation, Test Infrastructure
+- Location: {candidate_location} ({candidate_timezone} timezone)
+- Experience: {candidate_experience}
+- Target Roles: {candidate_target_roles}
 
 **Analysis Tasks:**
 
@@ -112,7 +112,7 @@ Analyze the following job posting and provide a structured assessment.
    - 20 points: No citizenship/visa restrictions
    - 15 points: No office visits required
    
-2. **Armenia Compatibility:**
+2. **Candidate Location Compatibility:**
    - Check for timezone overlap requirements
    - Check for citizenship/visa restrictions
    - Check for relocation requirements
@@ -170,9 +170,9 @@ class JobAnalysisService:
         self._cache_dir = DATA_DIR / "job_analysis_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
     
-    def _get_cache_key(self, description: str, skills: List[str]) -> str:
-        """Generate cache key from description and skills"""
-        content = f"{description}|||{','.join(sorted(skills))}"
+    def _get_cache_key(self, description: str, skills: List[str], candidate_profile_key: str = "") -> str:
+        """Generate cache key from description, skills, and candidate profile identity"""
+        content = f"{description}|||{','.join(sorted(skills))}|||{candidate_profile_key}"
         return hashlib.md5(content.encode()).hexdigest()
     
     def _get_cache_path(self, cache_key: str) -> Path:
@@ -204,16 +204,26 @@ class JobAnalysisService:
         model_name: Optional[str] = None,
         db: Optional[Session] = None,
         platform_remote_attribute: Optional[str] = None,
+        candidate_location: Optional[str] = None,
+        candidate_timezone: Optional[str] = None,
+        candidate_experience_years: Optional[int] = None,
+        candidate_current_role: Optional[str] = None,
+        candidate_target_roles: Optional[List[str]] = None,
     ) -> JobAnalysis:
         """
         Analyze a job posting using AI.
-        
+
         Args:
             job_description: Full job description text
             candidate_skills: List of candidate's skills
             use_cache: Whether to use cached results
             model_name: Optional model override
-        
+            candidate_location: Candidate's location, for remote-compatibility scoring
+            candidate_timezone: Candidate's IANA timezone name
+            candidate_experience_years: Candidate's years of experience
+            candidate_current_role: Candidate's current role/title
+            candidate_target_roles: Candidate's active target job titles, priority-ordered
+
         Returns:
             JobAnalysis object with detailed assessment
         """
@@ -234,17 +244,46 @@ class JobAnalysisService:
         cache_description = job_description
         if platform_remote_attribute:
             cache_description = f"{job_description}|||platform-remote:{platform_remote_attribute}"
-        cache_key = self._get_cache_key(cache_description, candidate_skills)
+        # The candidate's profile shapes the prompt, so it is part of the
+        # cached analysis identity too. Omitted when no profile fields are
+        # given, so callers that don't pass them keep the pre-existing key.
+        candidate_profile_key = ""
+        if any([
+            candidate_location, candidate_timezone,
+            candidate_experience_years, candidate_current_role,
+            candidate_target_roles,
+        ]):
+            candidate_profile_key = "|".join([
+                candidate_location or "",
+                candidate_timezone or "",
+                str(candidate_experience_years or ""),
+                candidate_current_role or "",
+                ",".join(sorted(candidate_target_roles)) if candidate_target_roles else "",
+            ])
+        cache_key = self._get_cache_key(cache_description, candidate_skills, candidate_profile_key)
         if use_cache:
             cached = self._load_from_cache(cache_key)
             if cached:
                 logger.info("Using cached job analysis")
                 return cached
-        
+
         # Prepare prompt
+        if candidate_experience_years and candidate_current_role:
+            experience_text = f"{candidate_experience_years}+ years, currently {candidate_current_role}"
+        elif candidate_experience_years:
+            experience_text = f"{candidate_experience_years}+ years"
+        elif candidate_current_role:
+            experience_text = f"Currently {candidate_current_role}"
+        else:
+            experience_text = "Not specified"
+
         prompt = JOB_ANALYSIS_PROMPT.format(
             job_description=job_description[:8000],  # Truncate if too long
             candidate_skills=", ".join(candidate_skills) if candidate_skills else "Not provided",
+            candidate_location=candidate_location or "Not specified",
+            candidate_timezone=candidate_timezone or "Not specified",
+            candidate_experience=experience_text,
+            candidate_target_roles=", ".join(candidate_target_roles) if candidate_target_roles else "Not specified",
         )
         
         # Call LLM
