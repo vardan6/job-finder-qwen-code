@@ -1,102 +1,20 @@
 # Roadmap
 
-Phase 9 is organized as three parallel threads (restructured 2026-07-19;
-prior sequential order + rationale in
-`docs/reviews/roadmap-reorder-2026-07-19.md`). Slices are ordered
-top-to-bottom *within* a thread; threads are independent and non-blocking —
-pick the next unchecked slice from any thread. AFK = can run autonomously,
-HITL = needs maintainer decision/review. Requirements:
-`docs/requirements/product-vision.md`; design: `docs/design/`.
+Remaining work only. Completed phases are listed at the bottom with detail in
+`progress.md`. AFK = can run autonomously, HITL = needs maintainer
+decision/review. Requirements: `docs/requirements/product-vision.md`; design:
+`docs/design/`.
 
 ## Delivery order
 
-The remaining work is ordered for execution, not by the legacy phase numbers
-used in older history: **9.5 core polish → 10 AI runtime, capability, and
-efficiency → 11 additional platforms → 12 accounts and multi-user → 13
-accessibility.** Complete a phase's required dependencies before selecting a
-later phase; within a phase, use the checklist dependencies and `/next-slice`.
+Ordered for execution, not by the legacy phase numbers used in older history:
+**10 AI runtime, capability, and efficiency → 11 additional platforms → 12
+accounts and multi-user → 13 accessibility.** Phases 9 and 9.5 are complete
+(branch `stabilize/cleanup-foundation`). Complete a phase's required
+dependencies before selecting a later phase; within a phase, use the checklist
+dependencies and `/next-slice`.
 
-## Phase 9 — Product Completion (complete, branch `stabilize/cleanup-foundation`)
-
-Done so far: gap audit (`docs/reviews/gap-audit-2026-07-19.md`), scoring +
-provenance decisions (`docs/design/scoring-and-provenance.md`), Q8 decided →
-groundwork-now (2026-07-19).
-
-Threads touch disjoint code: T1 = profile pages/templates/cards (complete),
-T2 = models/scoring/search/results (complete), T3 = scraper/login (complete
-for LinkedIn; multi-platform expansion deferred, see Phase 11). Closed
-2026-07-21 on maintainer basic live-testing of the LinkedIn probe;
-comprehensive testing is deferred to later and does not block closure.
-
-### Thread T1 — Profile & UI (maintainer's top pain) — complete
-
-All slices done: card pre-review, app-wide UI/UX cross-comparison, unified
-profile-page card pattern, provenance (extraction-occurrence table +
-extracted-vs-edited badges), content-aware file-type classification.
-Details in `progress.md` (2026-07-19 entries).
-
-### Thread T2 — Data model & search pipeline — complete
-
-Contracts: `docs/design/scoring-and-provenance.md` (score),
-`docs/design/remote-verification.md` (R6),
-`docs/design/search-runs-and-lists.md` (R7/R11).
-
-All slices done: future-Phase-12 ownership groundwork, deterministic + skills-overlap
-+ LLM-refinement scoring, LLM remote-status verification, results-table
-upgrade, saveable named search lists, result curation (P4), application
-pipeline UI (P1), on-demand re-search diff (P3), per-job tailored
-resume/cover letter (P2). Details in `progress.md` (2026-07-19 / 2026-07-21
-entries).
-
-### Thread T3 — Platforms & scraping — complete for LinkedIn
-
-- [x] AFK R4: platform research doc in `docs/research/` ranking job platforms
-      (informs R3 scope and platform priorities)
-- [x] HITL R3: LinkedIn login reliability rework — session-validity probe,
-      stateful login UI, visible failure reasons, guided re-login; includes
-      pre-search login health probe (P5)
-      (design: `docs/design/linkedin-login-reliability.md`; D1-D4 implemented
-      and test-covered; maintainer validated D4's probe button live 2026-07-21
-      via basic testing — comprehensive testing deferred, non-blocking)
-
-Additional platforms (WWR and beyond) are deliberately deferred — see
-Phase 11 below.
-
-## Phase 9.5 — Stabilization polish, LinkedIn-first (active, branch `stabilize/cleanup-foundation`)
-
-Maintainer priority after Phase 9 closure (2026-07-21): polish the core,
-single-platform (LinkedIn-only) product end-to-end and its existing
-single-user chat/settings shell — scraper/search reliability and overall UX —
-before starting the following delivery phases. Use `/next-slice` to pick up
-one unchecked slice at a time.
-
-- [x] AFK — location-default persistence fix: a submitted search location now
-      persists to a dedicated `CandidatePreferences.last_search_location`
-      field (not `candidate.location`, so search tuning never rewrites
-      profile data) via `_persist_search_location` in `routes/jobs.py`,
-      called from all three search-start endpoints; `GET` search-config
-      prefers it over `candidate.location`. Migration:
-      `migrate_search_location` in `database.py`. Tests:
-      `test_search_location_persistence.py`. 241/241 tests pass.
-- [ ] Broader UX polish pass on the LinkedIn-only search/results/apply
-      flow — scope to be defined by the maintainer.
-- [x] AFK — Preferred-title review reliability, extraction quality, and
-      title-route profile isolation (all complete). Details in `progress.md`
-      (2026-07-21 entries). Contract: `docs/design/scoring-and-provenance.md`.
-
-### Chat and settings shell polish (former Phase 7)
-
-These are product-polish slices, not a separate remote-rover-parity goal.
-They may be selected alongside the LinkedIn flow work when they are the
-smallest valuable next change.
-
-All 6 slices done: provider registry Cancel-edit control, chat session
-inline rename + Markdown transcript export, trace/diagnostics open-state
-persistence, dark/light theme toggle, portable settings export/import
-(`routes/ai_settings.py`), and the `/settings/tools` discovery page. Details
-in `progress.md` (2026-07-21 entries).
-
-## Phase 10 — AI runtime, capability & efficiency (deferred)
+## Phase 10 — AI runtime, capability & efficiency (next)
 
 Design canon: `docs/design/ai-agent-graph.md` (loop stages + per-stage status
 table), `docs/design/agent-provider-capabilities.md`, and
@@ -204,3 +122,14 @@ in `progress.md`.
 - [x] Phase 5 — Remote-rover parity P1 (run modes, slash commands, traces, diagnostics, recovery)
 - [x] Phase S — Stabilization intake (enhance-not-recreate, handoff archive,
       vision capture, gap audit; inline-JS extraction folded into Thread T1)
+- [x] Phase 9 — Product Completion (closed 2026-07-21): T1 profile/UI, T2 data
+      model & search pipeline, T3 LinkedIn login-reliability rework +
+      platform-ranking research. Contracts in `docs/design/`
+      (scoring-and-provenance, remote-verification, search-runs-and-lists,
+      linkedin-login-reliability); multi-platform expansion deferred to
+      Phase 11
+- [x] Phase 9.5 — Stabilization polish, LinkedIn-first (closed 2026-07-24):
+      search-location persistence, preferred-title reliability + title-route
+      profile isolation, chat/settings shell polish (former Phase 7, all 6
+      slices); broader UX polish closed as covered by cumulative Phase 9/9.5
+      work

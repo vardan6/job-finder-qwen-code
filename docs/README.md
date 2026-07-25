@@ -20,6 +20,8 @@ docs/
 ├── design/
 │   └── ai-foundation-migration.md
 ├── project-context.md
+├── research/
+│   └── web-app-hosting-options-2026-07-25.md
 └── reference/
     ├── linkedin-profile.md
     ├── prefered-job-titles.md
@@ -33,6 +35,8 @@ docs/
 - Current documentation a maintainer should read first
 - Stable project context
 - User or domain reference material that still matters to the product
+- Time-stamped research that informs a future decision but is not a standing
+  product or architecture decision
 
 ## What Does Not Belong Here
 
